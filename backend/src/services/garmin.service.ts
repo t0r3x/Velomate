@@ -1,6 +1,8 @@
 import { GarminConnect } from '@flow-js/garmin-connect';
 import path from 'path';
 import fs from 'fs';
+import { GarminSSOClient } from './sso.service';
+import { CookieJar } from 'tough-cookie';
 
 const sessionDir = path.join(__dirname, '../../session');
 
@@ -55,10 +57,29 @@ export const loginGarmin = async (username?: string, password?: string): Promise
   console.log('Login successful.');
 };
 
-export const finalizeLogin = async (ticket: string): Promise<void> => {
+export const finalizeLogin = async (ticket: string, ssoClient?: GarminSSOClient): Promise<void> => {
   const client = getGarminClient();
   
   console.log('Finalizing login with ticket...');
+  
+  if (ssoClient) {
+    const cookies = ssoClient.getCookies();
+    const jar = (client.client as any).client.defaults.jar as CookieJar;
+    
+    if (jar && Array.isArray(cookies)) {
+      console.log(`Syncing ${cookies.length} session cookies to library client...`);
+      for (const cookieData of cookies) {
+        try {
+          const cookieStr = `${cookieData.key}=${cookieData.value}; Domain=${cookieData.domain}; Path=${cookieData.path}`;
+          await jar.setCookie(cookieStr, 'https://sso.garmin.com');
+          await jar.setCookie(cookieStr, 'https://connect.garmin.com');
+        } catch (e) {
+          // Ignore individual cookie errors
+        }
+      }
+    }
+  }
+
   // 1. Fetch OAuth Consumer info
   await client.client.fetchOauthConsumer();
   

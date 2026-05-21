@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { getGarminClient, trySessionAuth, loginGarmin } from './services/garmin.service';
 import { loadProfile, saveProfile } from './services/profile.service';
 import { fetchCyclingActivities, assessProgression } from './services/activity.service';
@@ -57,7 +58,7 @@ app.post('/api/login', async (req: Request, res: Response) => {
     }
     
     if (result.success && result.ticket) {
-      await finalizeLogin(result.ticket);
+      await finalizeLogin(result.ticket, ssoClient);
       return res.json({ success: true, message: 'Logged in successfully.' });
     }
     
@@ -80,7 +81,7 @@ app.post('/api/mfa', async (req: Request, res: Response) => {
   try {
     const result = await ssoClient.verify(code);
     if (result.success && result.ticket) {
-      await finalizeLogin(result.ticket);
+      await finalizeLogin(result.ticket, ssoClient);
       ssoClients.delete('last');
       pendingUsernames.delete('last');
       return res.json({ success: true, message: 'MFA verified and logged in.' });
