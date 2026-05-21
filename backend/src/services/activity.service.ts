@@ -1,0 +1,62 @@
+import { getGarminClient, trySessionAuth } from './garmin.service';
+import { calculateDefaultZones, loadProfile } from './profile.service';
+
+export const fetchCyclingActivities = async (limit: number = 30) => {
+  const isAuthenticated = await trySessionAuth();
+  if (!isAuthenticated) {
+    throw new Error('Not authenticated with Garmin Connect.');
+  }
+
+  const client = getGarminClient();
+  const activities = await client.getActivities(0, limit);
+  
+  // Filter for cycling activities
+  const cyclingActivities = activities.filter(act => 
+    act.activityType?.typeKey === 'cycling' || 
+    act.activityType?.typeKey === 'road_cycling' ||
+    act.activityType?.typeKey === 'indoor_cycling'
+  );
+
+  return cyclingActivities.map(act => ({
+    activityId: act.activityId,
+    name: act.activityName,
+    type: act.activityType?.typeKey,
+    startTime: act.startTimeLocal,
+    distanceKm: act.distance ? Math.round((act.distance / 1000) * 10) / 10 : 0,
+    durationMinutes: act.duration ? Math.round(act.duration / 60) : 0,
+    averageHr: act.averageHR || 0,
+    maxHr: act.maxHR || 0,
+    averagePower: (act.avgPower as number) || 0,
+    maxPower: (act.maxPower as number) || 0,
+  }));
+};
+
+export const assessProgression = (activities: any[]) => {
+  let maxRecordedHr = 0;
+  let durationSumSeconds = 0;
+
+  activities.forEach(act => {
+    if (act.maxHr > maxRecordedHr) {
+      maxRecordedHr = act.maxHr;
+    }
+    if (act.durationMinutes > 0) {
+      durationSumSeconds += act.durationMinutes * 60;
+    }
+  });
+
+  const averageRideDuration = activities.length > 0 
+    ? Math.round(durationSumSeconds / activities.length) 
+    : 120 * 60;
+
+  let estimatedMaxHr = maxRecordedHr > 0 ? maxRecordedHr : 190;
+  let estimatedLthr = Math.round(estimatedMaxHr * 0.88);
+
+  return {
+    totalCyclingRides: activities.length,
+    maxRecordedHr,
+    estimatedMaxHr,
+    estimatedLthr,
+    averageRideDurationMinutes: Math.round(averageRideDuration / 60),
+    suggestedZones: calculateDefaultZones(estimatedLthr, estimatedMaxHr)
+  };
+};
