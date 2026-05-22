@@ -52,6 +52,22 @@ const btnApplyRec = document.getElementById('btn-apply-rec');
 const activitiesList = document.getElementById('activities-list');
 const deviceDiscoveredName = document.getElementById('device-discovered-name');
 
+// Toast notification system
+const toast = (type, title, msg = '', duration = 4000) => {
+  const container = document.getElementById('toast-container');
+  const icons = { success: 'fa-circle-check', error: 'fa-circle-xmark', info: 'fa-circle-info', warn: 'fa-triangle-exclamation' };
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<i class="fa-solid ${icons[type] || icons.info} toast-icon"></i>
+    <div class="toast-body"><div class="toast-title">${title}</div>${msg ? `<div class="toast-msg">${msg}</div>` : ''}</div>
+    <button class="toast-close" onclick="this.closest('.toast').remove()"><i class="fa-solid fa-xmark"></i></button>`;
+  container.appendChild(el);
+  setTimeout(() => {
+    el.classList.add('removing');
+    el.addEventListener('animationend', () => el.remove(), { once: true });
+  }, duration);
+};
+
 // Initialize tomorrow's date in target schedule input
 const initDateInput = () => {
   const tomorrow = new Date();
@@ -119,10 +135,10 @@ loginForm.addEventListener('submit', async (e) => {
         mfaSection.classList.add('hidden');
         mfaInput.value = '';
       } else {
-        alert(`MFA failed: ${data.error || 'Invalid code'}`);
+        toast('error', 'MFA Failed', data.error || 'Invalid code. Try again.');
       }
     } catch (error) {
-      alert('Failed to contact backend MFA endpoint.');
+      toast('error', 'Connection Error', 'Failed to contact backend MFA endpoint.');
     } finally {
       btnLogin.disabled = false;
       btnLogin.innerHTML = '<span>Connect Garmin</span> <i class="fa-solid fa-arrow-right-to-bracket"></i>';
@@ -149,17 +165,17 @@ loginForm.addEventListener('submit', async (e) => {
       if (data.mfaRequired) {
         mfaSection.classList.remove('hidden');
         mfaInput.focus();
-        alert('Garmin MFA is enabled. Please enter the 6-digit code sent to you.');
+        toast('info', 'MFA Required', 'Enter the 6-digit code sent to your email or phone.');
       } else {
         isLoggedIn = true;
         updateAuthUI(true);
         passwordInput.value = '';
       }
     } else {
-      alert(`Login failed: ${data.error || 'Check details'}`);
+      toast('error', 'Login Failed', data.error || 'Check your credentials and try again.');
     }
   } catch (error) {
-    alert('Failed to contact backend login endpoint.');
+    toast('error', 'Connection Error', 'Failed to contact backend login endpoint.');
   } finally {
     btnLogin.disabled = false;
     btnLogin.innerHTML = '<span>Connect Garmin</span> <i class="fa-solid fa-arrow-right-to-bracket"></i>';
@@ -304,12 +320,12 @@ zonesForm.addEventListener('submit', async (e) => {
     if (response.ok) {
       currentProfile = updatedProfile;
       updateZonesVisualizer(updatedProfile);
-      alert('Profile saved successfully.');
+      toast('success', 'Profile Saved', 'Heart rate zones updated successfully.');
     } else {
-      alert('Failed to save profile on backend.');
+      toast('error', 'Save Failed', 'Could not save profile to backend.');
     }
   } catch (error) {
-    alert('Connection error while saving profile.');
+    toast('error', 'Connection Error', 'Could not reach backend while saving profile.');
   } finally {
     btnSave.disabled = false;
     btnSave.innerHTML = '<span>Save Heart Rate Profile</span> <i class="fa-solid fa-floppy-disk"></i>';
@@ -370,11 +386,11 @@ btnAnalyze.addEventListener('click', async () => {
       assessmentResults.classList.remove('hidden');
     } else {
       assessmentResults.classList.add('hidden');
-      alert('No recent cycling activities found in the last 30 days to assess training level.');
+      toast('warn', 'No Activities Found', 'No recent cycling activities found in the last 90 days.');
     }
   } catch (error) {
     console.error('Analysis failed:', error);
-    alert('Failed to analyze activities. Check console.');
+    toast('error', 'Analysis Failed', 'Could not fetch activities. Check the server logs.');
   } finally {
     btnAnalyze.disabled = false;
     btnAnalyze.innerHTML = '<span>Assess Fitness Level</span> <i class="fa-solid fa-wand-magic-sparkles"></i>';
@@ -448,12 +464,12 @@ btnApplyRec.addEventListener('click', async () => {
       currentProfile = suggestedProfile;
       populateProfileUI(suggestedProfile);
       assessmentResults.classList.add('hidden');
-      alert('Training zones and Heart Rate profile updated!');
+      toast('success', 'Zones Updated', 'Training zones and HR profile applied successfully.');
     } else {
-      alert('Failed to save recommended profile.');
+      toast('error', 'Update Failed', 'Could not save the recommended profile.');
     }
   } catch (error) {
-    alert('Error applying recommendation.');
+    toast('error', 'Connection Error', 'Failed to apply recommendation.');
   } finally {
     btnApplyRec.disabled = false;
     btnApplyRec.innerHTML = '<span>Accept & Update Zones</span> <i class="fa-solid fa-check-double"></i>';
@@ -491,10 +507,10 @@ btnSync.addEventListener('click', async () => {
       syncResult.classList.remove('hidden');
       syncResult.scrollIntoView({ behavior: 'smooth' });
     } else {
-      alert(`Sync failed: ${data.error || 'Check details'}`);
+      toast('error', 'Sync Failed', data.error || 'Check backend logs for details.');
     }
   } catch (error) {
-    alert('Failed to connect to backend sync endpoint.');
+    toast('error', 'Connection Error', 'Failed to connect to backend sync endpoint.');
   } finally {
     btnSync.disabled = false;
     btnSync.innerHTML = '<span>Sync & Schedule Workouts</span> <i class="fa-solid fa-cloud-arrow-up"></i>';
