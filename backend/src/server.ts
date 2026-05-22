@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
+import axios from 'axios';
 import { getGarminClient, trySessionAuth, loginGarmin } from './services/garmin.service';
 import { loadProfile, saveProfile } from './services/profile.service';
 import { fetchCyclingActivities, assessProgression } from './services/activity.service';
@@ -39,6 +40,21 @@ app.get('/api/status', async (req: Request, res: Response) => {
 
 import { GarminSSOClient } from './services/sso.service';
 import { finalizeLogin } from './services/garmin.service';
+
+// Returns the active Bearer token from the library's injected oauth2Token
+const getBearerToken = (): string | null => {
+  const client = getGarminClient();
+  return (client.client as any).oauth2Token?.access_token ?? null;
+};
+
+const garminApi = async (path: string) => {
+  const token = getBearerToken();
+  if (!token) throw new Error('No active Garmin session.');
+  const response = await axios.get(`https://connectapi.garmin.com${path}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  return response.data;
+};
 
 // Store pending SSO clients (per user session)
 const ssoClients = new Map<string, GarminSSOClient>();
@@ -93,9 +109,27 @@ app.post('/api/mfa', async (req: Request, res: Response) => {
   }
 });
 
-// Get HR Profile / Zones
-app.get('/api/profile', (req: Request, res: Response) => {
+// Get HR Profile / Zones (local config, optionally enriched with Garmin data)
+app.get('/api/profile', async (req: Request, res: Response) => {
   const profile = loadProfile();
+
+  // If not customized yet, try to pull maxHR from Garmin user settings
+  if (!profile.hasCustomOverrides && getBearerToken()) {
+    try {
+      const settings = await garminApi('/userprofile-service/userprofile/user-settings/');
+      const garminMaxHr = settings?.userData?.maxHrBpm;
+      if (garminMaxHr && garminMaxHr > 100) {
+        profile.maxHr = garminMaxHr;
+        profile.lthr = Math.round(garminMaxHr * 0.87);
+        const { calculateDefaultZones } = await import('./services/profile.service');
+        profile.zones = calculateDefaultZones(profile.lthr, profile.maxHr);
+        console.log(`[Profile] Synced maxHR=${garminMaxHr} from Garmin user settings.`);
+      }
+    } catch (e) {
+      // Non-fatal: fall back to stored defaults
+    }
+  }
+
   res.json(profile);
 });
 
@@ -122,7 +156,7 @@ app.post('/api/profile', (req: Request, res: Response) => {
 // Fetch Activities and auto-assess training level progression
 app.get('/api/activities', async (req: Request, res: Response) => {
   try {
-    const formattedActivities = await fetchCyclingActivities(30);
+    const formattedActivities = await fetchCyclingActivities(90);
     const analysis = assessProgression(formattedActivities);
     const currentProfile = loadProfile();
 
@@ -148,9 +182,7 @@ app.get('/api/devices', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Not authenticated with Garmin Connect.' });
     }
 
-    const client = getGarminClient();
-    const gcApiBase = (client.client as any).url.GC_API as string;
-    const devices = await (client.client as any).get(`${gcApiBase}/device-service/deviceregistration/devices`);
+    const devices = await garminApi('/device-service/deviceregistration/devices');
     res.json(devices);
   } catch (error: any) {
     console.error('Error fetching devices:', error);
