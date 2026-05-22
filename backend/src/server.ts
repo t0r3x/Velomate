@@ -149,7 +149,8 @@ app.get('/api/devices', async (req: Request, res: Response) => {
     }
 
     const client = getGarminClient();
-    const devices = await client.get('/device-service/deviceregistration/devices');
+    const gcApiBase = (client.client as any).url.GC_API as string;
+    const devices = await (client.client as any).get(`${gcApiBase}/device-service/deviceregistration/devices`);
     res.json(devices);
   } catch (error: any) {
     console.error('Error fetching devices:', error);

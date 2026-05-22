@@ -13,6 +13,7 @@ build/
 # Local session caches and configurations
 session.json
 config.json
+backend/session/
 
 # IDE / System files
 .vscode/
