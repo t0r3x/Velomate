@@ -51,13 +51,13 @@ app.post('/api/login', async (req: Request, res: Response) => {
     const ssoClient = new GarminSSOClient();
     const result = await ssoClient.initiate(username, password);
     
-    if (result.mfaRequired) {
+    if ('mfaRequired' in result) {
       ssoClients.set('last', ssoClient);
       pendingUsernames.set('last', username);
       return res.json({ mfaRequired: true, message: 'MFA code required.' });
     }
-    
-    if (result.success && result.ticket) {
+
+    if ('success' in result && result.ticket) {
       await finalizeLogin(result.ticket, ssoClient);
       return res.json({ success: true, message: 'Logged in successfully.' });
     }
