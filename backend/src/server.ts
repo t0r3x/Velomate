@@ -392,12 +392,13 @@ app.post('/api/sync-workouts', async (req: Request, res: Response) => {
 // ── Gemini Settings ───────────────────────────────────────────────────────────
 
 app.get('/api/settings/gemini-key', (_req: Request, res: Response) => {
-  const key = getGeminiKey();
-  if (key) {
-    res.json({ hasKey: true, maskedKey: maskKey(key) });
-  } else {
-    res.json({ hasKey: false, maskedKey: null });
-  }
+  const key          = getGeminiKey();
+  const setupComplete = getSetting('setup_complete') === '1';
+  res.json({
+    hasKey:       !!key,
+    maskedKey:    key ? maskKey(key) : null,
+    setupComplete
+  });
 });
 
 app.post('/api/settings/gemini-key', (req: Request, res: Response) => {
@@ -407,6 +408,11 @@ app.post('/api/settings/gemini-key', (req: Request, res: Response) => {
   }
   setSetting('gemini_api_key', apiKey.trim());
   setSetting('gemini_last_generated', '0'); // force regen on next check
+  res.json({ saved: true });
+});
+
+app.post('/api/settings/setup-complete', (_req: Request, res: Response) => {
+  setSetting('setup_complete', '1');
   res.json({ saved: true });
 });
 
@@ -425,6 +431,25 @@ app.get('/api/recommendation', (_req: Request, res: Response) => {
   res.json({ ...rec, stale });
 });
 
+/** Map an error from Gemini/axios to a structured HTTP response. */
+const handleGeminiError = (res: Response, error: any, context: string): void => {
+  if (error.message === 'GEMINI_KEY_NOT_CONFIGURED') {
+    res.status(400).json({ error: 'Gemini API key not configured.' });
+    return;
+  }
+  const httpStatus = error.response?.status;
+  if (httpStatus === 429) {
+    console.warn(`[Gemini] ${context}: rate limit (429) — backing off.`);
+    res.status(429).json({
+      error: 'Gemini rate limit reached.',
+      details: 'You have exceeded the Gemini free-tier quota. Wait a minute and try again, or check your API key usage at aistudio.google.com.'
+    });
+    return;
+  }
+  console.error(`[Gemini] ${context}:`, error.message);
+  res.status(500).json({ error: 'Failed to generate recommendation.', details: error.message });
+};
+
 app.post('/api/recommendation/refresh', async (req: Request, res: Response) => {
   try {
     const current = getStoredRecommendation();
@@ -432,11 +457,7 @@ app.post('/api/recommendation/refresh', async (req: Request, res: Response) => {
     setSetting('gemini_last_generated', new Date().toISOString());
     res.json(result);
   } catch (error: any) {
-    if (error.message === 'GEMINI_KEY_NOT_CONFIGURED') {
-      return res.status(400).json({ error: 'Gemini API key not configured.' });
-    }
-    console.error('[Gemini] Refresh error:', error.message);
-    res.status(500).json({ error: 'Failed to generate recommendation.', details: error.message });
+    handleGeminiError(res, error, 'Refresh error');
   }
 });
 
@@ -449,11 +470,7 @@ app.post('/api/recommendation/skip-today', async (req: Request, res: Response) =
     setSetting('gemini_last_generated', new Date().toISOString());
     res.json(result);
   } catch (error: any) {
-    if (error.message === 'GEMINI_KEY_NOT_CONFIGURED') {
-      return res.status(400).json({ error: 'Gemini API key not configured.' });
-    }
-    console.error('[Gemini] Skip-today error:', error.message);
-    res.status(500).json({ error: 'Failed to skip and regenerate.', details: error.message });
+    handleGeminiError(res, error, 'Skip-today error');
   }
 });
 
@@ -490,7 +507,11 @@ const runGeminiAutoCheck = async () => {
       console.log('[Gemini] Auto-check: plan is fresh, no regen needed.');
     }
   } catch (err: any) {
-    console.warn('[Gemini] Auto-check failed:', err.message);
+    if (err.response?.status === 429) {
+      console.warn('[Gemini] Auto-check: rate limit (429) — will retry next hour.');
+    } else {
+      console.warn('[Gemini] Auto-check failed:', err.message);
+    }
   }
 };
 

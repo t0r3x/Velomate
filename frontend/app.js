@@ -4,10 +4,12 @@ const API_BASE_URL = 'http://localhost:3001';
 // State variables
 let isLoggedIn            = false;
 let geminiConfigured      = false;
+let setupComplete         = false;   // persisted in DB settings table, not localStorage
 let currentProfile        = null;
 let suggestedProfile      = null;
 let devicesLoaded         = false;
 let currentRecommendation = null;
+let psModalMode           = false;   // true when HR profile opened as overlay over dashboard
 
 // DOM Elements
 const statusDot        = document.getElementById('status-dot');
@@ -88,9 +90,6 @@ const viewSetup         = document.getElementById('view-setup');
 const viewProfileSetup  = document.getElementById('view-profile-setup');
 const viewDashboard     = document.getElementById('view-dashboard');
 
-// localStorage flag — set once the user has confirmed their HR profile
-const SETUP_COMPLETE_KEY = 'innerjoin_setup_complete';
-
 const setView = (name) => {
   viewSetup.classList.toggle('hidden',        name !== 'setup');
   viewProfileSetup.classList.toggle('hidden', name !== 'profile-setup');
@@ -134,10 +133,26 @@ const updatePsZonesBar = (maxHr, lthr) => {
   if (hint) hint.textContent = `Z4: ${z.z4.min}–${lthr} bpm  ·  Z5: ${lthr + 1}–${maxHr} bpm`;
 };
 
-/** Auto-fetch Garmin data and show the HR profile setup form (Step 2). */
-const enterProfileSetup = async () => {
-  setView('profile-setup');
-  closePanel();
+/** Close the profile-setup modal (only used when psModalMode is true). */
+const closePsModal = () => {
+  psModalMode = false;
+  viewProfileSetup.classList.add('hidden');
+  viewProfileSetup.classList.remove('ps-modal');
+};
+
+/** Auto-fetch Garmin data and show the HR profile setup form (Step 2).
+ *  Pass fromDashboard=true to show it as a modal overlay over the dashboard. */
+const enterProfileSetup = async (fromDashboard = false) => {
+  psModalMode = fromDashboard;
+  if (fromDashboard) {
+    // Modal mode: overlay over the current dashboard — don't change main view
+    viewProfileSetup.classList.remove('hidden');
+    viewProfileSetup.classList.add('ps-modal');
+    closePanel();
+  } else {
+    setView('profile-setup');
+    closePanel();
+  }
 
   const loadingEl = document.getElementById('ps-loading');
   const formEl    = document.getElementById('ps-form');
@@ -186,9 +201,9 @@ const maybeEnterDashboard = () => {
   // Only act when the user is still on the initial setup screen
   if (viewSetup.classList.contains('hidden')) return;
 
-  // Only skip Step 2 when the user has explicitly confirmed their HR profile
-  // via the profile-setup screen (which sets SETUP_COMPLETE_KEY in localStorage).
-  if (localStorage.getItem(SETUP_COMPLETE_KEY)) {
+  // Only skip Step 2 when the user has explicitly confirmed their HR profile.
+  // setupComplete is loaded from the DB on init via fetchGeminiKeyStatus().
+  if (setupComplete) {
     setView('dashboard');
     closePanel();
   } else {
@@ -258,7 +273,7 @@ const workoutTypeLabel = { Sprint: 'Sprint',  Threshold: 'Threshold',           
 
 /** Show/hide the correct state panel inside the AI card. */
 const setRecState = (state) => {
-  const states = ['not-configured', 'loading', 'loaded', 'error'];
+  const states = ['not-configured', 'no-plan', 'loading', 'loaded', 'error'];
   states.forEach(s => {
     const el = document.getElementById(`rec-state-${s}`);
     if (el) el.classList.toggle('hidden', s !== state);
@@ -375,12 +390,13 @@ const renderRecommendation = (rec) => {
   }
 };
 
-/** Fetch Gemini key status from backend, update panel UI and gate state. */
+/** Fetch Gemini key status + setupComplete flag from backend, update panel UI and gate state. */
 const fetchGeminiKeyStatus = async () => {
   try {
     const res  = await fetch(`${API_BASE_URL}/api/settings/gemini-key`);
     const data = await res.json();
     geminiConfigured = !!data.hasKey;
+    setupComplete    = !!data.setupComplete;
     if (data.hasKey) {
       geminiKeyStatus.classList.remove('hidden');
       geminiKeyMasked.textContent = data.maskedKey;
@@ -388,7 +404,7 @@ const fetchGeminiKeyStatus = async () => {
       geminiKeyStatus.classList.add('hidden');
     }
     updateSetupSteps();
-    maybeEnterDashboard();   // fire gate now that geminiConfigured is known
+    maybeEnterDashboard();   // fire gate now that both flags are known
   } catch {
     // non-critical
   }
@@ -403,7 +419,10 @@ const fetchRecommendation = async (forceRefresh = false) => {
       const res = await fetch(`${API_BASE_URL}/api/recommendation/refresh`, { method: 'POST' });
       if (!res.ok) {
         const err = await res.json();
-        document.getElementById('rec-error-msg').textContent = err.details || err.error || 'Failed to get recommendation.';
+        const is429 = res.status === 429;
+        document.getElementById('rec-error-msg').textContent = is429
+          ? 'Gemini rate limit reached — please wait a minute and try again.'
+          : (err.details || err.error || 'Failed to get recommendation.');
         setRecState('error');
         return;
       }
@@ -412,7 +431,7 @@ const fetchRecommendation = async (forceRefresh = false) => {
       const res = await fetch(`${API_BASE_URL}/api/recommendation`);
       data = await res.json();
       if (data.notConfigured) { setRecState('not-configured'); return; }
-      if (data.noData)        { setRecState('not-configured'); return; } // no plan yet — wait for explicit refresh or daily auto-check
+      if (data.noData)        { setRecState('no-plan'); return; }        // key is set but no plan yet
       // stale: show existing plan as-is; backend hourly check will regenerate
     }
     renderRecommendation(data);
@@ -987,10 +1006,18 @@ btnConfirmProfile.addEventListener('click', async () => {
       currentProfile = profile;
       populateProfileUI(profile);
       updateHeaderHrLabel(profile);
-      localStorage.setItem(SETUP_COMPLETE_KEY, '1');
-      loadDashboard();
-      fetchRecommendation(true);   // first-time: generate initial plan immediately
-      setView('dashboard');
+      if (psModalMode) {
+        // Called from dashboard settings — close the modal overlay
+        closePsModal();
+        toast('success', 'HR Profile Updated', 'Training zones recalculated and saved.');
+      } else {
+        // First-time setup flow — mark complete in DB, then proceed to dashboard
+        setupComplete = true;
+        await fetch(`${API_BASE_URL}/api/settings/setup-complete`, { method: 'POST' });
+        loadDashboard();
+        fetchRecommendation(true);   // first-time: generate initial plan immediately
+        setView('dashboard');
+      }
     } else {
       toast('error', 'Save Failed', 'Could not save HR profile. Please try again.');
     }
@@ -1005,41 +1032,24 @@ btnConfirmProfile.addEventListener('click', async () => {
 // ── Init ───────────────────────────────────────────────────────────────────────
 
 btnRefreshDevices.addEventListener('click', refreshDevices);
-// ── Gemini usage guard ─────────────────────────────────────────────────────────
-const GEMINI_USAGE_KEY = 'gemini_manual_refresh';
-
-const trackManualGeminiRefresh = () => {
-  const today = new Date().toLocaleDateString('sv-SE');
-  let entry = {};
-  try { entry = JSON.parse(localStorage.getItem(GEMINI_USAGE_KEY) || '{}'); } catch {}
-
-  if (entry.date !== today) entry = { date: today, count: 0 };
-  entry.count += 1;
-  localStorage.setItem(GEMINI_USAGE_KEY, JSON.stringify(entry));
-
-  if (entry.count >= 10) {
-    toast('warn', 'High Gemini Usage Today',
-      'You\'ve manually refreshed the AI plan 10 times or more today. ' +
-      'Costs may apply if you exceed your free-tier limits — ' +
-      'limits are typically generous, but consider this an early heads-up.');
-  }
-};
-
-btnRefreshRec.addEventListener('click', () => { trackManualGeminiRefresh(); fetchRecommendation(true); });
+btnRefreshRec.addEventListener('click', () => fetchRecommendation(true));
 btnSkipToday.addEventListener('click', skipToday);
 btnRetryRec.addEventListener('click', () => fetchRecommendation(false));
 btnOpenPanelFromRec.addEventListener('click', openPanel);
+document.getElementById('btn-generate-first-plan').addEventListener('click', () => {
+  fetchRecommendation(true);
+});
+document.getElementById('btn-cancel-profile').addEventListener('click', closePsModal);
 document.getElementById('btn-edit-hr-profile').addEventListener('click', () => {
-  // Re-open profile-setup screen from anywhere — re-fetches Garmin data for fresh suggestions
-  enterProfileSetup();
+  closePanel();
+  // Open as modal overlay — re-fetches Garmin data for fresh suggestions
+  enterProfileSetup(true);
 });
 
-// Immediately hide the setup screen for configured users — prevents flash on reload.
-// Async calls below will confirm/correct the state once they resolve.
-if (localStorage.getItem(SETUP_COMPLETE_KEY)) setView('dashboard');
-
+// fetchGeminiKeyStatus() fetches setupComplete from the DB and calls maybeEnterDashboard().
+// Since the backend is localhost, the transition happens in < 50 ms — imperceptible.
 loadDashboard();              // immediate: render whatever is in the DB (no Garmin needed)
 checkStatus();                // parallel: check session and enable live features if connected
-fetchGeminiKeyStatus();       // show masked key in panel if already saved
+fetchGeminiKeyStatus();       // fetch geminiConfigured + setupComplete → routes to correct view
 fetchRecommendation();        // load recommendation from DB cache immediately
 setInterval(checkStatus, 30000);

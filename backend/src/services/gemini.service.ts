@@ -173,7 +173,7 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[]): Promis
       generationConfig: {
         responseMimeType: 'application/json',
         temperature: 0.4,
-        maxOutputTokens: 1200
+        maxOutputTokens: 4096
       }
     }
   );
@@ -185,7 +185,9 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[]): Promis
   try {
     parsed = JSON.parse(rawText);
   } catch (e) {
-    throw new Error(`Gemini returned invalid JSON: ${rawText.slice(0, 200)}`);
+    const snippet = rawText.slice(0, 300);
+    const truncated = rawText.length >= 300 ? '… (truncated)' : '';
+    throw new Error(`Gemini returned invalid JSON (${rawText.length} chars):\n${snippet}${truncated}`);
   }
 
   // Validate required fields
