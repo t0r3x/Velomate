@@ -701,7 +701,7 @@ const renderActivities = (activities) => {
   if (!activities || activities.length === 0) {
     const p = document.createElement('p');
     p.className   = 'helper-text empty-state-text';
-    p.textContent = 'No recent cycling activities found.';
+    p.textContent = 'No rides yet. Click "Refresh from Garmin" to sync your rides.';
     activitiesList.appendChild(p);
     return;
   }
