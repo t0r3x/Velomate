@@ -167,7 +167,7 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[]): Promis
   const prompt = buildPrompt(previousPlan);
 
   const response = await axios.post(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${key}`,
     {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {

@@ -37,7 +37,7 @@ const geminiKeyForm       = document.getElementById('gemini-key-form');
 const geminiApiKeyInput   = document.getElementById('gemini-api-key');
 const geminiKeyStatus     = document.getElementById('gemini-key-status');
 const geminiKeyMasked     = document.getElementById('gemini-key-masked');
-const btnSaveGeminiKey    = document.getElementById('btn-save-gemini-key');
+const btnSaveAll          = document.getElementById('btn-save-all');
 const btnRefreshRec       = document.getElementById('btn-refresh-rec');
 const btnSkipToday        = document.getElementById('btn-skip-today');
 const btnRetryRec         = document.getElementById('btn-retry-rec');
@@ -57,21 +57,6 @@ const aiNextWeekSummary   = document.getElementById('ai-next-week-summary');
 const aiNextWeekChips     = document.getElementById('ai-next-week-chips');
 const aiNextWeekEmphasis  = document.getElementById('ai-next-week-emphasis');
 const aiSyncNote          = document.getElementById('ai-sync-note');
-
-const maxHrInput = document.getElementById('profile-max-hr');
-const lthrInput  = document.getElementById('profile-lthr');
-const zonesForm  = document.getElementById('zones-form');
-
-const z1Min = document.getElementById('z1-min');
-const z1Max = document.getElementById('z1-max');
-const z2Min = document.getElementById('z2-min');
-const z2Max = document.getElementById('z2-max');
-const z3Min = document.getElementById('z3-min');
-const z3Max = document.getElementById('z3-max');
-const z4Min = document.getElementById('z4-min');
-const z4Max = document.getElementById('z4-max');
-const z5Min = document.getElementById('z5-min');
-const z5Max = document.getElementById('z5-max');
 
 const btnAnalyze        = document.getElementById('btn-analyze');
 const assessmentResults = document.getElementById('assessment-results');
@@ -99,12 +84,17 @@ const setBtn = (btn, state) => {
 };
 
 // ── Views ──────────────────────────────────────────────────────────────────────
-const viewSetup     = document.getElementById('view-setup');
-const viewDashboard = document.getElementById('view-dashboard');
+const viewSetup         = document.getElementById('view-setup');
+const viewProfileSetup  = document.getElementById('view-profile-setup');
+const viewDashboard     = document.getElementById('view-dashboard');
+
+// localStorage flag — set once the user has confirmed their HR profile
+const SETUP_COMPLETE_KEY = 'innerjoin_setup_complete';
 
 const setView = (name) => {
-  viewSetup.classList.toggle('hidden',     name !== 'setup');
-  viewDashboard.classList.toggle('hidden', name !== 'dashboard');
+  viewSetup.classList.toggle('hidden',        name !== 'setup');
+  viewProfileSetup.classList.toggle('hidden', name !== 'profile-setup');
+  viewDashboard.classList.toggle('hidden',    name !== 'dashboard');
 };
 
 /** Update the visual status of each step on the setup screen. */
@@ -121,12 +111,89 @@ const updateSetupSteps = () => {
   geminiStatus.textContent = geminiConfigured ? '✓ Configured' : '–';
 };
 
-/** Switch to dashboard only when both Garmin and Gemini are ready. */
+/** Calculate HR zones from LTHR and max HR (mirrors backend calculateDefaultZones). */
+const calcZones = (lthr, maxHr) => ({
+  z1: { min: 0,                            max: Math.round(lthr * 0.65) },
+  z2: { min: Math.round(lthr * 0.65) + 1, max: Math.round(lthr * 0.80) },
+  z3: { min: Math.round(lthr * 0.80) + 1, max: Math.round(lthr * 0.89) },
+  z4: { min: Math.round(lthr * 0.89) + 1, max: lthr },
+  z5: { min: lthr + 1,                     max: maxHr }
+});
+
+/** Refresh the zone visualiser inside the profile-setup view. */
+const updatePsZonesBar = (maxHr, lthr) => {
+  const bar = document.getElementById('ps-zones-bar');
+  if (!bar) return;
+  const z = calcZones(lthr, maxHr);
+  bar.querySelector('.z1').style.width = `${Math.max(1, Math.round(z.z1.max / maxHr * 100))}%`;
+  bar.querySelector('.z2').style.width = `${Math.max(1, Math.round((z.z2.max - z.z2.min) / maxHr * 100))}%`;
+  bar.querySelector('.z3').style.width = `${Math.max(1, Math.round((z.z3.max - z.z3.min) / maxHr * 100))}%`;
+  bar.querySelector('.z4').style.width = `${Math.max(1, Math.round((z.z4.max - z.z4.min) / maxHr * 100))}%`;
+  bar.querySelector('.z5').style.width = `${Math.max(1, Math.round((maxHr - lthr) / maxHr * 100))}%`;
+  const hint = document.getElementById('ps-zones-hint');
+  if (hint) hint.textContent = `Z4: ${z.z4.min}–${lthr} bpm  ·  Z5: ${lthr + 1}–${maxHr} bpm`;
+};
+
+/** Auto-fetch Garmin data and show the HR profile setup form (Step 2). */
+const enterProfileSetup = async () => {
+  setView('profile-setup');
+  closePanel();
+
+  const loadingEl = document.getElementById('ps-loading');
+  const formEl    = document.getElementById('ps-form');
+  const noticeEl  = document.getElementById('ps-notice');
+  loadingEl.classList.remove('hidden');
+  formEl.classList.add('hidden');
+
+  let maxHr = currentProfile?.maxHr || 190;
+  let lthr  = currentProfile?.lthr  || 165;
+
+  try {
+    const res  = await fetch(`${API_BASE_URL}/api/activities/refresh`, { method: 'POST' });
+    const data = await res.json();
+    if (res.ok && data.analysis?.estimatedMaxHr) {
+      maxHr = data.analysis.estimatedMaxHr;
+      lthr  = data.analysis.estimatedLthr || lthr;
+      const rides = data.analysis.totalCyclingRides || 0;
+      noticeEl.textContent = `Suggested from ${rides} ride${rides !== 1 ? 's' : ''} — adjust if needed.`;
+      noticeEl.className   = 'ps-notice ps-notice-success';
+      // Propagate fresh profile + analysis to dashboard state
+      if (data.currentProfile) currentProfile = data.currentProfile;
+    } else {
+      noticeEl.textContent = 'No Garmin rides yet — using defaults. Adjust to match your fitness level.';
+      noticeEl.className   = 'ps-notice ps-notice-info';
+    }
+  } catch {
+    noticeEl.textContent = 'Garmin data unavailable — using defaults. You can update at any time.';
+    noticeEl.className   = 'ps-notice ps-notice-info';
+  }
+
+  document.getElementById('ps-max-hr').value = maxHr;
+  document.getElementById('ps-lthr').value   = lthr;
+  updatePsZonesBar(maxHr, lthr);
+
+  loadingEl.classList.add('hidden');
+  formEl.classList.remove('hidden');
+};
+
+/** Transition from setup screen when both Garmin and Gemini are ready.
+ *  Routes to the HR Profile setup (Step 2) for new users, or directly
+ *  to the dashboard for returning users. Never interrupts later views. */
 const maybeEnterDashboard = () => {
   updateSetupSteps();
-  if (isLoggedIn && geminiConfigured) {
+  if (!isLoggedIn || !geminiConfigured) return;
+
+  // Only act when the user is still on the initial setup screen
+  if (viewSetup.classList.contains('hidden')) return;
+
+  // Only skip Step 2 when the user has explicitly confirmed their HR profile
+  // via the profile-setup screen (which sets SETUP_COMPLETE_KEY in localStorage).
+  if (localStorage.getItem(SETUP_COMPLETE_KEY)) {
     setView('dashboard');
     closePanel();
+  } else {
+    // New user OR returning user who hasn't confirmed Step 2 yet
+    enterProfileSetup();
   }
 };
 
@@ -321,6 +388,7 @@ const fetchGeminiKeyStatus = async () => {
       geminiKeyStatus.classList.add('hidden');
     }
     updateSetupSteps();
+    maybeEnterDashboard();   // fire gate now that geminiConfigured is known
   } catch {
     // non-critical
   }
@@ -344,8 +412,8 @@ const fetchRecommendation = async (forceRefresh = false) => {
       const res = await fetch(`${API_BASE_URL}/api/recommendation`);
       data = await res.json();
       if (data.notConfigured) { setRecState('not-configured'); return; }
-      if (data.noData)        { return fetchRecommendation(true); } // silent auto-regen
-      if (data.stale)         { toast('info', 'Plan updating…', 'Your plan is over 24h old — refreshing.'); }
+      if (data.noData)        { setRecState('not-configured'); return; } // no plan yet — wait for explicit refresh or daily auto-check
+      // stale: show existing plan as-is; backend hourly check will regenerate
     }
     renderRecommendation(data);
     setRecState('loaded');
@@ -530,106 +598,14 @@ const fetchProfile = async () => {
   }
 };
 
-// Fill inputs with profile data
+// Update state + header label when profile changes
 const populateProfileUI = (profile) => {
-  maxHrInput.value = profile.maxHr;
-  lthrInput.value  = profile.lthr;
-
-  z1Min.value = profile.zones.z1.min;
-  z1Max.value = profile.zones.z1.max;
-  z2Min.value = profile.zones.z2.min;
-  z2Max.value = profile.zones.z2.max;
-  z3Min.value = profile.zones.z3.min;
-  z3Max.value = profile.zones.z3.max;
-  z4Min.value = profile.zones.z4.min;
-  z4Max.value = profile.zones.z4.max;
-  z5Min.value = profile.zones.z5.min;
-  z5Max.value = profile.zones.z5.max;
-
-  updateZonesVisualizer(profile);
+  currentProfile = profile;
+  updateHeaderHrLabel(profile);
 };
 
-// Recalculate segment widths for the stacked zone bar
-const updateZonesVisualizer = (profile) => {
-  const max  = profile.maxHr || 190;
-  const z1Pct = Math.round((profile.zones.z1.max / max) * 100);
-  const z2Pct = Math.round(((profile.zones.z2.max - profile.zones.z2.min) / max) * 100);
-  const z3Pct = Math.round(((profile.zones.z3.max - profile.zones.z3.min) / max) * 100);
-  const z4Pct = Math.round(((profile.zones.z4.max - profile.zones.z4.min) / max) * 100);
-  const z5Pct = Math.round(((max - profile.zones.z5.min) / max) * 100);
-
-  const seg = (cls) => document.querySelector(`.zone-bar-segment.${cls}`);
-
-  Object.entries({ z1: z1Pct, z2: z2Pct, z3: z3Pct, z4: z4Pct, z5: z5Pct }).forEach(([z, pct]) => {
-    seg(z).style.width = `${pct}%`;
-  });
-  seg('z1').title = `Zone 1: 0 - ${profile.zones.z1.max} bpm`;
-  seg('z2').title = `Zone 2: ${profile.zones.z2.min} - ${profile.zones.z2.max} bpm`;
-  seg('z3').title = `Zone 3: ${profile.zones.z3.min} - ${profile.zones.z3.max} bpm`;
-  seg('z4').title = `Zone 4: ${profile.zones.z4.min} - ${profile.zones.z4.max} bpm`;
-  seg('z5').title = `Zone 5: ${profile.zones.z5.min} - ${profile.maxHr} bpm`;
-};
-
-// Auto-compute zone boundaries when Max HR or LTHR change
-const autoBoundariesFromInput = () => {
-  const lthr  = parseInt(lthrInput.value)  || 165;
-  const maxHr = parseInt(maxHrInput.value) || 190;
-
-  const z1Limit = Math.round(lthr * 0.65);
-  const z2Limit = Math.round(lthr * 0.80);
-  const z3Limit = Math.round(lthr * 0.89);
-
-  z1Max.value = z1Limit;
-  z2Min.value = z1Limit + 1;  z2Max.value = z2Limit;
-  z3Min.value = z2Limit + 1;  z3Max.value = z3Limit;
-  z4Min.value = z3Limit + 1;  z4Max.value = lthr;
-  z5Min.value = lthr + 1;     z5Max.value = maxHr;
-};
-
-lthrInput.addEventListener('input', autoBoundariesFromInput);
-maxHrInput.addEventListener('input', autoBoundariesFromInput);
-
-// Save updated profile
-zonesForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const btnSave = document.getElementById('btn-save-profile');
-  btnSave.disabled = true;
-  setBtn(btnSave, 'loading');
-
-  const updatedProfile = {
-    maxHr: parseInt(maxHrInput.value),
-    lthr:  parseInt(lthrInput.value),
-    zones: {
-      z1: { min: 0,                     max: parseInt(z1Max.value) },
-      z2: { min: parseInt(z2Min.value), max: parseInt(z2Max.value) },
-      z3: { min: parseInt(z3Min.value), max: parseInt(z3Max.value) },
-      z4: { min: parseInt(z4Min.value), max: parseInt(z4Max.value) },
-      z5: { min: parseInt(z5Min.value), max: parseInt(z5Max.value) }
-    }
-  };
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/profile`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedProfile)
-    });
-
-    if (response.ok) {
-      currentProfile = updatedProfile;
-      updateZonesVisualizer(updatedProfile);
-      updateHeaderHrLabel(updatedProfile);
-      toast('success', 'Profile Saved', 'Heart rate zones updated successfully.');
-    } else {
-      toast('error', 'Save Failed', 'Could not save profile to backend.');
-    }
-  } catch (error) {
-    toast('error', 'Connection Error', 'Could not reach backend while saving profile.');
-  } finally {
-    btnSave.disabled = false;
-    setBtn(btnSave, 'idle');
-  }
-});
+// Prevent Enter-key submission on the Gemini key form
+geminiKeyForm.addEventListener('submit', e => e.preventDefault());
 
 // ── Devices ────────────────────────────────────────────────────────────────────
 
@@ -861,7 +837,6 @@ btnApplyRec.addEventListener('click', async () => {
 
     if (response.ok) {
       currentProfile = suggestedProfile;
-      populateProfileUI(suggestedProfile);
       updateHeaderHrLabel(suggestedProfile);
       assessmentResults.classList.add('hidden');
       toast('success', 'Zones Updated', 'Training zones and heart rate profile applied successfully.');
@@ -931,38 +906,99 @@ btnSync.addEventListener('click', async () => {
   }
 });
 
-// ── Gemini Key Form ────────────────────────────────────────────────────────────
+// ── Save Settings (Gemini key) ────────────────────────────────────────────────
+// HR profile is configured separately in the Step-2 setup screen.
 
-geminiKeyForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const key = geminiApiKeyInput.value.trim();
-  if (!key) return;
+btnSaveAll.addEventListener('click', async () => {
+  btnSaveAll.disabled = true;
+  setBtn(btnSaveAll, 'loading');
 
-  btnSaveGeminiKey.disabled = true;
-  setBtn(btnSaveGeminiKey, 'loading');
+  const newKey    = geminiApiKeyInput.value.trim();
+  const onSetup   = !viewSetup.classList.contains('hidden');   // Step 1 screen visible
+  const onDashboard = !viewDashboard.classList.contains('hidden');
+
+  if (newKey) {
+    // Save the new Gemini API key
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/settings/gemini-key`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: newKey })
+      });
+      if (res.ok) {
+        geminiApiKeyInput.value = '';
+        await fetchGeminiKeyStatus();   // refreshes geminiConfigured flag
+        if (onDashboard) {
+          // Already on dashboard — just confirm and close
+          toast('success', 'Gemini Key Updated', 'New API key saved.');
+          closePanel();
+        } else {
+          maybeEnterDashboard();        // setup → profile-setup or dashboard
+        }
+      } else {
+        const err = await res.json();
+        toast('error', 'Save Failed', err.error || 'Could not save Gemini API key.');
+      }
+    } catch {
+      toast('error', 'Connection Error', 'Could not reach backend.');
+    }
+  } else if (onDashboard) {
+    // On dashboard, nothing to save — just close the panel
+    closePanel();
+  } else if (onSetup && geminiConfigured) {
+    // On setup screen, key already saved — move forward
+    maybeEnterDashboard();
+  } else {
+    toast('warn', 'Gemini Key Required', 'Enter your Google Gemini API key to continue.');
+  }
+
+  btnSaveAll.disabled = false;
+  setBtn(btnSaveAll, 'idle');
+});
+
+// ── Profile Setup (Step 2) ────────────────────────────────────────────────────
+
+const psMaxHrInput      = document.getElementById('ps-max-hr');
+const psLthrInput       = document.getElementById('ps-lthr');
+const btnConfirmProfile = document.getElementById('btn-confirm-profile');
+
+const onPsInputChange = () => {
+  updatePsZonesBar(parseInt(psMaxHrInput.value) || 190, parseInt(psLthrInput.value) || 165);
+};
+psMaxHrInput.addEventListener('input', onPsInputChange);
+psLthrInput.addEventListener('input', onPsInputChange);
+
+btnConfirmProfile.addEventListener('click', async () => {
+  const maxHr  = parseInt(psMaxHrInput.value) || 190;
+  const lthr   = parseInt(psLthrInput.value)  || 165;
+  const zones  = calcZones(lthr, maxHr);
+  const profile = { maxHr, lthr, zones, hasCustomOverrides: true };
+
+  btnConfirmProfile.disabled = true;
+  setBtn(btnConfirmProfile, 'loading');
 
   try {
-    const res = await fetch(`${API_BASE_URL}/api/settings/gemini-key`, {
+    const res = await fetch(`${API_BASE_URL}/api/profile`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey: key })
+      body: JSON.stringify(profile)
     });
-
     if (res.ok) {
-      geminiApiKeyInput.value = '';
-      await fetchGeminiKeyStatus();   // sets geminiConfigured = true, calls updateSetupSteps
-      toast('success', 'API Key Saved', 'Gemini connected — generating your plan…');
-      fetchRecommendation(true);      // kick off generation in background
-      maybeEnterDashboard();          // enters dashboard if Garmin is also ready
+      currentProfile = profile;
+      populateProfileUI(profile);
+      updateHeaderHrLabel(profile);
+      localStorage.setItem(SETUP_COMPLETE_KEY, '1');
+      loadDashboard();
+      fetchRecommendation(true);   // first-time: generate initial plan immediately
+      setView('dashboard');
     } else {
-      const err = await res.json();
-      toast('error', 'Save Failed', err.error || 'Could not save API key.');
+      toast('error', 'Save Failed', 'Could not save HR profile. Please try again.');
     }
   } catch {
-    toast('error', 'Connection Error', 'Could not reach backend while saving API key.');
+    toast('error', 'Connection Error', 'Could not reach backend.');
   } finally {
-    btnSaveGeminiKey.disabled = false;
-    setBtn(btnSaveGeminiKey, 'idle');
+    btnConfirmProfile.disabled = false;
+    setBtn(btnConfirmProfile, 'idle');
   }
 });
 
@@ -993,6 +1029,14 @@ btnRefreshRec.addEventListener('click', () => { trackManualGeminiRefresh(); fetc
 btnSkipToday.addEventListener('click', skipToday);
 btnRetryRec.addEventListener('click', () => fetchRecommendation(false));
 btnOpenPanelFromRec.addEventListener('click', openPanel);
+document.getElementById('btn-edit-hr-profile').addEventListener('click', () => {
+  // Re-open profile-setup screen from anywhere — re-fetches Garmin data for fresh suggestions
+  enterProfileSetup();
+});
+
+// Immediately hide the setup screen for configured users — prevents flash on reload.
+// Async calls below will confirm/correct the state once they resolve.
+if (localStorage.getItem(SETUP_COMPLETE_KEY)) setView('dashboard');
 
 loadDashboard();              // immediate: render whatever is in the DB (no Garmin needed)
 checkStatus();                // parallel: check session and enable live features if connected

@@ -123,111 +123,25 @@
               <input type="password" id="gemini-api-key" placeholder="AIza…" autocomplete="off">
             </div>
           </div>
-          <button type="submit" class="btn btn-secondary" id="btn-save-gemini-key"
-            data-idle-label="Save API Key"    data-idle-icon="fa-floppy-disk"
-            data-loading-label="Saving…"      data-loading-icon="fa-spinner fa-spin">
-            <span>Save API Key</span>
-            <i class="fa-solid fa-floppy-disk"></i>
-          </button>
         </form>
       </div>
 
-      <div class="panel-divider"></div>
-
-      <!-- Heart Rate Profile Section -->
-      <div class="panel-section">
-        <div class="panel-section-label">
-          <i class="fa-solid fa-heart-pulse pulsate"></i>
-          <span>Heart Rate Profile</span>
-        </div>
-
-        <!-- HR Stats row -->
-        <div class="hr-stats-row">
-          <div class="hr-stat-box">
-            <span class="stat-label">Max HR (bpm)</span>
-            <input type="number" id="profile-max-hr" value="190" class="stat-value-input">
-          </div>
-          <div class="hr-stat-box">
-            <span class="stat-label">LTHR (bpm)</span>
-            <input type="number" id="profile-lthr" value="165" class="stat-value-input">
-          </div>
-        </div>
-
-        <!-- Visual Zones Bar -->
-        <div class="zones-visualizer-container">
-          <h3>Heart Rate Zones</h3>
-          <div class="zones-stacked-bar">
-            <div class="zone-bar-segment z1" style="width: 20%;" title="Zone 1: Recovery">Z1</div>
-            <div class="zone-bar-segment z2" style="width: 25%;" title="Zone 2: Endurance">Z2</div>
-            <div class="zone-bar-segment z3" style="width: 20%;" title="Zone 3: Tempo">Z3</div>
-            <div class="zone-bar-segment z4" style="width: 15%;" title="Zone 4: Threshold">Z4</div>
-            <div class="zone-bar-segment z5" style="width: 20%;" title="Zone 5: Anaerobic">Z5</div>
-          </div>
-        </div>
-
-        <!-- Zones Inputs List -->
-        <form id="zones-form" class="zones-editor-form">
-          <div class="zone-input-row z1-row">
-            <span class="zone-badge z1-badge">Zone 1</span>
-            <span class="zone-name">Active Recovery</span>
-            <div class="zone-range-inputs">
-              <input type="number" id="z1-min" readonly value="0">
-              <span>to</span>
-              <input type="number" id="z1-max" required>
-              <span class="unit">bpm</span>
-            </div>
-          </div>
-          <div class="zone-input-row z2-row">
-            <span class="zone-badge z2-badge">Zone 2</span>
-            <span class="zone-name">Aerobic Base</span>
-            <div class="zone-range-inputs">
-              <input type="number" id="z2-min" required>
-              <span>to</span>
-              <input type="number" id="z2-max" required>
-              <span class="unit">bpm</span>
-            </div>
-          </div>
-          <div class="zone-input-row z3-row">
-            <span class="zone-badge z3-badge">Zone 3</span>
-            <span class="zone-name">Tempo</span>
-            <div class="zone-range-inputs">
-              <input type="number" id="z3-min" required>
-              <span>to</span>
-              <input type="number" id="z3-max" required>
-              <span class="unit">bpm</span>
-            </div>
-          </div>
-          <div class="zone-input-row z4-row">
-            <span class="zone-badge z4-badge">Zone 4</span>
-            <span class="zone-name">Lactate Threshold</span>
-            <div class="zone-range-inputs">
-              <input type="number" id="z4-min" required>
-              <span>to</span>
-              <input type="number" id="z4-max" required>
-              <span class="unit">bpm</span>
-            </div>
-          </div>
-          <div class="zone-input-row z5-row">
-            <span class="zone-badge z5-badge">Zone 5</span>
-            <span class="zone-name">Anaerobic Sprint</span>
-            <div class="zone-range-inputs">
-              <input type="number" id="z5-min" required>
-              <span>to</span>
-              <input type="number" id="z5-max" required>
-              <span class="unit">bpm</span>
-            </div>
-          </div>
-
-          <button type="submit" class="btn btn-secondary" id="btn-save-profile"
-            data-idle-label="Save Heart Rate Profile"  data-idle-icon="fa-floppy-disk"
-            data-loading-label="Saving…"               data-loading-icon="fa-spinner fa-spin">
-            <span>Save Heart Rate Profile</span>
-            <i class="fa-solid fa-floppy-disk"></i>
-          </button>
-        </form>
-      </div>
 
     </div><!-- /settings-panel-body -->
+
+    <!-- Sticky save footer -->
+    <div class="settings-panel-footer">
+      <button class="btn btn-primary" id="btn-save-all"
+        data-idle-label="Save Settings"    data-idle-icon="fa-floppy-disk"
+        data-loading-label="Saving…"       data-loading-icon="fa-spinner fa-spin">
+        <span>Save Settings</span>
+        <i class="fa-solid fa-floppy-disk"></i>
+      </button>
+      <button class="btn btn-secondary" id="btn-edit-hr-profile">
+        <span>Edit HR Profile</span>
+        <i class="fa-solid fa-heart-pulse"></i>
+      </button>
+    </div>
   </aside>
 
   <!-- ── Setup View (shown until Garmin is connected) ── -->
@@ -260,6 +174,60 @@
         <span>Configure</span>
         <i class="fa-solid fa-sliders"></i>
       </button>
+    </div>
+  </div>
+
+  <!-- ── Profile Setup View (step 2: configure HR profile) ── -->
+  <div id="view-profile-setup" class="hidden">
+    <div class="setup-card glass-panel ps-card">
+      <div class="setup-logo">
+        <i class="fa-solid fa-heart-pulse logo-icon" style="color:#ef4444"></i>
+        <h1>HR <span>Profile</span></h1>
+      </div>
+      <p class="setup-tagline">We fetched your Garmin history to suggest your optimal training zones. Review and confirm.</p>
+
+      <!-- Loading state -->
+      <div id="ps-loading" class="ps-state">
+        <div class="ps-loading-row">
+          <i class="fa-solid fa-spinner fa-spin"></i>
+          <span>Fetching your Garmin history…</span>
+        </div>
+      </div>
+
+      <!-- Form state (shown after loading) -->
+      <div id="ps-form" class="ps-state hidden">
+        <div id="ps-notice" class="ps-notice ps-notice-info"></div>
+
+        <div class="hr-stats-row">
+          <div class="hr-stat-box">
+            <span class="stat-label">Max HR (bpm)</span>
+            <input type="number" id="ps-max-hr" class="stat-value-input" min="100" max="250" value="190">
+          </div>
+          <div class="hr-stat-box">
+            <span class="stat-label">LTHR (bpm)</span>
+            <input type="number" id="ps-lthr" class="stat-value-input" min="80" max="230" value="165">
+          </div>
+        </div>
+
+        <div class="zones-visualizer-container">
+          <h3>Training Zones Preview</h3>
+          <div class="zones-stacked-bar" id="ps-zones-bar">
+            <div class="zone-bar-segment z1" style="width:20%">Z1</div>
+            <div class="zone-bar-segment z2" style="width:25%">Z2</div>
+            <div class="zone-bar-segment z3" style="width:20%">Z3</div>
+            <div class="zone-bar-segment z4" style="width:15%">Z4</div>
+            <div class="zone-bar-segment z5" style="width:20%">Z5</div>
+          </div>
+          <p class="ps-zones-hint" id="ps-zones-hint"></p>
+        </div>
+
+        <button class="btn btn-primary btn-glow setup-configure-btn" id="btn-confirm-profile"
+          data-idle-label="Confirm &amp; Start Training"  data-idle-icon="fa-rocket"
+          data-loading-label="Setting up…"                data-loading-icon="fa-spinner fa-spin">
+          <span>Confirm &amp; Start Training</span>
+          <i class="fa-solid fa-rocket"></i>
+        </button>
+      </div>
     </div>
   </div>
 
