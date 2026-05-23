@@ -15,7 +15,10 @@ import {
   upsertAnalysis,
   getStoredAnalysis,
   upsertProfileDB,
-  getStoredProfile
+  getStoredProfile,
+  upsertDevices,
+  getStoredDevices,
+  hasStoredDevices
 } from './services/database.service';
 import { UserHRProfile } from './types';
 
@@ -238,15 +241,40 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
 
 // ── Devices ───────────────────────────────────────────────────────────────────
 
+// GET /api/devices — serve from DB cache; fetch from Garmin only on first use
 app.get('/api/devices', async (req: Request, res: Response) => {
   try {
     const isAuthenticated = await trySessionAuth();
     if (!isAuthenticated) return res.status(401).json({ error: 'Not authenticated.' });
 
+    if (hasStoredDevices()) {
+      return res.json(getStoredDevices());
+    }
+
+    // First time: fetch from Garmin and persist
     const devices = await garminApi('/device-service/deviceregistration/devices');
+    if (Array.isArray(devices) && devices.length > 0) {
+      upsertDevices(devices);
+    }
     res.json(devices);
   } catch (error: any) {
     res.status(500).json({ error: 'Failed to fetch devices.', details: error.message });
+  }
+});
+
+// POST /api/devices/refresh — force re-fetch from Garmin and update cache
+app.post('/api/devices/refresh', async (req: Request, res: Response) => {
+  try {
+    const isAuthenticated = await trySessionAuth();
+    if (!isAuthenticated) return res.status(401).json({ error: 'Not authenticated.' });
+
+    const devices = await garminApi('/device-service/deviceregistration/devices');
+    if (Array.isArray(devices) && devices.length > 0) {
+      upsertDevices(devices);
+    }
+    res.json(devices);
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to refresh devices.', details: error.message });
   }
 });
 

@@ -400,6 +400,35 @@ body {
   color: var(--text-muted);
   pointer-events: none;
 }
+.btn-device-refresh {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid rgba(99,102,241,0.25);
+  background: rgba(99,102,241,0.08);
+  color: var(--primary-color);
+  font-size: 0.75rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+}
+.btn-device-refresh:hover:not(:disabled) {
+  background: rgba(99,102,241,0.18);
+  border-color: rgba(99,102,241,0.5);
+}
+.btn-device-refresh:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.btn-device-refresh.spinning i {
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 
 /* Glassmorphism Cards */
 .glass-panel {

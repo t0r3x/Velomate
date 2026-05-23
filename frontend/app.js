@@ -5,6 +5,7 @@ const API_BASE_URL = 'http://localhost:3001';
 let isLoggedIn = false;
 let currentProfile = null;
 let suggestedProfile = null;
+let devicesLoaded = false;
 
 // DOM Elements
 const statusDot    = document.getElementById('status-dot');
@@ -53,9 +54,10 @@ const recLthr          = document.getElementById('rec-lthr');
 const recSummaryText   = document.getElementById('rec-summary-text');
 const btnApplyRec      = document.getElementById('btn-apply-rec');
 
-const activitiesList   = document.getElementById('activities-list');
-const deviceSelect     = document.getElementById('device-select');
-const authLoading      = document.getElementById('auth-status-loading');
+const activitiesList       = document.getElementById('activities-list');
+const deviceSelect         = document.getElementById('device-select');
+const btnRefreshDevices    = document.getElementById('btn-refresh-devices');
+const authLoading          = document.getElementById('auth-status-loading');
 
 // ── Side Panel ──────────────────────────────────────────────────
 const openPanel = () => {
@@ -285,7 +287,7 @@ const updateAuthUI = (loggedIn) => {
     btnAnalyze.disabled = false;
     btnAnalyze.innerHTML = '<span>Refresh from Garmin</span> <i class="fa-solid fa-rotate"></i>';
     previewWorkouts = null; // invalidate so preview re-fetches with fresh profile
-    fetchDevices();
+    if (!devicesLoaded) fetchDevices();
     fetchAndRenderPreview();
   } else {
     statusDot.className = 'status-dot disconnected';
@@ -296,6 +298,8 @@ const updateAuthUI = (loggedIn) => {
     btnAnalyze.disabled = true;
     deviceSelect.innerHTML = '<option value="">Connect to Garmin first…</option>';
     deviceSelect.disabled = true;
+    btnRefreshDevices.disabled = true;
+    devicesLoaded = false;
     garminBtnHrLabel.textContent = '';
   }
 };
@@ -530,7 +534,43 @@ zonesForm.addEventListener('submit', async (e) => {
   }
 });
 
-// Fetch Garmin Devices and populate dropdown
+// Populate the device <select> from an array of device objects
+const renderDeviceOptions = (devices) => {
+  deviceSelect.innerHTML = '';
+
+  if (Array.isArray(devices) && devices.length > 0) {
+    // Sort: Edge devices first
+    const sorted = [...devices].sort((a, b) => {
+      const aEdge = (a.productDisplayName || '').toLowerCase().includes('edge');
+      const bEdge = (b.productDisplayName || '').toLowerCase().includes('edge');
+      return aEdge === bEdge ? 0 : aEdge ? -1 : 1;
+    });
+
+    sorted.forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId || d.unitId || '';
+      const name = d.productDisplayName || d.deviceMetaDataDTO?.deviceProductDescription || 'Unknown device';
+      const type = d.activityTypes?.join(', ') || d.activityType || '';
+      opt.textContent = name + (type ? ` — ${type}` : '');
+      deviceSelect.appendChild(opt);
+    });
+
+    deviceSelect.disabled = false;
+    btnRefreshDevices.disabled = false;
+
+    // Auto-select first Edge device
+    const edgeOpt = [...deviceSelect.options].find(o => o.text.toLowerCase().includes('edge'));
+    if (edgeOpt) edgeOpt.selected = true;
+  } else {
+    const opt = document.createElement('option');
+    opt.textContent = 'No devices found';
+    opt.disabled = true;
+    deviceSelect.appendChild(opt);
+    btnRefreshDevices.disabled = false;
+  }
+};
+
+// Fetch devices from backend (served from DB cache on backend side)
 const fetchDevices = async () => {
   deviceSelect.innerHTML = '<option value="">Loading devices…</option>';
   deviceSelect.disabled = true;
@@ -540,40 +580,32 @@ const fetchDevices = async () => {
     if (!response.ok) throw new Error('Devices error');
 
     const devices = await response.json();
-    deviceSelect.innerHTML = '';
-
-    if (Array.isArray(devices) && devices.length > 0) {
-      // Sort: Edge-devices first
-      const sorted = [...devices].sort((a, b) => {
-        const aEdge = (a.productDisplayName || '').toLowerCase().includes('edge');
-        const bEdge = (b.productDisplayName || '').toLowerCase().includes('edge');
-        return aEdge === bEdge ? 0 : aEdge ? -1 : 1;
-      });
-
-      sorted.forEach(d => {
-        const opt = document.createElement('option');
-        opt.value = d.deviceId || d.unitId || '';
-        const name = d.productDisplayName || d.deviceMetaDataDTO?.deviceProductDescription || 'Unknown device';
-        const type = d.activityTypes?.join(', ') || d.activityType || '';
-        opt.textContent = name + (type ? ` — ${type}` : '');
-        deviceSelect.appendChild(opt);
-      });
-
-      deviceSelect.disabled = false;
-
-      // Auto-select first Edge device
-      const edgeOpt = [...deviceSelect.options].find(o => o.text.toLowerCase().includes('edge'));
-      if (edgeOpt) edgeOpt.selected = true;
-
-    } else {
-      const opt = document.createElement('option');
-      opt.textContent = 'No devices found';
-      opt.disabled = true;
-      deviceSelect.appendChild(opt);
-    }
+    renderDeviceOptions(devices);
+    devicesLoaded = true;
   } catch (error) {
-    console.error('Error discovering devices:', error);
+    console.error('Error fetching devices:', error);
     deviceSelect.innerHTML = '<option value="" disabled>Failed to load devices</option>';
+  }
+};
+
+// Force re-fetch devices from Garmin (used by the refresh button)
+const refreshDevices = async () => {
+  btnRefreshDevices.disabled = true;
+  btnRefreshDevices.classList.add('spinning');
+  deviceSelect.disabled = true;
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/devices/refresh`, { method: 'POST' });
+    if (!response.ok) throw new Error('Refresh error');
+
+    const devices = await response.json();
+    renderDeviceOptions(devices);
+  } catch (error) {
+    console.error('Error refreshing devices:', error);
+    deviceSelect.innerHTML = '<option value="" disabled>Refresh failed</option>';
+    btnRefreshDevices.disabled = false;
+  } finally {
+    btnRefreshDevices.classList.remove('spinning');
   }
 };
 
@@ -802,6 +834,9 @@ btnSync.addEventListener('click', async () => {
 
 // Re-render week preview whenever date changes
 scheduleDateInput.addEventListener('change', fetchAndRenderPreview);
+
+// Refresh device list on demand
+btnRefreshDevices.addEventListener('click', refreshDevices);
 
 // Initialize dashboard
 initDateInput();
