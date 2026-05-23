@@ -46,6 +46,14 @@ db.exec(`
     hasCustomOverrides INTEGER DEFAULT 0,
     lastUpdated      TEXT    DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS devices (
+    deviceId    TEXT PRIMARY KEY,
+    displayName TEXT,
+    activityTypes TEXT,
+    rawData     TEXT,
+    fetchedAt   TEXT DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // ── Activities ────────────────────────────────────────────────────────────────
@@ -141,4 +149,33 @@ export const getStoredProfile = (): any | null => {
     hasCustomOverrides: !!row.hasCustomOverrides,
     lastUpdated: row.lastUpdated
   };
+};
+
+// ── Devices ───────────────────────────────────────────────────────────────────
+const stmtUpsertDevice = db.prepare(`
+  INSERT OR REPLACE INTO devices (deviceId, displayName, activityTypes, rawData, fetchedAt)
+  VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+`);
+
+const upsertManyDevices = db.transaction((devices: any[]) => {
+  for (const d of devices) {
+    const deviceId = String(d.deviceId || d.unitId || '');
+    const displayName = d.productDisplayName || d.deviceMetaDataDTO?.deviceProductDescription || '';
+    const activityTypes = JSON.stringify(d.activityTypes || []);
+    stmtUpsertDevice.run(deviceId, displayName, activityTypes, JSON.stringify(d));
+  }
+});
+
+export const upsertDevices = (devices: any[]): void => {
+  upsertManyDevices(devices);
+};
+
+export const getStoredDevices = (): any[] => {
+  const rows = db.prepare('SELECT rawData FROM devices ORDER BY displayName').all() as any[];
+  return rows.map(r => JSON.parse(r.rawData));
+};
+
+export const hasStoredDevices = (): boolean => {
+  const row = db.prepare('SELECT COUNT(*) as count FROM devices').get() as { count: number };
+  return row.count > 0;
 };
