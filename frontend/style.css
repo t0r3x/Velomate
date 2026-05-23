@@ -1417,6 +1417,120 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
   transition: opacity 0.4s ease;
 }
 
+/* ── Views ───────────────────────────────────────────────────────────────── */
+
+#view-setup {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+#view-setup.hidden,
+#view-dashboard.hidden {
+  display: none;
+}
+
+.setup-card {
+  max-width: 440px;
+  width: 100%;
+  padding: 2.5rem 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  text-align: center;
+}
+
+.setup-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.setup-logo .logo-icon {
+  font-size: 2.4rem;
+}
+
+.setup-logo h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.setup-logo h1 span {
+  background: var(--primary-glow);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.setup-tagline {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  margin-top: -0.5rem;
+}
+
+.setup-steps {
+  list-style: none;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  text-align: left;
+}
+
+.setup-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  transition: border-color var(--transition-fast);
+}
+
+.setup-steps li:hover {
+  border-color: rgba(99, 102, 241, 0.2);
+}
+
+.setup-steps li > i {
+  color: var(--primary-color);
+  font-size: 1rem;
+  margin-top: 0.15rem;
+  width: 1.1rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.setup-steps li strong {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.15rem;
+}
+
+.setup-steps li span {
+  font-size: 0.775rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.setup-steps li em {
+  font-style: normal;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  opacity: 0.65;
+}
+
+.setup-configure-btn {
+  width: 100%;
+  justify-content: center;
+}
+
 /* ── AI Recommendation Card ──────────────────────────────────────────────── */
 
 /* State panels */
