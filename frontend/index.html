@@ -225,10 +225,13 @@
           </div>
           <div class="card-body">
             <p class="helper-text">Retrieve Garmin activities and auto-recalculate your optimal training zones based on your progression.</p>
-            <button class="btn btn-secondary" id="btn-analyze" disabled>
-              <span>Assess Fitness Level</span>
-              <i class="fa-solid fa-wand-magic-sparkles"></i>
-            </button>
+            <div class="analyze-row">
+              <button class="btn btn-secondary" id="btn-analyze" disabled>
+                <span>Assess Fitness Level</span>
+                <i class="fa-solid fa-wand-magic-sparkles"></i>
+              </button>
+              <span class="last-synced-label" id="last-synced-label"></span>
+            </div>
 
             <!-- Assessment Recommendations -->
             <div id="assessment-results" class="hidden recommendation-box">

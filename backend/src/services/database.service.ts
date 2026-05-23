@@ -1,0 +1,144 @@
+import Database from 'better-sqlite3';
+import path from 'path';
+import fs from 'fs';
+
+// ── Setup ─────────────────────────────────────────────────────────────────────
+const dataDir = path.join(__dirname, '../../data');
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+
+const db = new Database(path.join(dataDir, 'innerjoin.db'));
+
+// WAL mode — better concurrent read performance
+db.pragma('journal_mode = WAL');
+
+// ── Schema ────────────────────────────────────────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS activities (
+    activityId    TEXT    PRIMARY KEY,
+    name          TEXT,
+    type          TEXT,
+    startTime     TEXT,
+    distanceKm    REAL    DEFAULT 0,
+    durationMinutes INTEGER DEFAULT 0,
+    averageHr     INTEGER DEFAULT 0,
+    maxHr         INTEGER DEFAULT 0,
+    averagePower  INTEGER DEFAULT 0,
+    maxPower      INTEGER DEFAULT 0,
+    fetchedAt     TEXT    DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS analysis (
+    id                        INTEGER PRIMARY KEY CHECK (id = 1),
+    totalCyclingRides         INTEGER,
+    maxRecordedHr             INTEGER,
+    estimatedMaxHr            INTEGER,
+    estimatedLthr             INTEGER,
+    averageRideDurationMinutes INTEGER,
+    suggestedZones            TEXT,
+    updatedAt                 TEXT    DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS profile (
+    id               INTEGER PRIMARY KEY CHECK (id = 1),
+    maxHr            INTEGER,
+    lthr             INTEGER,
+    zones            TEXT,
+    hasCustomOverrides INTEGER DEFAULT 0,
+    lastUpdated      TEXT    DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
+// ── Activities ────────────────────────────────────────────────────────────────
+const stmtUpsertActivity = db.prepare(`
+  INSERT OR REPLACE INTO activities
+    (activityId, name, type, startTime, distanceKm, durationMinutes,
+     averageHr, maxHr, averagePower, maxPower, fetchedAt)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+`);
+
+const upsertManyActivities = db.transaction((activities: any[]) => {
+  for (const a of activities) {
+    stmtUpsertActivity.run(
+      String(a.activityId),
+      a.name,
+      a.type,
+      a.startTime,
+      a.distanceKm,
+      a.durationMinutes,
+      a.averageHr,
+      a.maxHr,
+      a.averagePower || 0,
+      a.maxPower || 0
+    );
+  }
+});
+
+export const upsertActivities = (activities: any[]): void => {
+  upsertManyActivities(activities);
+};
+
+export const getStoredActivities = (): any[] => {
+  return db.prepare('SELECT * FROM activities ORDER BY startTime DESC').all();
+};
+
+export const getActivityCount = (): number => {
+  const row = db.prepare('SELECT COUNT(*) as count FROM activities').get() as { count: number };
+  return row.count;
+};
+
+// ── Analysis ──────────────────────────────────────────────────────────────────
+export const upsertAnalysis = (analysis: any): void => {
+  db.prepare(`
+    INSERT OR REPLACE INTO analysis
+      (id, totalCyclingRides, maxRecordedHr, estimatedMaxHr, estimatedLthr,
+       averageRideDurationMinutes, suggestedZones, updatedAt)
+    VALUES (1, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  `).run(
+    analysis.totalCyclingRides,
+    analysis.maxRecordedHr,
+    analysis.estimatedMaxHr,
+    analysis.estimatedLthr,
+    analysis.averageRideDurationMinutes,
+    JSON.stringify(analysis.suggestedZones)
+  );
+};
+
+export const getStoredAnalysis = (): any | null => {
+  const row = db.prepare('SELECT * FROM analysis WHERE id = 1').get() as any;
+  if (!row) return null;
+  return {
+    totalCyclingRides: row.totalCyclingRides,
+    maxRecordedHr: row.maxRecordedHr,
+    estimatedMaxHr: row.estimatedMaxHr,
+    estimatedLthr: row.estimatedLthr,
+    averageRideDurationMinutes: row.averageRideDurationMinutes,
+    suggestedZones: JSON.parse(row.suggestedZones || 'null'),
+    updatedAt: row.updatedAt
+  };
+};
+
+// ── Profile ───────────────────────────────────────────────────────────────────
+export const upsertProfileDB = (profile: any): void => {
+  db.prepare(`
+    INSERT OR REPLACE INTO profile
+      (id, maxHr, lthr, zones, hasCustomOverrides, lastUpdated)
+    VALUES (1, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  `).run(
+    profile.maxHr,
+    profile.lthr,
+    JSON.stringify(profile.zones),
+    profile.hasCustomOverrides ? 1 : 0
+  );
+};
+
+export const getStoredProfile = (): any | null => {
+  const row = db.prepare('SELECT * FROM profile WHERE id = 1').get() as any;
+  if (!row) return null;
+  return {
+    maxHr: row.maxHr,
+    lthr: row.lthr,
+    zones: JSON.parse(row.zones || 'null'),
+    hasCustomOverrides: !!row.hasCustomOverrides,
+    lastUpdated: row.lastUpdated
+  };
+};
