@@ -72,7 +72,10 @@
               <p class="helper-text">Enter the 6-digit code sent to your email or phone.</p>
             </div>
 
-            <button type="submit" class="btn btn-primary" id="btn-login">
+            <button type="submit" class="btn btn-primary" id="btn-login"
+              data-idle-label="Connect Garmin"    data-idle-icon="fa-arrow-right-to-bracket"
+              data-loading-label="Connecting…"    data-loading-icon="fa-spinner fa-spin"
+              data-verifying-label="Verifying…"   data-verifying-icon="fa-spinner fa-spin">
               <span>Connect Garmin</span>
               <i class="fa-solid fa-arrow-right-to-bracket"></i>
             </button>
@@ -180,7 +183,9 @@
             </div>
           </div>
 
-          <button type="submit" class="btn btn-secondary" id="btn-save-profile">
+          <button type="submit" class="btn btn-secondary" id="btn-save-profile"
+            data-idle-label="Save Heart Rate Profile"  data-idle-icon="fa-floppy-disk"
+            data-loading-label="Saving…"               data-loading-icon="fa-spinner fa-spin">
             <span>Save Heart Rate Profile</span>
             <i class="fa-solid fa-floppy-disk"></i>
           </button>
@@ -226,7 +231,10 @@
           <div class="card-body">
             <p class="helper-text">Retrieve Garmin activities and auto-recalculate your optimal training zones based on your progression.</p>
             <div class="analyze-row">
-              <button class="btn btn-secondary" id="btn-analyze" disabled>
+              <button class="btn btn-secondary" id="btn-analyze" disabled
+                data-idle-label="Assess Fitness Level"     data-idle-icon="fa-wand-magic-sparkles"
+                data-loading-label="Syncing from Garmin…"  data-loading-icon="fa-spinner fa-spin"
+                data-connected-label="Refresh from Garmin" data-connected-icon="fa-rotate">
                 <span>Assess Fitness Level</span>
                 <i class="fa-solid fa-wand-magic-sparkles"></i>
               </button>
@@ -246,8 +254,15 @@
                   <span class="rec-value" id="rec-lthr">165 → 169</span>
                 </div>
               </div>
-              <p class="assessment-summary-text" id="rec-summary-text"></p>
-              <button class="btn btn-primary btn-sm" id="btn-apply-rec">
+              <p class="assessment-summary-text" id="rec-summary-text">
+                Based on your <strong id="rec-summary-rides"></strong> recent rides,
+                your peak recorded heart rate was <strong id="rec-summary-max-hr"></strong>.
+                We estimate your threshold at <strong id="rec-summary-lthr"></strong>
+                with an average ride duration of <strong id="rec-summary-avg-dur"></strong>.
+              </p>
+              <button class="btn btn-primary btn-sm" id="btn-apply-rec"
+                data-idle-label="Accept & Update Zones"  data-idle-icon="fa-check-double"
+                data-loading-label="Applying…"           data-loading-icon="fa-spinner fa-spin">
                 <span>Accept & Update Zones</span>
                 <i class="fa-solid fa-check-double"></i>
               </button>
@@ -324,7 +339,9 @@
                 <div class="workout-detail-cards" id="workout-detail-cards"></div>
               </div>
 
-              <button class="btn btn-primary btn-glow" id="btn-sync-workouts" disabled>
+              <button class="btn btn-primary btn-glow" id="btn-sync-workouts" disabled
+                data-idle-label="Sync & Schedule Workouts"  data-idle-icon="fa-cloud-arrow-up"
+                data-loading-label="Syncing Workouts…"       data-loading-icon="fa-spinner fa-spin">
                 <span>Sync & Schedule Workouts</span>
                 <i class="fa-solid fa-cloud-arrow-up"></i>
               </button>
@@ -337,7 +354,12 @@
                 <span>Sync Complete</span>
               </div>
               <div class="notification-body">
-                <p id="sync-result-msg"></p>
+                <p id="sync-result-msg">
+                  Created and uploaded <strong>3 custom HR workouts</strong> to Garmin.
+                  The main threshold workout has been scheduled for
+                  <strong id="sync-scheduled-date"></strong>.
+                  Sync your device to apply!
+                </p>
                 <ul id="synced-workouts-list" class="workout-bullets"></ul>
               </div>
             </div>
@@ -355,6 +377,117 @@
       </div>
     </footer>
   </div>
+
+  <!-- ── Templates ──────────────────────────────────────────────── -->
+
+  <template id="tpl-toast">
+    <div class="toast">
+      <i class="fa-solid toast-icon"></i>
+      <div class="toast-body">
+        <div class="toast-title"></div>
+        <div class="toast-msg"></div>
+      </div>
+      <button type="button" class="toast-close">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+  </template>
+
+  <template id="tpl-week-day-workout">
+    <div class="week-day-cell">
+      <div class="wdc-day">
+        <span class="wdc-day-label"></span>
+        <span class="wdc-date"></span>
+      </div>
+      <div class="wdc-workout-chip">
+        <i class="fa-solid"></i>
+        <span class="wdc-workout-label"></span>
+      </div>
+      <div class="wdc-duration"></div>
+      <div class="wdc-scheduled-badge">
+        <i class="fa-solid fa-calendar-check"></i> Scheduled
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-week-day-rest">
+    <div class="week-day-cell rest">
+      <div class="wdc-day">
+        <span class="wdc-day-label"></span>
+        <span class="wdc-date"></span>
+      </div>
+      <div class="wdc-rest">
+        <i class="fa-solid fa-bed"></i> Rest
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-workout-card">
+    <div class="workout-card">
+      <div class="wc-header">
+        <i class="fa-solid wc-icon"></i>
+        <div class="wc-title-block">
+          <span class="wc-title"></span>
+          <span class="wc-date"></span>
+        </div>
+        <span class="wc-total-dur"></span>
+      </div>
+      <div class="wc-zone-bar"></div>
+      <div class="wc-steps"></div>
+      <div class="wc-schedule-note wc-schedule-note--scheduled">
+        <i class="fa-solid fa-calendar-check"></i> Will be scheduled on Garmin Connect
+      </div>
+      <div class="wc-schedule-note wc-schedule-note--upload muted">
+        <i class="fa-solid fa-upload"></i> Will be uploaded to device
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-workout-step">
+    <div class="wc-step-row">
+      <span class="wc-step-dot"></span>
+      <span class="wc-step-label"></span>
+      <span class="wc-step-dur"></span>
+      <span class="wc-step-zone zone-tag"></span>
+    </div>
+  </template>
+
+  <template id="tpl-workout-bar-seg">
+    <div class="wc-bar-seg"></div>
+  </template>
+
+  <template id="tpl-activity-item">
+    <li class="activity-item">
+      <div class="activity-icon-container">
+        <i class="fa-solid fa-bicycle"></i>
+      </div>
+      <div class="activity-details-main">
+        <span class="activity-title"></span>
+        <span class="activity-meta"></span>
+      </div>
+      <div class="activity-stats-summary">
+        <div class="act-stat act-stat--dist">
+          <span class="act-stat-val"></span>
+          <span class="act-stat-label">Dist</span>
+        </div>
+        <div class="act-stat act-stat--time">
+          <span class="act-stat-val"></span>
+          <span class="act-stat-label">Time</span>
+        </div>
+        <div class="act-stat act-stat--hr">
+          <span class="act-stat-val"></span>
+          <span class="act-stat-label">Avg HR</span>
+        </div>
+      </div>
+    </li>
+  </template>
+
+  <template id="tpl-synced-workout">
+    <li>
+      Workout <strong class="sw-name"></strong>
+      <span class="sw-status"></span>
+    </li>
+  </template>
 
   <script src="app.js"></script>
 </body>
