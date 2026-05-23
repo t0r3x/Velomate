@@ -190,6 +190,74 @@ app.get('/api/devices', async (req: Request, res: Response) => {
   }
 });
 
+// Preview workouts (no upload — returns structure + suggested week schedule)
+app.get('/api/preview-workouts', async (req: Request, res: Response) => {
+  try {
+    const profile = loadProfile();
+
+    // Estimate long ride duration from recent activities (non-fatal)
+    let longRideDurationMinutes = 120;
+    if (getBearerToken()) {
+      try {
+        const client = getGarminClient();
+        const activities = await client.getActivities(0, 20);
+        const cycling = activities.filter((a: any) => {
+          const tk = (a.activityType?.typeKey || '').toLowerCase();
+          return tk.includes('cycl') || tk.includes('bik');
+        });
+        if (cycling.length > 0) {
+          const avgSec = cycling.reduce((s: number, a: any) => s + (a.duration || 0), 0) / cycling.length;
+          longRideDurationMinutes = Math.min(240, Math.max(90, Math.round((avgSec / 60) * 1.2)));
+        }
+      } catch { /* fallback to 120 */ }
+    }
+
+    const sprintTotal = Math.round(10 + 6 * (0.5 + 4) + 10);  // 47 min
+    const thresholdTotal = Math.round(10 + 3 * (8 + 4) + 10); // 56 min
+
+    const workouts = [
+      {
+        type: 'Sprint',
+        name: `INNERJOIN Sprint — ${profile.lthr} LTHR`,
+        totalMinutes: sprintTotal,
+        weekOffset: -2,
+        steps: [
+          { label: 'Warm-up',     duration: '10 min',      zone: 'Z2',    zoneKey: 'z2', minutes: 10 },
+          { label: '6× Sprint',   duration: '30 sec each', zone: 'Z5',    zoneKey: 'z5', minutes: 3  },
+          { label: '6× Recovery', duration: '4 min each',  zone: 'Z1',    zoneKey: 'z1', minutes: 24 },
+          { label: 'Cool-down',   duration: '10 min',      zone: 'Z1',    zoneKey: 'z1', minutes: 10 },
+        ]
+      },
+      {
+        type: 'Threshold',
+        name: `INNERJOIN Drempel — ${profile.lthr} LTHR`,
+        totalMinutes: thresholdTotal,
+        weekOffset: 0,
+        isScheduled: true,
+        steps: [
+          { label: 'Warm-up',      duration: '10 min',      zone: 'Z2',    zoneKey: 'z2', minutes: 10 },
+          { label: '3× Drempel',   duration: '8 min each',  zone: 'Z4',    zoneKey: 'z4', minutes: 24 },
+          { label: '3× Recovery',  duration: '4 min each',  zone: 'Z1/Z2', zoneKey: 'z1', minutes: 12 },
+          { label: 'Cool-down',    duration: '10 min',      zone: 'Z1',    zoneKey: 'z1', minutes: 10 },
+        ]
+      },
+      {
+        type: 'LongRide',
+        name: `INNERJOIN Lange Rit — ${longRideDurationMinutes} min`,
+        totalMinutes: longRideDurationMinutes,
+        weekOffset: 2,
+        steps: [
+          { label: 'Duurrit', duration: `${longRideDurationMinutes} min`, zone: 'Z2', zoneKey: 'z2', minutes: longRideDurationMinutes },
+        ]
+      }
+    ];
+
+    res.json({ workouts, profile });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to generate preview.', details: error.message });
+  }
+});
+
 // Auto-Sync and Schedule scaled workouts
 app.post('/api/sync-workouts', async (req: Request, res: Response) => {
   const { scheduleDate } = req.body;
