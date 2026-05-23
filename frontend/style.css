@@ -1930,3 +1930,43 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
 .week-day-cell .wdc-duration:empty {
   display: none;
 }
+
+/* ── HR Profile Modal Overlay ────────────────────────────────────────────── */
+
+/* Cancel button — hidden in full-screen setup flow, visible in modal */
+.ps-cancel-btn {
+  display: none;
+  margin-top: 0.5rem;
+}
+
+/* Modal overlay: shown when dashboard triggers Edit HR Profile */
+#view-profile-setup.ps-modal {
+  display: flex !important;   /* override .hidden { display:none !important } */
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(8, 10, 19, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  overflow-y: auto;
+}
+
+/* Inside modal, the card gets a narrower max-width and drop-shadow border */
+#view-profile-setup.ps-modal .ps-card {
+  max-width: 520px;
+  width: 100%;
+  box-shadow: 0 0 0 1px rgba(99,102,241,0.25), 0 24px 60px rgba(0,0,0,0.6);
+}
+
+/* Show cancel button when in modal mode */
+#view-profile-setup.ps-modal .ps-cancel-btn {
+  display: flex;
+}
+
+/* ── rec-state-no-plan empty icon color ─────────────────────────────────── */
+#rec-state-no-plan .ai-rec-empty-icon {
+  color: var(--primary-color);
+}

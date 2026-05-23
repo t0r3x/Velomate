@@ -227,6 +227,10 @@
           <span>Confirm &amp; Start Training</span>
           <i class="fa-solid fa-rocket"></i>
         </button>
+        <button class="btn btn-secondary ps-cancel-btn" id="btn-cancel-profile">
+          <span>Cancel</span>
+          <i class="fa-solid fa-xmark"></i>
+        </button>
       </div>
     </div>
   </div>
@@ -332,13 +336,24 @@
           </div>
           <div class="card-body">
 
-            <!-- State: not configured -->
+            <!-- State: not configured (no API key) -->
             <div id="rec-state-not-configured" class="ai-rec-state hidden">
               <div class="ai-rec-empty">
                 <i class="fa-solid fa-brain ai-rec-empty-icon"></i>
                 <p>Add a Gemini API key in <strong>Connection &amp; Profile</strong>.</p>
                 <button class="btn btn-secondary btn-sm" id="btn-open-panel-from-rec">
                   <span>Open Settings</span><i class="fa-solid fa-sliders"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- State: key is set but no plan generated yet -->
+            <div id="rec-state-no-plan" class="ai-rec-state hidden">
+              <div class="ai-rec-empty">
+                <i class="fa-solid fa-calendar-plus ai-rec-empty-icon"></i>
+                <p>No training plan yet. Generate your first AI plan now.</p>
+                <button class="btn btn-primary btn-sm" id="btn-generate-first-plan">
+                  <span>Generate Plan</span><i class="fa-solid fa-wand-magic-sparkles"></i>
                 </button>
               </div>
             </div>
