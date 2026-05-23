@@ -431,6 +431,10 @@ app.get('/api/recommendation', (_req: Request, res: Response) => {
   res.json({ ...rec, stale });
 });
 
+/** Extract the human-readable message from a Gemini API error response. */
+const geminiErrorMessage = (error: any): string =>
+  error.response?.data?.error?.message || error.message || 'Unknown error';
+
 /** Map an error from Gemini/axios to a structured HTTP response. */
 const handleGeminiError = (res: Response, error: any, context: string): void => {
   if (error.message === 'GEMINI_KEY_NOT_CONFIGURED') {
@@ -439,15 +443,14 @@ const handleGeminiError = (res: Response, error: any, context: string): void => 
   }
   const httpStatus = error.response?.status;
   if (httpStatus === 429) {
-    console.warn(`[Gemini] ${context}: rate limit (429) — backing off.`);
-    res.status(429).json({
-      error: 'Gemini rate limit reached.',
-      details: 'You have exceeded the Gemini free-tier quota. Wait a minute and try again, or check your API key usage at aistudio.google.com.'
-    });
+    const msg = geminiErrorMessage(error);
+    console.warn(`[Gemini] ${context}: 429 — ${msg}`);
+    res.status(429).json({ error: 'Gemini quota exceeded.', details: msg });
     return;
   }
-  console.error(`[Gemini] ${context}:`, error.message);
-  res.status(500).json({ error: 'Failed to generate recommendation.', details: error.message });
+  const msg = geminiErrorMessage(error);
+  console.error(`[Gemini] ${context}:`, msg);
+  res.status(500).json({ error: 'Failed to generate recommendation.', details: msg });
 };
 
 app.post('/api/recommendation/refresh', async (req: Request, res: Response) => {
@@ -508,9 +511,11 @@ const runGeminiAutoCheck = async () => {
     }
   } catch (err: any) {
     if (err.response?.status === 429) {
-      console.warn('[Gemini] Auto-check: rate limit (429) — will retry next hour.');
+      // Stamp now so the 23h freshness check doesn't retry on next server restart
+      setSetting('gemini_last_generated', new Date().toISOString());
+      console.warn('[Gemini] Auto-check: 429 —', geminiErrorMessage(err), '— backed off for 23h.');
     } else {
-      console.warn('[Gemini] Auto-check failed:', err.message);
+      console.warn('[Gemini] Auto-check failed:', geminiErrorMessage(err));
     }
   }
 };
