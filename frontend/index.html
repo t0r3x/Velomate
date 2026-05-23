@@ -239,19 +239,21 @@
       </div>
       <p class="setup-tagline">AI-powered training for cyclists.</p>
       <ul class="setup-steps">
-        <li>
+        <li id="setup-step-garmin">
           <i class="fa-solid fa-link"></i>
           <div>
             <strong>Connect Garmin</strong>
             <span>Sync your activities and training history</span>
           </div>
+          <span class="setup-step-status" id="setup-step-garmin-status">–</span>
         </li>
-        <li>
+        <li id="setup-step-gemini">
           <i class="fa-solid fa-brain"></i>
           <div>
             <strong>Add Gemini API key</strong>
-            <span>Enable AI adaptive training plans</span>
+            <span>Required for AI adaptive training plans</span>
           </div>
+          <span class="setup-step-status" id="setup-step-gemini-status">–</span>
         </li>
       </ul>
       <button class="btn btn-primary btn-glow setup-configure-btn" id="btn-open-setup">

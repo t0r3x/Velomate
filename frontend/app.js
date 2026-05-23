@@ -2,10 +2,11 @@
 const API_BASE_URL = 'http://localhost:3001';
 
 // State variables
-let isLoggedIn          = false;
-let currentProfile      = null;
-let suggestedProfile    = null;
-let devicesLoaded       = false;
+let isLoggedIn            = false;
+let geminiConfigured      = false;
+let currentProfile        = null;
+let suggestedProfile      = null;
+let devicesLoaded         = false;
 let currentRecommendation = null;
 
 // DOM Elements
@@ -104,6 +105,29 @@ const viewDashboard = document.getElementById('view-dashboard');
 const setView = (name) => {
   viewSetup.classList.toggle('hidden',     name !== 'setup');
   viewDashboard.classList.toggle('hidden', name !== 'dashboard');
+};
+
+/** Update the visual status of each step on the setup screen. */
+const updateSetupSteps = () => {
+  const garminStep   = document.getElementById('setup-step-garmin');
+  const geminiStep   = document.getElementById('setup-step-gemini');
+  const garminStatus = document.getElementById('setup-step-garmin-status');
+  const geminiStatus = document.getElementById('setup-step-gemini-status');
+
+  garminStep.classList.toggle('step-done', isLoggedIn);
+  garminStatus.textContent = isLoggedIn ? '✓ Connected' : '–';
+
+  geminiStep.classList.toggle('step-done', geminiConfigured);
+  geminiStatus.textContent = geminiConfigured ? '✓ Configured' : '–';
+};
+
+/** Switch to dashboard only when both Garmin and Gemini are ready. */
+const maybeEnterDashboard = () => {
+  updateSetupSteps();
+  if (isLoggedIn && geminiConfigured) {
+    setView('dashboard');
+    closePanel();
+  }
 };
 
 // ── Side Panel ─────────────────────────────────────────────────────────────────
@@ -284,17 +308,19 @@ const renderRecommendation = (rec) => {
   }
 };
 
-/** Fetch Gemini key status from backend and update panel UI. */
+/** Fetch Gemini key status from backend, update panel UI and gate state. */
 const fetchGeminiKeyStatus = async () => {
   try {
     const res  = await fetch(`${API_BASE_URL}/api/settings/gemini-key`);
     const data = await res.json();
+    geminiConfigured = !!data.hasKey;
     if (data.hasKey) {
       geminiKeyStatus.classList.remove('hidden');
       geminiKeyMasked.textContent = data.maskedKey;
     } else {
       geminiKeyStatus.classList.add('hidden');
     }
+    updateSetupSteps();
   } catch {
     // non-critical
   }
@@ -376,9 +402,6 @@ const updateAuthUI = (loggedIn) => {
   authLoading.classList.add('hidden');
 
   if (loggedIn) {
-    setView('dashboard');
-    closePanel();
-
     statusDot.className = 'status-dot connected';
     statusText.textContent = 'Connected';
     loggedOutSection.classList.add('hidden');
@@ -387,8 +410,10 @@ const updateAuthUI = (loggedIn) => {
     btnAnalyze.disabled = false;
     setBtn(btnAnalyze, 'connected');
     if (!devicesLoaded) fetchDevices();
+    maybeEnterDashboard();
   } else {
     setView('setup');
+    updateSetupSteps();
 
     statusDot.className = 'status-dot disconnected';
     statusText.textContent = 'Not connected';
@@ -925,10 +950,10 @@ geminiKeyForm.addEventListener('submit', async (e) => {
 
     if (res.ok) {
       geminiApiKeyInput.value = '';
-      await fetchGeminiKeyStatus();
-      closePanel();
-      toast('success', 'API Key Saved', 'Gemini is now connected — generating your plan…');
-      fetchRecommendation(true);
+      await fetchGeminiKeyStatus();   // sets geminiConfigured = true, calls updateSetupSteps
+      toast('success', 'API Key Saved', 'Gemini connected — generating your plan…');
+      fetchRecommendation(true);      // kick off generation in background
+      maybeEnterDashboard();          // enters dashboard if Garmin is also ready
     } else {
       const err = await res.json();
       toast('error', 'Save Failed', err.error || 'Could not save API key.');
@@ -944,7 +969,27 @@ geminiKeyForm.addEventListener('submit', async (e) => {
 // ── Init ───────────────────────────────────────────────────────────────────────
 
 btnRefreshDevices.addEventListener('click', refreshDevices);
-btnRefreshRec.addEventListener('click', () => fetchRecommendation(true));
+// ── Gemini usage guard ─────────────────────────────────────────────────────────
+const GEMINI_USAGE_KEY = 'gemini_manual_refresh';
+
+const trackManualGeminiRefresh = () => {
+  const today = new Date().toLocaleDateString('sv-SE');
+  let entry = {};
+  try { entry = JSON.parse(localStorage.getItem(GEMINI_USAGE_KEY) || '{}'); } catch {}
+
+  if (entry.date !== today) entry = { date: today, count: 0 };
+  entry.count += 1;
+  localStorage.setItem(GEMINI_USAGE_KEY, JSON.stringify(entry));
+
+  if (entry.count >= 10) {
+    toast('warn', 'High Gemini Usage Today',
+      'You\'ve manually refreshed the AI plan 10 times or more today. ' +
+      'Costs may apply if you exceed your free-tier limits — ' +
+      'limits are typically generous, but consider this an early heads-up.');
+  }
+};
+
+btnRefreshRec.addEventListener('click', () => { trackManualGeminiRefresh(); fetchRecommendation(true); });
 btnSkipToday.addEventListener('click', skipToday);
 btnRetryRec.addEventListener('click', () => fetchRecommendation(false));
 btnOpenPanelFromRec.addEventListener('click', openPanel);
