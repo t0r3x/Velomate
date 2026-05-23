@@ -283,7 +283,8 @@ const updateAuthUI = (loggedIn) => {
     loggedInSection.classList.remove('hidden');
     btnSync.disabled = false;
     btnAnalyze.disabled = false;
-    previewWorkouts = null; // invalidate cache so it re-fetches with real data
+    btnAnalyze.innerHTML = '<span>Refresh from Garmin</span> <i class="fa-solid fa-rotate"></i>';
+    previewWorkouts = null; // invalidate so preview re-fetches with fresh profile
     fetchDevices();
     fetchAndRenderPreview();
   } else {
@@ -576,59 +577,104 @@ const fetchDevices = async () => {
   }
 };
 
-// Fetch Activity history and perform training load / progression analysis
+// ── Shared assessment/render helpers ─────────────────────────────────────────
+
+const timeAgo = (isoStr) => {
+  if (!isoStr) return '';
+  const diff = Date.now() - new Date(isoStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1)  return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)  return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+};
+
+const updateLastSynced = (analysis) => {
+  const el = document.getElementById('last-synced-label');
+  if (!el) return;
+  el.textContent = analysis?.updatedAt ? `Last synced ${timeAgo(analysis.updatedAt)}` : '';
+};
+
+const renderAssessment = (analysis, profile) => {
+  if (!analysis || analysis.totalCyclingRides === 0) {
+    assessmentResults.classList.add('hidden');
+    return;
+  }
+
+  const maxHrChanged = analysis.estimatedMaxHr !== profile.maxHr;
+  const lthrChanged  = analysis.estimatedLthr  !== profile.lthr;
+
+  if (maxHrChanged || lthrChanged) {
+    suggestedProfile = {
+      maxHr: analysis.estimatedMaxHr,
+      lthr:  analysis.estimatedLthr,
+      zones: analysis.suggestedZones
+    };
+
+    recMaxHr.textContent = maxHrChanged
+      ? `${profile.maxHr} bpm → ${analysis.estimatedMaxHr} bpm`
+      : `${profile.maxHr} bpm (unchanged)`;
+    recLthr.textContent = lthrChanged
+      ? `${profile.lthr} bpm → ${analysis.estimatedLthr} bpm`
+      : `${profile.lthr} bpm (unchanged)`;
+    recSummaryText.innerHTML = `Based on your <strong>${analysis.totalCyclingRides} recent rides</strong>, your peak recorded heart rate was <strong>${analysis.maxRecordedHr} bpm</strong>. We estimate your threshold at <strong>${analysis.estimatedLthr} bpm</strong> with an average ride duration of <strong>${analysis.averageRideDurationMinutes} minutes</strong>.`;
+
+    assessmentResults.classList.remove('hidden');
+  } else {
+    assessmentResults.classList.add('hidden');
+    suggestedProfile = null;
+  }
+};
+
+// Load all persisted data from DB — no Garmin connection required
+const loadDashboard = async () => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/dashboard`);
+    if (!res.ok) return;
+    const data = await res.json();
+
+    if (data.profile) {
+      currentProfile = data.profile;
+      populateProfileUI(data.profile);
+      updateHeaderHrLabel(data.profile);
+    }
+
+    renderActivities(data.activities || []);
+    renderAssessment(data.analysis, currentProfile || {});
+    updateLastSynced(data.analysis);
+  } catch (e) {
+    console.error('Dashboard load failed:', e);
+  }
+};
+
+// Refresh from Garmin: fetch new rides, merge into DB, re-render
 btnAnalyze.addEventListener('click', async () => {
   btnAnalyze.disabled = true;
-  btnAnalyze.innerHTML = '<span>Analyzing...</span> <i class="fa-solid fa-spinner fa-spin"></i>';
+  btnAnalyze.innerHTML = '<span>Syncing from Garmin…</span> <i class="fa-solid fa-spinner fa-spin"></i>';
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/activities`);
-    if (!response.ok) throw new Error('Activities error');
-    
+    const response = await fetch(`${API_BASE_URL}/api/activities/refresh`, { method: 'POST' });
     const data = await response.json();
-    
-    // Render activities
-    renderActivities(data.activities);
 
-    // Render recommendation block
-    const analysis = data.analysis;
-    const current = data.currentProfile;
-
-    if (analysis && analysis.totalCyclingRides > 0) {
-      const maxHrChanged = analysis.estimatedMaxHr !== current.maxHr;
-      const lthrChanged  = analysis.estimatedLthr  !== current.lthr;
-
-      if (maxHrChanged || lthrChanged) {
-        suggestedProfile = {
-          maxHr: analysis.estimatedMaxHr,
-          lthr:  analysis.estimatedLthr,
-          zones: analysis.suggestedZones
-        };
-
-        recMaxHr.textContent = maxHrChanged
-          ? `${current.maxHr} bpm → ${analysis.estimatedMaxHr} bpm`
-          : `${current.maxHr} bpm (unchanged)`;
-        recLthr.textContent = lthrChanged
-          ? `${current.lthr} bpm → ${analysis.estimatedLthr} bpm`
-          : `${current.lthr} bpm (unchanged)`;
-        recSummaryText.innerHTML = `Based on your <strong>${analysis.totalCyclingRides} recent rides</strong>, your peak recorded heart rate was <strong>${analysis.maxRecordedHr} bpm</strong>. We estimate your threshold at <strong>${analysis.estimatedLthr} bpm</strong> with an average ride duration of <strong>${analysis.averageRideDurationMinutes} minutes</strong>.`;
-
-        assessmentResults.classList.remove('hidden');
-      } else {
-        // Values are already optimal — no update needed
-        assessmentResults.classList.add('hidden');
-        toast('info', 'Profile Up-to-date', `Your zones are already aligned with your recent ${analysis.totalCyclingRides} rides. No updates needed.`);
-      }
-    } else {
-      assessmentResults.classList.add('hidden');
-      toast('warn', 'No Activities Found', 'No recent cycling activities found in the last 90 days.');
+    if (!response.ok) {
+      toast('error', 'Refresh Failed', data.error || 'Check the server logs.');
+      return;
     }
+
+    currentProfile = data.currentProfile || currentProfile;
+    renderActivities(data.activities || []);
+    renderAssessment(data.analysis, currentProfile);
+    updateLastSynced(data.analysis);
+
+    const n = data.newCount || 0;
+    toast('success', 'Synced from Garmin',
+      `${n} new ${n === 1 ? 'ride' : 'rides'} added — ${data.activities?.length || 0} total stored.`);
   } catch (error) {
-    console.error('Analysis failed:', error);
-    toast('error', 'Analysis Failed', 'Could not fetch activities. Check the server logs.');
+    toast('error', 'Refresh Failed', 'Could not reach the backend.');
   } finally {
-    btnAnalyze.disabled = false;
-    btnAnalyze.innerHTML = '<span>Assess Fitness Level</span> <i class="fa-solid fa-wand-magic-sparkles"></i>';
+    btnAnalyze.disabled = !isLoggedIn;
+    btnAnalyze.innerHTML = '<span>Refresh from Garmin</span> <i class="fa-solid fa-rotate"></i>';
   }
 });
 
@@ -757,9 +803,8 @@ btnSync.addEventListener('click', async () => {
 // Re-render week preview whenever date changes
 scheduleDateInput.addEventListener('change', fetchAndRenderPreview);
 
-// Initialize dashboard elements
+// Initialize dashboard
 initDateInput();
-checkStatus();
-fetchProfile();
-// Poll connection status every 30 seconds
+loadDashboard();   // immediate: render whatever is in the DB (no Garmin needed)
+checkStatus();     // parallel: check session and enable live features if connected
 setInterval(checkStatus, 30000);

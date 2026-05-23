@@ -1013,6 +1013,19 @@ body {
   display: none !important;
 }
 
+/* ── Analyze row ── */
+.analyze-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.last-synced-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 /* ── Loading Skeleton ── */
 @keyframes shimmer {
   0%   { background-position: -400px 0; }
