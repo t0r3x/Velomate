@@ -2,18 +2,18 @@
 const API_BASE_URL = 'http://localhost:3001';
 
 // State variables
-let isLoggedIn = false;
-let currentProfile = null;
+let isLoggedIn      = false;
+let currentProfile  = null;
 let suggestedProfile = null;
-let devicesLoaded = false;
+let devicesLoaded   = false;
 
 // DOM Elements
-const statusDot    = document.getElementById('status-dot');
-const statusText   = document.getElementById('status-text');
-const btnOpenPanel = document.getElementById('btn-open-panel');
-const btnClosePanel= document.getElementById('btn-close-panel');
-const settingsPanel= document.getElementById('settings-panel');
-const panelOverlay = document.getElementById('panel-overlay');
+const statusDot        = document.getElementById('status-dot');
+const statusText       = document.getElementById('status-text');
+const btnOpenPanel     = document.getElementById('btn-open-panel');
+const btnClosePanel    = document.getElementById('btn-close-panel');
+const settingsPanel    = document.getElementById('settings-panel');
+const panelOverlay     = document.getElementById('panel-overlay');
 const garminBtnHrLabel = document.getElementById('garmin-btn-hr-label');
 
 const loggedOutSection = document.getElementById('auth-status-logged-out');
@@ -26,10 +26,9 @@ const mfaInput         = document.getElementById('mfa-code');
 const btnLogin         = document.getElementById('btn-login');
 const btnLogout        = document.getElementById('btn-logout');
 
-const btnSync          = document.getElementById('btn-sync-workouts');
-const scheduleDateInput= document.getElementById('schedule-date');
-const syncResult       = document.getElementById('sync-result');
-const syncResultMsg    = document.getElementById('sync-result-msg');
+const btnSync            = document.getElementById('btn-sync-workouts');
+const scheduleDateInput  = document.getElementById('schedule-date');
+const syncResult         = document.getElementById('sync-result');
 const syncedWorkoutsList = document.getElementById('synced-workouts-list');
 
 const maxHrInput = document.getElementById('profile-max-hr');
@@ -47,19 +46,32 @@ const z4Max = document.getElementById('z4-max');
 const z5Min = document.getElementById('z5-min');
 const z5Max = document.getElementById('z5-max');
 
-const btnAnalyze       = document.getElementById('btn-analyze');
-const assessmentResults= document.getElementById('assessment-results');
-const recMaxHr         = document.getElementById('rec-max-hr');
-const recLthr          = document.getElementById('rec-lthr');
-const recSummaryText   = document.getElementById('rec-summary-text');
-const btnApplyRec      = document.getElementById('btn-apply-rec');
+const btnAnalyze        = document.getElementById('btn-analyze');
+const assessmentResults = document.getElementById('assessment-results');
+const recMaxHr          = document.getElementById('rec-max-hr');
+const recLthr           = document.getElementById('rec-lthr');
+const btnApplyRec       = document.getElementById('btn-apply-rec');
 
-const activitiesList       = document.getElementById('activities-list');
-const deviceSelect         = document.getElementById('device-select');
-const btnRefreshDevices    = document.getElementById('btn-refresh-devices');
-const authLoading          = document.getElementById('auth-status-loading');
+const activitiesList    = document.getElementById('activities-list');
+const deviceSelect      = document.getElementById('device-select');
+const btnRefreshDevices = document.getElementById('btn-refresh-devices');
+const authLoading       = document.getElementById('auth-status-loading');
 
-// ── Side Panel ──────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+// Clone a <template> by id and return its root element
+const cloneTemplate = (id) =>
+  document.getElementById(id).content.cloneNode(true).firstElementChild;
+
+// Update a button's label and icon from a named state (data-* attributes on the element)
+const setBtn = (btn, state) => {
+  const label = btn.dataset[`${state}Label`];
+  const icon  = btn.dataset[`${state}Icon`];
+  if (label !== undefined) btn.querySelector('span').textContent = label;
+  if (icon  !== undefined) btn.querySelector('i').className = `fa-solid ${icon}`;
+};
+
+// ── Side Panel ─────────────────────────────────────────────────────────────────
 const openPanel = () => {
   settingsPanel.classList.add('open');
   panelOverlay.classList.add('open');
@@ -75,25 +87,34 @@ btnClosePanel.addEventListener('click', closePanel);
 panelOverlay.addEventListener('click', closePanel);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
 
-// Toast notification system
+// ── Toast ──────────────────────────────────────────────────────────────────────
 const toast = (type, title, msg = '', duration = 4000) => {
-  const container = document.getElementById('toast-container');
-  const icons = { success: 'fa-circle-check', error: 'fa-circle-xmark', info: 'fa-circle-info', warn: 'fa-triangle-exclamation' };
-  const el = document.createElement('div');
-  el.className = `toast ${type}`;
-  el.innerHTML = `<i class="fa-solid ${icons[type] || icons.info} toast-icon"></i>
-    <div class="toast-body"><div class="toast-title">${title}</div>${msg ? `<div class="toast-msg">${msg}</div>` : ''}</div>
-    <button class="toast-close" onclick="this.closest('.toast').remove()"><i class="fa-solid fa-xmark"></i></button>`;
-  container.appendChild(el);
+  const icons = {
+    success: 'fa-circle-check',
+    error:   'fa-circle-xmark',
+    info:    'fa-circle-info',
+    warn:    'fa-triangle-exclamation'
+  };
+  const el = cloneTemplate('tpl-toast');
+  el.classList.add(type);
+  el.querySelector('.toast-icon').classList.add(icons[type] || icons.info);
+  el.querySelector('.toast-title').textContent = title;
+  const msgEl = el.querySelector('.toast-msg');
+  if (msg) {
+    msgEl.textContent = msg;
+  } else {
+    msgEl.remove();
+  }
+  el.querySelector('.toast-close').addEventListener('click', () => el.remove());
+  document.getElementById('toast-container').appendChild(el);
   setTimeout(() => {
     el.classList.add('removing');
     el.addEventListener('animationend', () => el.remove(), { once: true });
   }, duration);
 };
 
-// ── Week Preview ──────────────────────────────────────────────────
+// ── Week Preview ───────────────────────────────────────────────────────────────
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const DAY_NAMES_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 let previewWorkouts = null; // cache from API
 
@@ -105,19 +126,19 @@ const zoneColors = {
   z5: 'var(--z5-color, #e66e6e)'
 };
 
-const workoutTypeIcon = { Sprint: 'fa-bolt', Threshold: 'fa-fire-flame-curved', LongRide: 'fa-road' };
-const workoutTypeLabel = { Sprint: 'Sprint', Threshold: 'Threshold', LongRide: 'Long Ride' };
+const workoutTypeIcon  = { Sprint: 'fa-bolt', Threshold: 'fa-fire-flame-curved', LongRide: 'fa-road' };
+const workoutTypeLabel = { Sprint: 'Sprint',  Threshold: 'Threshold',            LongRide: 'Long Ride' };
 
 const fetchAndRenderPreview = async () => {
   const dateVal = scheduleDateInput.value;
   if (!dateVal) return;
 
   const weekPreview = document.getElementById('week-preview');
-  const weekGrid = document.getElementById('week-grid');
-  const weekLabel = document.getElementById('week-label');
+  const weekGrid    = document.getElementById('week-grid');
+  const weekLabel   = document.getElementById('week-label');
   const detailCards = document.getElementById('workout-detail-cards');
 
-  // Fetch preview data (only once or when profile changes)
+  // Fetch preview data once (re-fetches when profile changes)
   if (!previewWorkouts) {
     try {
       const res = await fetch(`${API_BASE_URL}/api/preview-workouts`);
@@ -129,31 +150,22 @@ const fetchAndRenderPreview = async () => {
     }
   }
 
-  // Calculate the week that contains the threshold date
-  // weekOffset 0 = Threshold, -2 = Sprint, +2 = Long Ride
   const thresholdDate = new Date(dateVal + 'T00:00:00');
 
-  // Build map: offset → workout
-  const offsetMap = {};
-  previewWorkouts.forEach(w => { offsetMap[w.weekOffset] = w; });
-
-  // Show Mon–Sun of the week containing thresholdDate
-  const dayOfWeek = thresholdDate.getDay(); // 0=Sun,1=Mon,...6=Sat
+  // Find Monday of the week containing thresholdDate
+  const dayOfWeek    = thresholdDate.getDay();
   const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
   const monday = new Date(thresholdDate);
   monday.setDate(thresholdDate.getDate() + mondayOffset);
 
-  // Week label
-  const fmt = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const fmt    = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
   weekLabel.textContent = `${fmt(monday)} – ${fmt(sunday)}`;
 
-  // Build grid cells (Mon=0 … Sun=6, offset from Monday)
-  weekGrid.innerHTML = '';
+  weekGrid.innerHTML    = '';
   detailCards.innerHTML = '';
 
-  // Map workouts by their absolute date offset from threshold
-  // Sprint: threshold - 2 days, Threshold: threshold + 0, LongRide: threshold + 2
+  // Map workouts to their absolute date strings
   const workoutByDate = {};
   previewWorkouts.forEach(w => {
     const d = new Date(thresholdDate);
@@ -161,89 +173,85 @@ const fetchAndRenderPreview = async () => {
     workoutByDate[d.toDateString()] = w;
   });
 
-  const today = new Date(); today.setHours(0,0,0,0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
 
+  // Render 7 day cells (Mon → Sun)
   for (let i = 0; i < 7; i++) {
-    const cellDate = new Date(monday);
+    const cellDate    = new Date(monday);
     cellDate.setDate(monday.getDate() + i);
-    const workout = workoutByDate[cellDate.toDateString()];
-    const isToday = cellDate.toDateString() === today.toDateString();
+    const workout     = workoutByDate[cellDate.toDateString()];
+    const isToday     = cellDate.toDateString() === today.toDateString();
     const isThreshold = workout?.type === 'Threshold';
+    const dayLabel    = DAY_NAMES[cellDate.getDay()];
+    const dateNum     = cellDate.getDate();
 
-    const cell = document.createElement('div');
-    cell.className = 'week-day-cell' +
-      (workout ? ` has-workout wt-${workout.type.toLowerCase()}` : ' rest') +
-      (isToday ? ' is-today' : '') +
-      (isThreshold ? ' is-threshold' : '');
-
-    const dayLabel = DAY_NAMES[cellDate.getDay()];
-    const dateNum = cellDate.getDate();
-
+    let cell;
     if (workout) {
-      const icon = workoutTypeIcon[workout.type] || 'fa-dumbbell';
+      const icon  = workoutTypeIcon[workout.type]  || 'fa-dumbbell';
       const label = workoutTypeLabel[workout.type] || workout.type;
-      cell.innerHTML = `
-        <div class="wdc-day">${dayLabel} <span class="wdc-date">${dateNum}</span></div>
-        <div class="wdc-workout-chip">
-          <i class="fa-solid ${icon}"></i>
-          <span>${label}</span>
-        </div>
-        <div class="wdc-duration">${workout.totalMinutes} min</div>
-        ${isThreshold ? '<div class="wdc-scheduled-badge"><i class="fa-solid fa-calendar-check"></i> Scheduled</div>' : ''}
-      `;
+      cell = cloneTemplate('tpl-week-day-workout');
+      cell.classList.add('has-workout', `wt-${workout.type.toLowerCase()}`);
+      if (isToday)     cell.classList.add('is-today');
+      if (isThreshold) cell.classList.add('is-threshold');
+      cell.querySelector('.wdc-day-label').textContent      = dayLabel;
+      cell.querySelector('.wdc-date').textContent           = dateNum;
+      cell.querySelector('.wdc-workout-chip i').classList.add(icon);
+      cell.querySelector('.wdc-workout-label').textContent  = label;
+      cell.querySelector('.wdc-duration').textContent       = `${workout.totalMinutes} min`;
+      cell.querySelector('.wdc-scheduled-badge').hidden     = !isThreshold;
     } else {
-      cell.innerHTML = `
-        <div class="wdc-day">${dayLabel} <span class="wdc-date">${dateNum}</span></div>
-        <div class="wdc-rest"><i class="fa-solid fa-bed"></i> Rest</div>
-      `;
+      cell = cloneTemplate('tpl-week-day-rest');
+      if (isToday) cell.classList.add('is-today');
+      cell.querySelector('.wdc-day-label').textContent = dayLabel;
+      cell.querySelector('.wdc-date').textContent      = dateNum;
     }
     weekGrid.appendChild(cell);
   }
 
-  // Render detail cards for each workout
+  // Render workout detail cards
   previewWorkouts.forEach(w => {
-    const card = document.createElement('div');
-    card.className = `workout-card wt-${w.type.toLowerCase()}`;
-
-    const icon = workoutTypeIcon[w.type] || 'fa-dumbbell';
+    const icon  = workoutTypeIcon[w.type]  || 'fa-dumbbell';
     const label = workoutTypeLabel[w.type] || w.type;
 
-    // Zone bar
-    const totalMin = w.totalMinutes;
-    const barSegments = w.steps.map(s => {
-      const pct = Math.round((s.minutes / totalMin) * 100);
-      const color = zoneColors[s.zoneKey] || '#888';
-      return `<div class="wc-bar-seg" style="width:${pct}%;background:${color}" title="${s.label} (${s.zone})"></div>`;
-    }).join('');
+    const card = cloneTemplate('tpl-workout-card');
+    card.classList.add(`wt-${w.type.toLowerCase()}`);
 
-    // Step list
-    const stepRows = w.steps.map(s => `
-      <div class="wc-step-row">
-        <span class="wc-step-dot" style="background:${zoneColors[s.zoneKey]}"></span>
-        <span class="wc-step-label">${s.label}</span>
-        <span class="wc-step-dur">${s.duration}</span>
-        <span class="wc-step-zone zone-tag ${s.zoneKey}">${s.zone}</span>
-      </div>
-    `).join('');
+    card.querySelector('.wc-icon').classList.add(icon);
+    card.querySelector('.wc-title').textContent = label;
 
-    // Date for this workout
     const wDate = new Date(thresholdDate);
     wDate.setDate(wDate.getDate() + w.weekOffset);
-    const wDateLabel = wDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+    card.querySelector('.wc-date').textContent      = wDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+    card.querySelector('.wc-total-dur').textContent = `${w.totalMinutes} min`;
 
-    card.innerHTML = `
-      <div class="wc-header">
-        <i class="fa-solid ${icon} wc-icon"></i>
-        <div class="wc-title-block">
-          <span class="wc-title">${label}</span>
-          <span class="wc-date">${wDateLabel}</span>
-        </div>
-        <span class="wc-total-dur">${w.totalMinutes} min</span>
-      </div>
-      <div class="wc-zone-bar">${barSegments}</div>
-      <div class="wc-steps">${stepRows}</div>
-      ${w.isScheduled ? '<div class="wc-schedule-note"><i class="fa-solid fa-calendar-check"></i> Will be scheduled on Garmin Connect</div>' : '<div class="wc-schedule-note muted"><i class="fa-solid fa-upload"></i> Will be uploaded to device</div>'}
-    `;
+    // Zone bar segments
+    const barEl    = card.querySelector('.wc-zone-bar');
+    const totalMin = w.totalMinutes;
+    w.steps.forEach(s => {
+      const seg = cloneTemplate('tpl-workout-bar-seg');
+      seg.style.width      = `${Math.round((s.minutes / totalMin) * 100)}%`;
+      seg.style.background = zoneColors[s.zoneKey] || '#888';
+      seg.title            = `${s.label} (${s.zone})`;
+      barEl.appendChild(seg);
+    });
+
+    // Step rows
+    const stepsEl = card.querySelector('.wc-steps');
+    w.steps.forEach(s => {
+      const row = cloneTemplate('tpl-workout-step');
+      row.querySelector('.wc-step-dot').style.background = zoneColors[s.zoneKey];
+      row.querySelector('.wc-step-label').textContent    = s.label;
+      row.querySelector('.wc-step-dur').textContent      = s.duration;
+      const zoneEl = row.querySelector('.wc-step-zone');
+      zoneEl.classList.add(s.zoneKey);
+      zoneEl.textContent = s.zone;
+      stepsEl.appendChild(row);
+    });
+
+    // Schedule note — show the appropriate one
+    card.querySelector('.wc-schedule-note--scheduled').hidden = !w.isScheduled;
+    card.querySelector('.wc-schedule-note--upload').hidden    = !!w.isScheduled;
+
     detailCards.appendChild(card);
   });
 
@@ -257,6 +265,8 @@ const initDateInput = () => {
   scheduleDateInput.value = tomorrow.toISOString().split('T')[0];
 };
 
+// ── Auth ───────────────────────────────────────────────────────────────────────
+
 // Check connection and session status on the backend
 const checkStatus = async () => {
   try {
@@ -266,16 +276,15 @@ const checkStatus = async () => {
     updateAuthUI(data.loggedIn);
   } catch (error) {
     console.error('Failed to connect to backend service:', error);
-    statusDot.className = 'status-dot disconnected';
-    statusText.textContent = 'Server Offline';
-    btnSync.disabled = true;
-    btnAnalyze.disabled = true;
+    statusDot.className      = 'status-dot disconnected';
+    statusText.textContent   = 'Server Offline';
+    btnSync.disabled         = true;
+    btnAnalyze.disabled      = true;
   }
 };
 
 // Update Authentication UI elements
 const updateAuthUI = (loggedIn) => {
-  // Hide the loading skeleton now that status is known
   authLoading.classList.add('hidden');
 
   if (loggedIn) {
@@ -283,9 +292,9 @@ const updateAuthUI = (loggedIn) => {
     statusText.textContent = 'Connected';
     loggedOutSection.classList.add('hidden');
     loggedInSection.classList.remove('hidden');
-    btnSync.disabled = false;
+    btnSync.disabled    = false;
     btnAnalyze.disabled = false;
-    btnAnalyze.innerHTML = '<span>Refresh from Garmin</span> <i class="fa-solid fa-rotate"></i>';
+    setBtn(btnAnalyze, 'connected');
     previewWorkouts = null; // invalidate so preview re-fetches with fresh profile
     if (!devicesLoaded) fetchDevices();
     fetchAndRenderPreview();
@@ -294,12 +303,12 @@ const updateAuthUI = (loggedIn) => {
     statusText.textContent = 'Not connected';
     loggedOutSection.classList.remove('hidden');
     loggedInSection.classList.add('hidden');
-    btnSync.disabled = true;
+    btnSync.disabled    = true;
     btnAnalyze.disabled = true;
-    deviceSelect.innerHTML = '<option value="">Connect to Garmin first…</option>';
-    deviceSelect.disabled = true;
+    deviceSelect.innerHTML    = '<option value="">Connect to Garmin first…</option>';
+    deviceSelect.disabled     = true;
     btnRefreshDevices.disabled = true;
-    devicesLoaded = false;
+    devicesLoaded             = false;
     garminBtnHrLabel.textContent = '';
   }
 };
@@ -314,13 +323,13 @@ const updateHeaderHrLabel = (profile) => {
 // Handle Garmin login request
 loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  
+
   const mfaCode = mfaInput.value.trim();
-  
-  // If MFA section is visible and we have a code, send it to the MFA endpoint
+
+  // MFA step: section is visible and code is filled in
   if (!mfaSection.classList.contains('hidden') && mfaCode) {
     btnLogin.disabled = true;
-    btnLogin.innerHTML = '<span>Verifying...</span> <i class="fa-solid fa-spinner fa-spin"></i>';
+    setBtn(btnLogin, 'verifying');
     try {
       const response = await fetch(`${API_BASE_URL}/api/mfa`, {
         method: 'POST',
@@ -340,24 +349,22 @@ loginForm.addEventListener('submit', async (e) => {
       toast('error', 'Connection Error', 'Failed to contact backend MFA endpoint.');
     } finally {
       btnLogin.disabled = false;
-      btnLogin.innerHTML = '<span>Connect Garmin</span> <i class="fa-solid fa-arrow-right-to-bracket"></i>';
+      setBtn(btnLogin, 'idle');
     }
     return;
   }
 
+  // Initial login step
   btnLogin.disabled = true;
-  btnLogin.innerHTML = '<span>Connecting...</span> <i class="fa-solid fa-spinner fa-spin"></i>';
+  setBtn(btnLogin, 'loading');
 
   try {
     const response = await fetch(`${API_BASE_URL}/api/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: usernameInput.value,
-        password: passwordInput.value
-      })
+      body: JSON.stringify({ username: usernameInput.value, password: passwordInput.value })
     });
-    
+
     const data = await response.json();
 
     if (response.ok) {
@@ -377,15 +384,17 @@ loginForm.addEventListener('submit', async (e) => {
     toast('error', 'Connection Error', 'Failed to contact backend login endpoint.');
   } finally {
     btnLogin.disabled = false;
-    btnLogin.innerHTML = '<span>Connect Garmin</span> <i class="fa-solid fa-arrow-right-to-bracket"></i>';
+    setBtn(btnLogin, 'idle');
   }
 });
 
-// Logout handles simple local toggle (deleting cookies is on backend restarts or manual session delete)
+// Logout — local toggle only
 btnLogout.addEventListener('click', () => {
   isLoggedIn = false;
   updateAuthUI(false);
 });
+
+// ── HR Profile ─────────────────────────────────────────────────────────────────
 
 // Fetch Profile HR Zones from API
 const fetchProfile = async () => {
@@ -403,91 +412,59 @@ const fetchProfile = async () => {
 // Fill inputs with profile data
 const populateProfileUI = (profile) => {
   maxHrInput.value = profile.maxHr;
-  lthrInput.value = profile.lthr;
-  
+  lthrInput.value  = profile.lthr;
+
   z1Min.value = profile.zones.z1.min;
   z1Max.value = profile.zones.z1.max;
-  
   z2Min.value = profile.zones.z2.min;
   z2Max.value = profile.zones.z2.max;
-  
   z3Min.value = profile.zones.z3.min;
   z3Max.value = profile.zones.z3.max;
-  
   z4Min.value = profile.zones.z4.min;
   z4Max.value = profile.zones.z4.max;
-  
   z5Min.value = profile.zones.z5.min;
   z5Max.value = profile.zones.z5.max;
 
   updateZonesVisualizer(profile);
 };
 
-// Recalculate segment widths for visually stacked bar chart representation
+// Recalculate segment widths for the stacked zone bar
 const updateZonesVisualizer = (profile) => {
-  const max = profile.maxHr || 190;
-  
+  const max  = profile.maxHr || 190;
   const z1Pct = Math.round((profile.zones.z1.max / max) * 100);
   const z2Pct = Math.round(((profile.zones.z2.max - profile.zones.z2.min) / max) * 100);
   const z3Pct = Math.round(((profile.zones.z3.max - profile.zones.z3.min) / max) * 100);
   const z4Pct = Math.round(((profile.zones.z4.max - profile.zones.z4.min) / max) * 100);
   const z5Pct = Math.round(((max - profile.zones.z5.min) / max) * 100);
 
-  const segmentZ1 = document.querySelector('.zone-bar-segment.z1');
-  const segmentZ2 = document.querySelector('.zone-bar-segment.z2');
-  const segmentZ3 = document.querySelector('.zone-bar-segment.z3');
-  const segmentZ4 = document.querySelector('.zone-bar-segment.z4');
-  const segmentZ5 = document.querySelector('.zone-bar-segment.z5');
+  const seg = (cls) => document.querySelector(`.zone-bar-segment.${cls}`);
 
-  segmentZ1.style.width = `${z1Pct}%`;
-  segmentZ1.title = `Zone 1: 0 - ${profile.zones.z1.max} bpm`;
-
-  segmentZ2.style.width = `${z2Pct}%`;
-  segmentZ2.title = `Zone 2: ${profile.zones.z2.min} - ${profile.zones.z2.max} bpm`;
-
-  segmentZ3.style.width = `${z3Pct}%`;
-  segmentZ3.title = `Zone 3: ${profile.zones.z3.min} - ${profile.zones.z3.max} bpm`;
-
-  segmentZ4.style.width = `${z4Pct}%`;
-  segmentZ4.title = `Zone 4: ${profile.zones.z4.min} - ${profile.zones.z4.max} bpm`;
-
-  segmentZ5.style.width = `${z5Pct}%`;
-  segmentZ5.title = `Zone 5: ${profile.zones.z5.min} - ${profile.maxHr} bpm`;
+  Object.entries({ z1: z1Pct, z2: z2Pct, z3: z3Pct, z4: z4Pct, z5: z5Pct }).forEach(([z, pct]) => {
+    seg(z).style.width = `${pct}%`;
+  });
+  seg('z1').title = `Zone 1: 0 - ${profile.zones.z1.max} bpm`;
+  seg('z2').title = `Zone 2: ${profile.zones.z2.min} - ${profile.zones.z2.max} bpm`;
+  seg('z3').title = `Zone 3: ${profile.zones.z3.min} - ${profile.zones.z3.max} bpm`;
+  seg('z4').title = `Zone 4: ${profile.zones.z4.min} - ${profile.zones.z4.max} bpm`;
+  seg('z5').title = `Zone 5: ${profile.zones.z5.min} - ${profile.maxHr} bpm`;
 };
 
-// Automatic calculations boundaries when Max HR or LTHR change
+// Auto-compute zone boundaries when Max HR or LTHR change
 const autoBoundariesFromInput = () => {
-  const lthr = parseInt(lthrInput.value) || 165;
+  const lthr  = parseInt(lthrInput.value)  || 165;
   const maxHr = parseInt(maxHrInput.value) || 190;
-  
-  // Calculate defaults:
-  // Z1: <65% LTHR
+
   const z1Limit = Math.round(lthr * 0.65);
-  // Z2: 65-80% LTHR
-  const z2Start = z1Limit + 1;
   const z2Limit = Math.round(lthr * 0.80);
-  // Z3: 80-89% LTHR
-  const z3Start = z2Limit + 1;
   const z3Limit = Math.round(lthr * 0.89);
-  // Z4: 89-100% LTHR
-  const z4Start = z3Limit + 1;
-  const z4Limit = lthr;
-  // Z5: >100% LTHR up to Max HR
-  const z5Start = z4Limit + 1;
-  const z5Limit = maxHr;
 
   z1Max.value = z1Limit;
-  z2Min.value = z2Start;
-  z2Max.value = z2Limit;
-  z3Min.value = z3Start;
-  z3Max.value = z3Limit;
-  z4Min.value = z4Start;
-  z4Max.value = z4Limit;
-  z5Min.value = z5Start;
-  z5Max.value = z5Limit;
+  z2Min.value = z1Limit + 1;  z2Max.value = z2Limit;
+  z3Min.value = z2Limit + 1;  z3Max.value = z3Limit;
+  z4Min.value = z3Limit + 1;  z4Max.value = lthr;
+  z5Min.value = lthr + 1;     z5Max.value = maxHr;
 };
 
-// Add listeners to auto-compute boundary inputs on change
 lthrInput.addEventListener('input', autoBoundariesFromInput);
 maxHrInput.addEventListener('input', autoBoundariesFromInput);
 
@@ -496,13 +473,13 @@ zonesForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const btnSave = document.getElementById('btn-save-profile');
   btnSave.disabled = true;
-  btnSave.innerHTML = '<span>Saving...</span> <i class="fa-solid fa-spinner fa-spin"></i>';
+  setBtn(btnSave, 'loading');
 
   const updatedProfile = {
     maxHr: parseInt(maxHrInput.value),
-    lthr: parseInt(lthrInput.value),
+    lthr:  parseInt(lthrInput.value),
     zones: {
-      z1: { min: 0, max: parseInt(z1Max.value) },
+      z1: { min: 0,                     max: parseInt(z1Max.value) },
       z2: { min: parseInt(z2Min.value), max: parseInt(z2Max.value) },
       z3: { min: parseInt(z3Min.value), max: parseInt(z3Max.value) },
       z4: { min: parseInt(z4Min.value), max: parseInt(z4Max.value) },
@@ -516,7 +493,7 @@ zonesForm.addEventListener('submit', async (e) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedProfile)
     });
-    
+
     if (response.ok) {
       currentProfile = updatedProfile;
       updateZonesVisualizer(updatedProfile);
@@ -530,9 +507,11 @@ zonesForm.addEventListener('submit', async (e) => {
     toast('error', 'Connection Error', 'Could not reach backend while saving profile.');
   } finally {
     btnSave.disabled = false;
-    btnSave.innerHTML = '<span>Save Heart Rate Profile</span> <i class="fa-solid fa-floppy-disk"></i>';
+    setBtn(btnSave, 'idle');
   }
 });
+
+// ── Devices ────────────────────────────────────────────────────────────────────
 
 // Populate the device <select> from an array of device objects
 const renderDeviceOptions = (devices) => {
@@ -547,40 +526,38 @@ const renderDeviceOptions = (devices) => {
     });
 
     sorted.forEach(d => {
-      const opt = document.createElement('option');
-      opt.value = d.deviceId || d.unitId || '';
+      const opt  = document.createElement('option');
+      opt.value  = d.deviceId || d.unitId || '';
       const name = d.productDisplayName || d.deviceMetaDataDTO?.deviceProductDescription || 'Unknown device';
       const type = d.activityTypes?.join(', ') || d.activityType || '';
       opt.textContent = name + (type ? ` — ${type}` : '');
       deviceSelect.appendChild(opt);
     });
 
-    deviceSelect.disabled = false;
+    deviceSelect.disabled      = false;
     btnRefreshDevices.disabled = false;
 
     // Auto-select first Edge device
     const edgeOpt = [...deviceSelect.options].find(o => o.text.toLowerCase().includes('edge'));
     if (edgeOpt) edgeOpt.selected = true;
   } else {
-    const opt = document.createElement('option');
+    const opt       = document.createElement('option');
     opt.textContent = 'No devices found';
-    opt.disabled = true;
+    opt.disabled    = true;
     deviceSelect.appendChild(opt);
     btnRefreshDevices.disabled = false;
   }
 };
 
-// Fetch devices from backend (served from DB cache on backend side)
+// Fetch devices from backend (served from DB cache; fetches from Garmin only on first use)
 const fetchDevices = async () => {
   deviceSelect.innerHTML = '<option value="">Loading devices…</option>';
-  deviceSelect.disabled = true;
+  deviceSelect.disabled  = true;
 
   try {
     const response = await fetch(`${API_BASE_URL}/api/devices`);
     if (!response.ok) throw new Error('Devices error');
-
-    const devices = await response.json();
-    renderDeviceOptions(devices);
+    renderDeviceOptions(await response.json());
     devicesLoaded = true;
   } catch (error) {
     console.error('Error fetching devices:', error);
@@ -588,7 +565,7 @@ const fetchDevices = async () => {
   }
 };
 
-// Force re-fetch devices from Garmin (used by the refresh button)
+// Force re-fetch from Garmin and update the DB cache (manual refresh button)
 const refreshDevices = async () => {
   btnRefreshDevices.disabled = true;
   btnRefreshDevices.classList.add('spinning');
@@ -597,19 +574,17 @@ const refreshDevices = async () => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/devices/refresh`, { method: 'POST' });
     if (!response.ok) throw new Error('Refresh error');
-
-    const devices = await response.json();
-    renderDeviceOptions(devices);
+    renderDeviceOptions(await response.json());
   } catch (error) {
     console.error('Error refreshing devices:', error);
-    deviceSelect.innerHTML = '<option value="" disabled>Refresh failed</option>';
+    deviceSelect.innerHTML     = '<option value="" disabled>Refresh failed</option>';
     btnRefreshDevices.disabled = false;
   } finally {
     btnRefreshDevices.classList.remove('spinning');
   }
 };
 
-// ── Shared assessment/render helpers ─────────────────────────────────────────
+// ── Assessment ─────────────────────────────────────────────────────────────────
 
 const timeAgo = (isoStr) => {
   if (!isoStr) return '';
@@ -650,7 +625,11 @@ const renderAssessment = (analysis, profile) => {
     recLthr.textContent = lthrChanged
       ? `${profile.lthr} bpm → ${analysis.estimatedLthr} bpm`
       : `${profile.lthr} bpm (unchanged)`;
-    recSummaryText.innerHTML = `Based on your <strong>${analysis.totalCyclingRides} recent rides</strong>, your peak recorded heart rate was <strong>${analysis.maxRecordedHr} bpm</strong>. We estimate your threshold at <strong>${analysis.estimatedLthr} bpm</strong> with an average ride duration of <strong>${analysis.averageRideDurationMinutes} minutes</strong>.`;
+
+    document.getElementById('rec-summary-rides').textContent   = analysis.totalCyclingRides;
+    document.getElementById('rec-summary-max-hr').textContent  = `${analysis.maxRecordedHr} bpm`;
+    document.getElementById('rec-summary-lthr').textContent    = `${analysis.estimatedLthr} bpm`;
+    document.getElementById('rec-summary-avg-dur').textContent = `${analysis.averageRideDurationMinutes} minutes`;
 
     assessmentResults.classList.remove('hidden');
   } else {
@@ -683,7 +662,7 @@ const loadDashboard = async () => {
 // Refresh from Garmin: fetch new rides, merge into DB, re-render
 btnAnalyze.addEventListener('click', async () => {
   btnAnalyze.disabled = true;
-  btnAnalyze.innerHTML = '<span>Syncing from Garmin…</span> <i class="fa-solid fa-spinner fa-spin"></i>';
+  setBtn(btnAnalyze, 'loading');
 
   try {
     const response = await fetch(`${API_BASE_URL}/api/activities/refresh`, { method: 'POST' });
@@ -706,55 +685,42 @@ btnAnalyze.addEventListener('click', async () => {
     toast('error', 'Refresh Failed', 'Could not reach the backend.');
   } finally {
     btnAnalyze.disabled = !isLoggedIn;
-    btnAnalyze.innerHTML = '<span>Refresh from Garmin</span> <i class="fa-solid fa-rotate"></i>';
+    setBtn(btnAnalyze, 'connected');
   }
 });
 
 // Render recent rides list
 const renderActivities = (activities) => {
   activitiesList.innerHTML = '';
-  
+
   if (!activities || activities.length === 0) {
-    activitiesList.innerHTML = '<p class="helper-text empty-state-text">No recent cycling activities found.</p>';
+    const p = document.createElement('p');
+    p.className   = 'helper-text empty-state-text';
+    p.textContent = 'No recent cycling activities found.';
+    activitiesList.appendChild(p);
     return;
   }
 
+  const tpl = document.getElementById('tpl-activity-item');
   activities.forEach(act => {
-    const li = document.createElement('li');
-    li.className = 'activity-item';
-    
+    const li = tpl.content.cloneNode(true).firstElementChild;
+
     const dateFormatted = new Date(act.startTime).toLocaleDateString('en-GB', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
     });
 
-    li.innerHTML = `
-      <div class="activity-icon-container">
-        <i class="fa-solid fa-bicycle"></i>
-      </div>
-      <div class="activity-details-main">
-        <span class="activity-title">${act.name || 'Cycling Activity'}</span>
-        <span class="activity-meta">${dateFormatted} • ${act.type || 'Cycling'}</span>
-      </div>
-      <div class="activity-stats-summary">
-        <div class="act-stat">
-          <span class="act-stat-val">${act.distanceKm} km</span>
-          <span class="act-stat-label">Dist</span>
-        </div>
-        <div class="act-stat">
-          <span class="act-stat-val">${act.durationMinutes} min</span>
-          <span class="act-stat-label">Time</span>
-        </div>
-        ${act.averageHr > 0 ? `
-          <div class="act-stat">
-            <span class="act-stat-val">${act.averageHr} bpm</span>
-            <span class="act-stat-label">Avg HR</span>
-          </div>
-        ` : ''}
-      </div>
-    `;
+    li.querySelector('.activity-title').textContent = act.name || 'Cycling Activity';
+    li.querySelector('.activity-meta').textContent  = `${dateFormatted} • ${act.type || 'Cycling'}`;
+    li.querySelector('.act-stat--dist .act-stat-val').textContent = `${act.distanceKm} km`;
+    li.querySelector('.act-stat--time .act-stat-val').textContent = `${act.durationMinutes} min`;
+
+    const hrStat = li.querySelector('.act-stat--hr');
+    if (act.averageHr > 0) {
+      hrStat.querySelector('.act-stat-val').textContent = `${act.averageHr} bpm`;
+    } else {
+      hrStat.hidden = true;
+    }
+
     activitiesList.appendChild(li);
   });
 };
@@ -764,7 +730,7 @@ btnApplyRec.addEventListener('click', async () => {
   if (!suggestedProfile) return;
 
   btnApplyRec.disabled = true;
-  btnApplyRec.innerHTML = '<span>Applying...</span> <i class="fa-solid fa-spinner fa-spin"></i>';
+  setBtn(btnApplyRec, 'loading');
 
   try {
     const response = await fetch(`${API_BASE_URL}/api/profile`, {
@@ -772,7 +738,7 @@ btnApplyRec.addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(suggestedProfile)
     });
-    
+
     if (response.ok) {
       currentProfile = suggestedProfile;
       populateProfileUI(suggestedProfile);
@@ -787,14 +753,16 @@ btnApplyRec.addEventListener('click', async () => {
     toast('error', 'Connection Error', 'Failed to apply recommendation.');
   } finally {
     btnApplyRec.disabled = false;
-    btnApplyRec.innerHTML = '<span>Accept & Update Zones</span> <i class="fa-solid fa-check-double"></i>';
+    setBtn(btnApplyRec, 'idle');
   }
 });
 
-// Compile, Upload, and Schedule Workouts
+// ── Sync ───────────────────────────────────────────────────────────────────────
+
+// Compile, upload, and schedule workouts on Garmin
 btnSync.addEventListener('click', async () => {
   btnSync.disabled = true;
-  btnSync.innerHTML = '<span>Syncing Workouts...</span> <i class="fa-solid fa-spinner fa-spin"></i>';
+  setBtn(btnSync, 'loading');
   syncResult.classList.add('hidden');
 
   const scheduleDate = scheduleDateInput.value;
@@ -805,17 +773,23 @@ btnSync.addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scheduleDate })
     });
-    
+
     const data = await response.json();
-    
+
     if (response.ok) {
-      syncResultMsg.innerHTML = `Created and uploaded <strong>3 custom HR workouts</strong> to Garmin. The main threshold workout has been scheduled for <strong>${data.scheduledDate}</strong>. Sync your device to apply!`;
-      
+      document.getElementById('sync-scheduled-date').textContent = data.scheduledDate;
+
       syncedWorkoutsList.innerHTML = '';
+      const tpl = document.getElementById('tpl-synced-workout');
       data.workouts.forEach(w => {
         const isScheduled = w.type === 'Threshold';
-        const li = document.createElement('li');
-        li.innerHTML = `Workout <strong>${w.name}</strong> ${isScheduled ? `<span style="color:var(--z4-color)">(Scheduled for ${data.scheduledDate})</span>` : '<span style="color:var(--text-muted)">(Available on Device)</span>'}`;
+        const li          = tpl.content.cloneNode(true).firstElementChild;
+        li.querySelector('.sw-name').textContent = w.name;
+        const statusEl = li.querySelector('.sw-status');
+        statusEl.textContent = isScheduled
+          ? `(Scheduled for ${data.scheduledDate})`
+          : '(Available on Device)';
+        statusEl.style.color = isScheduled ? 'var(--z4-color)' : 'var(--text-muted)';
         syncedWorkoutsList.appendChild(li);
       });
 
@@ -828,18 +802,16 @@ btnSync.addEventListener('click', async () => {
     toast('error', 'Connection Error', 'Failed to connect to backend sync endpoint.');
   } finally {
     btnSync.disabled = false;
-    btnSync.innerHTML = '<span>Sync & Schedule Workouts</span> <i class="fa-solid fa-cloud-arrow-up"></i>';
+    setBtn(btnSync, 'idle');
   }
 });
 
-// Re-render week preview whenever date changes
-scheduleDateInput.addEventListener('change', fetchAndRenderPreview);
+// ── Init ───────────────────────────────────────────────────────────────────────
 
-// Refresh device list on demand
+scheduleDateInput.addEventListener('change', fetchAndRenderPreview);
 btnRefreshDevices.addEventListener('click', refreshDevices);
 
-// Initialize dashboard
 initDateInput();
-loadDashboard();   // immediate: render whatever is in the DB (no Garmin needed)
-checkStatus();     // parallel: check session and enable live features if connected
+loadDashboard();              // immediate: render whatever is in the DB (no Garmin needed)
+checkStatus();                // parallel: check session and enable live features if connected
 setInterval(checkStatus, 30000);
