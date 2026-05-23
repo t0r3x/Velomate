@@ -218,7 +218,7 @@ body {
   position: fixed;
   top: 50%;
   left: 50%;
-  width: min(520px, 94vw);
+  width: min(760px, 94vw);
   max-height: 88vh;
   background: rgba(14, 17, 32, 0.98);
   border: 1px solid rgba(99, 102, 241, 0.18);
@@ -274,7 +274,7 @@ body {
 .settings-panel-body {
   flex: 1;
   overflow-y: auto;
-  padding: 1.5rem;
+  padding: 2rem 2.25rem;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -283,11 +283,25 @@ body {
 .settings-panel-body::-webkit-scrollbar-track { background: transparent; }
 .settings-panel-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
 
-.panel-section { padding: 0 0 1.5rem; }
+.settings-panel-footer {
+  flex-shrink: 0;
+  padding: 1.25rem 2.25rem 1.5rem;
+  border-top: 1px solid var(--panel-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.settings-panel-footer .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.panel-section { padding: 0 0 2rem; }
 .panel-divider {
   height: 1px;
   background: var(--panel-border);
-  margin: 0 0 1.5rem;
+  margin: 0 0 2rem;
 }
 .panel-section-label {
   display: flex;
@@ -298,7 +312,7 @@ body {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
 }
 .panel-section-label i { color: var(--primary-color); font-size: 0.8rem; }
 
@@ -498,14 +512,23 @@ body {
 .helper-text {
   font-size: 0.85rem;
   color: var(--text-secondary);
-  line-height: 1.4;
+  line-height: 1.5;
+  margin-bottom: 0.5rem;
 }
 
 /* Inputs and Forms */
+
+/* Forms inside the settings panel: stack children with breathing room */
+.settings-panel-body form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
 .input-group {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.55rem;
 }
 
 .input-group label {
@@ -1434,6 +1457,7 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
 }
 
 #view-setup.hidden,
+#view-profile-setup.hidden,
 #view-dashboard.hidden {
   display: none;
 }
@@ -1553,6 +1577,59 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
 .setup-configure-btn {
   width: 100%;
   justify-content: center;
+}
+
+/* ── Profile Setup View (Step 2) ─────────────────────────────────────────── */
+
+#view-profile-setup {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+/* Slightly wider card so HR inputs have breathing room */
+.ps-card {
+  max-width: 520px;
+}
+
+.ps-state        { width: 100%; }
+.ps-state.hidden { display: none; }
+
+.ps-loading-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 2rem 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.ps-notice {
+  width: 100%;
+  text-align: center;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  padding: 0.5rem 0.85rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+.ps-notice-success {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+.ps-notice-info {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+}
+
+.ps-zones-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 0.5rem;
 }
 
 /* ── AI Recommendation Card ──────────────────────────────────────────────── */
