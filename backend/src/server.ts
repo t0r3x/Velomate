@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import axios from 'axios';
-import { getGarminClient, trySessionAuth } from './services/garmin.service';
+import { getGarminClient, trySessionAuth, invalidateAuthCache } from './services/garmin.service';
 import { GarminSSOClient } from './services/sso.service';
 import { finalizeLogin } from './services/garmin.service';
 import { loadProfile, saveProfile, calculateDefaultZones } from './services/profile.service';
@@ -87,6 +87,11 @@ app.get('/api/status', async (req: Request, res: Response) => {
   } catch {
     res.json({ loggedIn: false });
   }
+});
+
+app.post('/api/logout', (_req: Request, res: Response) => {
+  invalidateAuthCache();
+  res.json({ loggedOut: true });
 });
 
 app.post('/api/login', async (req: Request, res: Response) => {

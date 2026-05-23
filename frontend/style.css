@@ -106,7 +106,6 @@ body {
   align-items: center;
   margin-bottom: 2rem;
   padding-bottom: 1rem;
-  border-bottom: 1px solid var(--panel-border);
 }
 
 .logo-section {
@@ -1361,4 +1360,59 @@ body {
 @keyframes toast-out {
   from { opacity: 1; transform: translateY(0) scale(1); }
   to   { opacity: 0; transform: translateY(-10px) scale(0.97); }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+.shablagoo-label {
+  cursor: pointer;
+  display: inline-block;
+  transition: color 0.3s ease, text-shadow 0.3s ease;
+}
+
+.shablagoo-label:hover {
+  color: #2ed573;
+  text-shadow: 0 0 10px rgba(46, 213, 115, 0.6);
+}
+
+body:has(#shablagoo-toggle:checked) .shablagoo-label {
+  color: #ff4757;
+  text-shadow: 0 0 10px rgba(255, 71, 87, 0.6);
+}
+
+body:has(#shablagoo-toggle:checked) {
+  background: linear-gradient(180deg, #ff6b81 50%, #1abc9c 50%) !important;
+  
+  background-attachment: fixed !important;
+  background-size: 100vw 100vh !important;
+  background-repeat: no-repeat !important;
+  
+  transition: background 0.4s ease-in-out;
+}
+
+body:has(#shablagoo-toggle:checked) .dashboard-card.glass-panel {
+  background: rgba(18, 18, 20, 0.88) !important;
+  
+  backdrop-filter: blur(20px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
+  
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5) !important;
+  
+  transition: background 0.4s ease, backdrop-filter 0.4s ease, border 0.4s ease;
+}
+
+body:has(#shablagoo-toggle:checked) .bg-glow-1,
+body:has(#shablagoo-toggle:checked) .bg-glow-2 {
+  opacity: 0;
+  transition: opacity 0.4s ease;
 }
