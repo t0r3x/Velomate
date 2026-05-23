@@ -222,9 +222,9 @@
         </div>
 
         <button class="btn btn-primary btn-glow setup-configure-btn" id="btn-confirm-profile"
-          data-idle-label="Confirm &amp; Start Training"  data-idle-icon="fa-rocket"
+          data-idle-label="Let's go!"  data-idle-icon="fa-rocket"
           data-loading-label="Setting up…"                data-loading-icon="fa-spinner fa-spin">
-          <span>Confirm &amp; Start Training</span>
+          <span>Confirm</span>
           <i class="fa-solid fa-rocket"></i>
         </button>
         <button class="btn btn-secondary ps-cancel-btn" id="btn-cancel-profile">
@@ -260,62 +260,23 @@
     <!-- Main Grid: col1 = Assessment+History, col2-3 = Schedule -->
     <main class="dashboard-grid">
 
-      <!-- Column 1: Progression + History -->
+      <!-- Column 1: Recent Rides -->
       <div class="col-assessment">
 
-        <!-- Progression Assessment Card -->
-        <section class="dashboard-card glass-panel" id="assessment-card">
-          <div class="card-header">
-            <i class="fa-solid fa-chart-line header-icon"></i>
-            <h2>Progression</h2>
-          </div>
-          <div class="card-body">
-            <p class="helper-text">Retrieve Garmin activities and auto-recalculate your optimal training zones based on your progression.</p>
-            <div class="analyze-row">
-              <button class="btn btn-secondary" id="btn-analyze" disabled
-                data-idle-label="Fetch data from Garmin"     data-idle-icon="fa-wand-magic-sparkles"
-                data-loading-label="Syncing from Garmin…"  data-loading-icon="fa-spinner fa-spin"
-                data-connected-label="Refresh from Garmin" data-connected-icon="fa-rotate">
-                <span>Retrieve data from Garmin</span>
-                <i class="fa-solid fa-wand-magic-sparkles"></i>
-              </button>
-              <span class="last-synced-label" id="last-synced-label"></span>
-            </div>
-
-            <!-- Assessment Recommendations -->
-            <div id="assessment-results" class="hidden recommendation-box">
-              <h3>Recommended Updates</h3>
-              <div class="rec-metric-row">
-                <div class="rec-metric">
-                  <span class="rec-label">Max HR (current → recommended)</span>
-                  <span class="rec-value" id="rec-max-hr">190 → 192</span>
-                </div>
-                <div class="rec-metric">
-                  <span class="rec-label">LTHR (current → recommended)</span>
-                  <span class="rec-value" id="rec-lthr">165 → 169</span>
-                </div>
-              </div>
-              <p class="assessment-summary-text" id="rec-summary-text">
-                Based on your <strong id="rec-summary-rides"></strong> recent rides,
-                your peak recorded heart rate was <strong id="rec-summary-max-hr"></strong>.
-                We estimate your threshold at <strong id="rec-summary-lthr"></strong>
-                with an average ride duration of <strong id="rec-summary-avg-dur"></strong>.
-              </p>
-              <button class="btn btn-primary btn-sm" id="btn-apply-rec"
-                data-idle-label="Accept & Update Zones"  data-idle-icon="fa-check-double"
-                data-loading-label="Applying…"           data-loading-icon="fa-spinner fa-spin">
-                <span>Accept & Update Zones</span>
-                <i class="fa-solid fa-check-double"></i>
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <!-- Activities History Card -->
         <section class="dashboard-card glass-panel" id="activities-card">
           <div class="card-header">
             <i class="fa-solid fa-bicycle header-icon"></i>
             <h2>Recent Rides</h2>
+            <div class="card-header-actions">
+              <span class="last-synced-label" id="last-synced-label"></span>
+              <button class="btn btn-secondary btn-sm" id="btn-analyze" disabled
+                data-idle-label="Sync from Garmin"        data-idle-icon="fa-rotate"
+                data-loading-label="Syncing…"        data-loading-icon="fa-spinner fa-spin"
+                data-connected-label="Sync from Garmin"   data-connected-icon="fa-rotate">
+                <span>Sync from Garmin</span>
+                <i class="fa-solid fa-rotate"></i>
+              </button>
+            </div>
           </div>
           <div class="card-body scroll-panel">
             <div id="activities-list-container">

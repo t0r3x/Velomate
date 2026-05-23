@@ -502,6 +502,13 @@ body {
   letter-spacing: 0.2px;
 }
 
+.card-header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .card-body {
   display: flex;
   flex-direction: column;
@@ -1070,13 +1077,6 @@ body {
   display: none !important;
 }
 
-/* ── Analyze row ── */
-.analyze-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
 .last-synced-label {
   font-size: 0.72rem;
   color: var(--text-muted);
@@ -1936,6 +1936,8 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
 /* Cancel button — hidden in full-screen setup flow, visible in modal */
 .ps-cancel-btn {
   display: none;
+  width: 100%;
+  justify-content: center;
   margin-top: 0.5rem;
 }
 

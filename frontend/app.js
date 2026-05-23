@@ -6,7 +6,6 @@ let isLoggedIn            = false;
 let geminiConfigured      = false;
 let setupComplete         = false;   // persisted in DB settings table, not localStorage
 let currentProfile        = null;
-let suggestedProfile      = null;
 let devicesLoaded         = false;
 let currentRecommendation = null;
 let psModalMode           = false;   // true when HR profile opened as overlay over dashboard
@@ -61,11 +60,6 @@ const aiNextWeekEmphasis  = document.getElementById('ai-next-week-emphasis');
 const aiSyncNote          = document.getElementById('ai-sync-note');
 
 const btnAnalyze        = document.getElementById('btn-analyze');
-const assessmentResults = document.getElementById('assessment-results');
-const recMaxHr          = document.getElementById('rec-max-hr');
-const recLthr           = document.getElementById('rec-lthr');
-const btnApplyRec       = document.getElementById('btn-apply-rec');
-
 const activitiesList    = document.getElementById('activities-list');
 const deviceSelect      = document.getElementById('device-select');
 const btnRefreshDevices = document.getElementById('btn-refresh-devices');
@@ -419,10 +413,8 @@ const fetchRecommendation = async (forceRefresh = false) => {
       const res = await fetch(`${API_BASE_URL}/api/recommendation/refresh`, { method: 'POST' });
       if (!res.ok) {
         const err = await res.json();
-        const is429 = res.status === 429;
-        document.getElementById('rec-error-msg').textContent = is429
-          ? 'Gemini rate limit reached — please wait a minute and try again.'
-          : (err.details || err.error || 'Failed to get recommendation.');
+        document.getElementById('rec-error-msg').textContent =
+          err.details || err.error || 'Failed to get recommendation.';
         setRecState('error');
         return;
       }
@@ -718,41 +710,6 @@ const updateLastSynced = (analysis) => {
   el.textContent = analysis?.updatedAt ? `Last synced ${timeAgo(analysis.updatedAt)}` : '';
 };
 
-const renderAssessment = (analysis, profile) => {
-  if (!analysis || analysis.totalCyclingRides === 0) {
-    assessmentResults.classList.add('hidden');
-    return;
-  }
-
-  const maxHrChanged = analysis.estimatedMaxHr !== profile.maxHr;
-  const lthrChanged  = analysis.estimatedLthr  !== profile.lthr;
-
-  if (maxHrChanged || lthrChanged) {
-    suggestedProfile = {
-      maxHr: analysis.estimatedMaxHr,
-      lthr:  analysis.estimatedLthr,
-      zones: analysis.suggestedZones
-    };
-
-    recMaxHr.textContent = maxHrChanged
-      ? `${profile.maxHr} bpm → ${analysis.estimatedMaxHr} bpm`
-      : `${profile.maxHr} bpm (unchanged)`;
-    recLthr.textContent = lthrChanged
-      ? `${profile.lthr} bpm → ${analysis.estimatedLthr} bpm`
-      : `${profile.lthr} bpm (unchanged)`;
-
-    document.getElementById('rec-summary-rides').textContent   = analysis.totalCyclingRides;
-    document.getElementById('rec-summary-max-hr').textContent  = `${analysis.maxRecordedHr} bpm`;
-    document.getElementById('rec-summary-lthr').textContent    = `${analysis.estimatedLthr} bpm`;
-    document.getElementById('rec-summary-avg-dur').textContent = `${analysis.averageRideDurationMinutes} minutes`;
-
-    assessmentResults.classList.remove('hidden');
-  } else {
-    assessmentResults.classList.add('hidden');
-    suggestedProfile = null;
-  }
-};
-
 // Load all persisted data from DB — no Garmin connection required
 const loadDashboard = async () => {
   try {
@@ -767,14 +724,13 @@ const loadDashboard = async () => {
     }
 
     renderActivities(data.activities || []);
-    renderAssessment(data.analysis, currentProfile || {});
     updateLastSynced(data.analysis);
   } catch (e) {
     console.error('Dashboard load failed:', e);
   }
 };
 
-// Refresh from Garmin: fetch new rides, merge into DB, re-render
+// Sync from Garmin: fetch new rides, merge into DB, re-render
 btnAnalyze.addEventListener('click', async () => {
   btnAnalyze.disabled = true;
   setBtn(btnAnalyze, 'loading');
@@ -784,13 +740,12 @@ btnAnalyze.addEventListener('click', async () => {
     const data = await response.json();
 
     if (!response.ok) {
-      toast('error', 'Refresh Failed', data.error || 'Check the server logs.');
+      toast('error', 'Sync Failed', data.error || 'Check the server logs.');
       return;
     }
 
     currentProfile = data.currentProfile || currentProfile;
     renderActivities(data.activities || []);
-    renderAssessment(data.analysis, currentProfile);
     updateLastSynced(data.analysis);
 
     const n = data.newCount || 0;
@@ -839,36 +794,6 @@ const renderActivities = (activities) => {
     activitiesList.appendChild(li);
   });
 };
-
-// Accept and apply suggested HR profile recommendations
-btnApplyRec.addEventListener('click', async () => {
-  if (!suggestedProfile) return;
-
-  btnApplyRec.disabled = true;
-  setBtn(btnApplyRec, 'loading');
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/profile`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(suggestedProfile)
-    });
-
-    if (response.ok) {
-      currentProfile = suggestedProfile;
-      updateHeaderHrLabel(suggestedProfile);
-      assessmentResults.classList.add('hidden');
-      toast('success', 'Zones Updated', 'Training zones and heart rate profile applied successfully.');
-    } else {
-      toast('error', 'Update Failed', 'Could not save the recommended profile.');
-    }
-  } catch (error) {
-    toast('error', 'Connection Error', 'Failed to apply recommendation.');
-  } finally {
-    btnApplyRec.disabled = false;
-    setBtn(btnApplyRec, 'idle');
-  }
-});
 
 // ── Sync ───────────────────────────────────────────────────────────────────────
 
