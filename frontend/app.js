@@ -7,29 +7,33 @@ let currentProfile = null;
 let suggestedProfile = null;
 
 // DOM Elements
-const connectionBadge = document.querySelector('.connection-status-badge');
-const statusDot = connectionBadge.querySelector('.status-dot');
-const statusText = connectionBadge.querySelector('.status-text');
+const statusDot    = document.getElementById('status-dot');
+const statusText   = document.getElementById('status-text');
+const btnOpenPanel = document.getElementById('btn-open-panel');
+const btnClosePanel= document.getElementById('btn-close-panel');
+const settingsPanel= document.getElementById('settings-panel');
+const panelOverlay = document.getElementById('panel-overlay');
+const garminBtnHrLabel = document.getElementById('garmin-btn-hr-label');
 
 const loggedOutSection = document.getElementById('auth-status-logged-out');
-const loggedInSection = document.getElementById('auth-status-logged-in');
-const loginForm = document.getElementById('login-form');
-const usernameInput = document.getElementById('username');
-const passwordInput = document.getElementById('password');
-const mfaSection = document.getElementById('mfa-section');
-const mfaInput = document.getElementById('mfa-code');
-const btnLogin = document.getElementById('btn-login');
-const btnLogout = document.getElementById('btn-logout');
+const loggedInSection  = document.getElementById('auth-status-logged-in');
+const loginForm        = document.getElementById('login-form');
+const usernameInput    = document.getElementById('username');
+const passwordInput    = document.getElementById('password');
+const mfaSection       = document.getElementById('mfa-section');
+const mfaInput         = document.getElementById('mfa-code');
+const btnLogin         = document.getElementById('btn-login');
+const btnLogout        = document.getElementById('btn-logout');
 
-const btnSync = document.getElementById('btn-sync-workouts');
-const scheduleDateInput = document.getElementById('schedule-date');
-const syncResult = document.getElementById('sync-result');
-const syncResultMsg = document.getElementById('sync-result-msg');
+const btnSync          = document.getElementById('btn-sync-workouts');
+const scheduleDateInput= document.getElementById('schedule-date');
+const syncResult       = document.getElementById('sync-result');
+const syncResultMsg    = document.getElementById('sync-result-msg');
 const syncedWorkoutsList = document.getElementById('synced-workouts-list');
 
 const maxHrInput = document.getElementById('profile-max-hr');
-const lthrInput = document.getElementById('profile-lthr');
-const zonesForm = document.getElementById('zones-form');
+const lthrInput  = document.getElementById('profile-lthr');
+const zonesForm  = document.getElementById('zones-form');
 
 const z1Min = document.getElementById('z1-min');
 const z1Max = document.getElementById('z1-max');
@@ -42,16 +46,32 @@ const z4Max = document.getElementById('z4-max');
 const z5Min = document.getElementById('z5-min');
 const z5Max = document.getElementById('z5-max');
 
-const btnAnalyze = document.getElementById('btn-analyze');
-const assessmentResults = document.getElementById('assessment-results');
-const recMaxHr = document.getElementById('rec-max-hr');
-const recLthr = document.getElementById('rec-lthr');
-const recSummaryText = document.getElementById('rec-summary-text');
-const btnApplyRec = document.getElementById('btn-apply-rec');
+const btnAnalyze       = document.getElementById('btn-analyze');
+const assessmentResults= document.getElementById('assessment-results');
+const recMaxHr         = document.getElementById('rec-max-hr');
+const recLthr          = document.getElementById('rec-lthr');
+const recSummaryText   = document.getElementById('rec-summary-text');
+const btnApplyRec      = document.getElementById('btn-apply-rec');
 
-const activitiesList = document.getElementById('activities-list');
-const deviceSelect = document.getElementById('device-select');
-const authLoading = document.getElementById('auth-status-loading');
+const activitiesList   = document.getElementById('activities-list');
+const deviceSelect     = document.getElementById('device-select');
+const authLoading      = document.getElementById('auth-status-loading');
+
+// ── Side Panel ──────────────────────────────────────────────────
+const openPanel = () => {
+  settingsPanel.classList.add('open');
+  panelOverlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+};
+const closePanel = () => {
+  settingsPanel.classList.remove('open');
+  panelOverlay.classList.remove('open');
+  document.body.style.overflow = '';
+};
+btnOpenPanel.addEventListener('click', openPanel);
+btnClosePanel.addEventListener('click', closePanel);
+panelOverlay.addEventListener('click', closePanel);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
 
 // Toast notification system
 const toast = (type, title, msg = '', duration = 4000) => {
@@ -70,8 +90,8 @@ const toast = (type, title, msg = '', duration = 4000) => {
 };
 
 // ── Week Preview ──────────────────────────────────────────────────
-const DAY_NAMES = ['Zo', 'Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za'];
-const DAY_NAMES_FULL = ['Zondag', 'Maandag', 'Dinsdag', 'Woensdag', 'Donderdag', 'Vrijdag', 'Zaterdag'];
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_NAMES_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 let previewWorkouts = null; // cache from API
 
@@ -84,7 +104,7 @@ const zoneColors = {
 };
 
 const workoutTypeIcon = { Sprint: 'fa-bolt', Threshold: 'fa-fire-flame-curved', LongRide: 'fa-road' };
-const workoutTypeLabel = { Sprint: 'Sprint', Threshold: 'Drempel', LongRide: 'Lange Rit' };
+const workoutTypeLabel = { Sprint: 'Sprint', Threshold: 'Threshold', LongRide: 'Long Ride' };
 
 const fetchAndRenderPreview = async () => {
   const dateVal = scheduleDateInput.value;
@@ -122,7 +142,7 @@ const fetchAndRenderPreview = async () => {
   monday.setDate(thresholdDate.getDate() + mondayOffset);
 
   // Week label
-  const fmt = d => d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+  const fmt = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
   weekLabel.textContent = `${fmt(monday)} – ${fmt(sunday)}`;
 
@@ -167,12 +187,12 @@ const fetchAndRenderPreview = async () => {
           <span>${label}</span>
         </div>
         <div class="wdc-duration">${workout.totalMinutes} min</div>
-        ${isThreshold ? '<div class="wdc-scheduled-badge"><i class="fa-solid fa-calendar-check"></i> Ingepland</div>' : ''}
+        ${isThreshold ? '<div class="wdc-scheduled-badge"><i class="fa-solid fa-calendar-check"></i> Scheduled</div>' : ''}
       `;
     } else {
       cell.innerHTML = `
         <div class="wdc-day">${dayLabel} <span class="wdc-date">${dateNum}</span></div>
-        <div class="wdc-rest"><i class="fa-solid fa-bed"></i> Rust</div>
+        <div class="wdc-rest"><i class="fa-solid fa-bed"></i> Rest</div>
       `;
     }
     weekGrid.appendChild(cell);
@@ -207,7 +227,7 @@ const fetchAndRenderPreview = async () => {
     // Date for this workout
     const wDate = new Date(thresholdDate);
     wDate.setDate(wDate.getDate() + w.weekOffset);
-    const wDateLabel = wDate.toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' });
+    const wDateLabel = wDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 
     card.innerHTML = `
       <div class="wc-header">
@@ -220,7 +240,7 @@ const fetchAndRenderPreview = async () => {
       </div>
       <div class="wc-zone-bar">${barSegments}</div>
       <div class="wc-steps">${stepRows}</div>
-      ${w.isScheduled ? '<div class="wc-schedule-note"><i class="fa-solid fa-calendar-check"></i> Wordt ingepland op Garmin Connect</div>' : '<div class="wc-schedule-note muted"><i class="fa-solid fa-upload"></i> Wordt geüpload naar apparaat</div>'}
+      ${w.isScheduled ? '<div class="wc-schedule-note"><i class="fa-solid fa-calendar-check"></i> Will be scheduled on Garmin Connect</div>' : '<div class="wc-schedule-note muted"><i class="fa-solid fa-upload"></i> Will be uploaded to device</div>'}
     `;
     detailCards.appendChild(card);
   });
@@ -258,7 +278,7 @@ const updateAuthUI = (loggedIn) => {
 
   if (loggedIn) {
     statusDot.className = 'status-dot connected';
-    statusText.textContent = 'Garmin Connected';
+    statusText.textContent = 'Connected';
     loggedOutSection.classList.add('hidden');
     loggedInSection.classList.remove('hidden');
     btnSync.disabled = false;
@@ -268,13 +288,21 @@ const updateAuthUI = (loggedIn) => {
     fetchAndRenderPreview();
   } else {
     statusDot.className = 'status-dot disconnected';
-    statusText.textContent = 'Garmin Disconnected';
+    statusText.textContent = 'Not connected';
     loggedOutSection.classList.remove('hidden');
     loggedInSection.classList.add('hidden');
     btnSync.disabled = true;
     btnAnalyze.disabled = true;
-    deviceSelect.innerHTML = '<option value="">Verbinden met Garmin...</option>';
+    deviceSelect.innerHTML = '<option value="">Connect to Garmin first…</option>';
     deviceSelect.disabled = true;
+    garminBtnHrLabel.textContent = '';
+  }
+};
+
+// Update the HR label in the header button
+const updateHeaderHrLabel = (profile) => {
+  if (profile && profile.maxHr && profile.lthr) {
+    garminBtnHrLabel.textContent = `${profile.lthr} / ${profile.maxHr}`;
   }
 };
 
@@ -361,6 +389,7 @@ const fetchProfile = async () => {
     const data = await response.json();
     currentProfile = data;
     populateProfileUI(data);
+    updateHeaderHrLabel(data);
   } catch (error) {
     console.error('Error fetching profile:', error);
   }
@@ -486,6 +515,8 @@ zonesForm.addEventListener('submit', async (e) => {
     if (response.ok) {
       currentProfile = updatedProfile;
       updateZonesVisualizer(updatedProfile);
+      updateHeaderHrLabel(updatedProfile);
+      previewWorkouts = null; // invalidate so next preview re-fetches with new LTHR
       toast('success', 'Profile Saved', 'Heart rate zones updated successfully.');
     } else {
       toast('error', 'Save Failed', 'Could not save profile to backend.');
@@ -500,7 +531,7 @@ zonesForm.addEventListener('submit', async (e) => {
 
 // Fetch Garmin Devices and populate dropdown
 const fetchDevices = async () => {
-  deviceSelect.innerHTML = '<option value="">Apparaten laden...</option>';
+  deviceSelect.innerHTML = '<option value="">Loading devices…</option>';
   deviceSelect.disabled = true;
 
   try {
@@ -521,7 +552,7 @@ const fetchDevices = async () => {
       sorted.forEach(d => {
         const opt = document.createElement('option');
         opt.value = d.deviceId || d.unitId || '';
-        const name = d.productDisplayName || d.deviceMetaDataDTO?.deviceProductDescription || 'Onbekend apparaat';
+        const name = d.productDisplayName || d.deviceMetaDataDTO?.deviceProductDescription || 'Unknown device';
         const type = d.activityTypes?.join(', ') || d.activityType || '';
         opt.textContent = name + (type ? ` — ${type}` : '');
         deviceSelect.appendChild(opt);
@@ -535,13 +566,13 @@ const fetchDevices = async () => {
 
     } else {
       const opt = document.createElement('option');
-      opt.textContent = 'Geen apparaten gevonden';
+      opt.textContent = 'No devices found';
       opt.disabled = true;
       deviceSelect.appendChild(opt);
     }
   } catch (error) {
     console.error('Error discovering devices:', error);
-    deviceSelect.innerHTML = '<option value="" disabled>Fout bij ophalen apparaten</option>';
+    deviceSelect.innerHTML = '<option value="" disabled>Failed to load devices</option>';
   }
 };
 
@@ -561,18 +592,33 @@ btnAnalyze.addEventListener('click', async () => {
 
     // Render recommendation block
     const analysis = data.analysis;
-    if (analysis && analysis.totalCyclingRides > 0) {
-      suggestedProfile = {
-        maxHr: analysis.estimatedMaxHr,
-        lthr: analysis.estimatedLthr,
-        zones: analysis.suggestedZones
-      };
+    const current = data.currentProfile;
 
-      recMaxHr.textContent = `${data.currentProfile.maxHr} bpm → ${analysis.estimatedMaxHr} bpm`;
-      recLthr.textContent = `${data.currentProfile.lthr} bpm → ${analysis.estimatedLthr} bpm`;
-      recSummaryText.innerHTML = `Based on your recent <strong>${analysis.totalCyclingRides} rides</strong>, your peak recorded heart rate was <strong>${analysis.maxRecordedHr} bpm</strong>. We estimate your threshold level at <strong>${analysis.estimatedLthr} bpm</strong> with an average ride volume of <strong>${analysis.averageRideDurationMinutes} minutes</strong>.`;
-      
-      assessmentResults.classList.remove('hidden');
+    if (analysis && analysis.totalCyclingRides > 0) {
+      const maxHrChanged = analysis.estimatedMaxHr !== current.maxHr;
+      const lthrChanged  = analysis.estimatedLthr  !== current.lthr;
+
+      if (maxHrChanged || lthrChanged) {
+        suggestedProfile = {
+          maxHr: analysis.estimatedMaxHr,
+          lthr:  analysis.estimatedLthr,
+          zones: analysis.suggestedZones
+        };
+
+        recMaxHr.textContent = maxHrChanged
+          ? `${current.maxHr} bpm → ${analysis.estimatedMaxHr} bpm`
+          : `${current.maxHr} bpm (unchanged)`;
+        recLthr.textContent = lthrChanged
+          ? `${current.lthr} bpm → ${analysis.estimatedLthr} bpm`
+          : `${current.lthr} bpm (unchanged)`;
+        recSummaryText.innerHTML = `Based on your <strong>${analysis.totalCyclingRides} recent rides</strong>, your peak recorded heart rate was <strong>${analysis.maxRecordedHr} bpm</strong>. We estimate your threshold at <strong>${analysis.estimatedLthr} bpm</strong> with an average ride duration of <strong>${analysis.averageRideDurationMinutes} minutes</strong>.`;
+
+        assessmentResults.classList.remove('hidden');
+      } else {
+        // Values are already optimal — no update needed
+        assessmentResults.classList.add('hidden');
+        toast('info', 'Profile Up-to-date', `Your zones are already aligned with your recent ${analysis.totalCyclingRides} rides. No updates needed.`);
+      }
     } else {
       assessmentResults.classList.add('hidden');
       toast('warn', 'No Activities Found', 'No recent cycling activities found in the last 90 days.');
@@ -599,7 +645,7 @@ const renderActivities = (activities) => {
     const li = document.createElement('li');
     li.className = 'activity-item';
     
-    const dateFormatted = new Date(act.startTime).toLocaleDateString('nl-NL', {
+    const dateFormatted = new Date(act.startTime).toLocaleDateString('en-GB', {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -652,8 +698,10 @@ btnApplyRec.addEventListener('click', async () => {
     if (response.ok) {
       currentProfile = suggestedProfile;
       populateProfileUI(suggestedProfile);
+      updateHeaderHrLabel(suggestedProfile);
       assessmentResults.classList.add('hidden');
-      toast('success', 'Zones Updated', 'Training zones and HR profile applied successfully.');
+      previewWorkouts = null;
+      toast('success', 'Zones Updated', 'Training zones and heart rate profile applied successfully.');
     } else {
       toast('error', 'Update Failed', 'Could not save the recommended profile.');
     }
