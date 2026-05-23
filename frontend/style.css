@@ -198,16 +198,16 @@ body {
   100% { transform: scale(0.95); opacity: 0.5; }
 }
 
-/* ── Side Panel ── */
+/* ── Modal Panel ── */
 .panel-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.55);
-  backdrop-filter: blur(3px);
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
   z-index: 900;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.3s ease;
+  transition: opacity 0.25s ease;
 }
 .panel-overlay.open {
   opacity: 1;
@@ -216,22 +216,28 @@ body {
 
 .settings-panel {
   position: fixed;
-  top: 0;
-  right: 0;
-  width: min(440px, 95vw);
-  height: 100vh;
-  background: rgba(14, 17, 32, 0.97);
-  border-left: 1px solid var(--panel-border);
-  box-shadow: -8px 0 40px rgba(0,0,0,0.5);
+  top: 50%;
+  left: 50%;
+  width: min(520px, 94vw);
+  max-height: 88vh;
+  background: rgba(14, 17, 32, 0.98);
+  border: 1px solid rgba(99, 102, 241, 0.18);
+  border-radius: 20px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255,255,255,0.04);
   z-index: 910;
   display: flex;
   flex-direction: column;
-  transform: translateX(100%);
-  transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
-  backdrop-filter: blur(20px);
+  transform: translate(-50%, -50%) scale(0.96);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity   0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(24px);
 }
 .settings-panel.open {
-  transform: translateX(0);
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1;
+  pointer-events: all;
 }
 
 .settings-panel-header {
@@ -1524,6 +1530,24 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
   font-size: 0.7rem;
   color: var(--text-muted);
   opacity: 0.65;
+}
+
+/* Completed step */
+.setup-steps li.step-done {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.05);
+}
+.setup-steps li.step-done > i {
+  color: #10b981;
+}
+.setup-steps li.step-done .setup-step-status {
+  color: #10b981;
+}
+.setup-step-status {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .setup-configure-btn {
