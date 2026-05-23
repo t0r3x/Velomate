@@ -54,6 +54,22 @@ db.exec(`
     rawData     TEXT,
     fetchedAt   TEXT DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS recommendation (
+    id               INTEGER PRIMARY KEY CHECK (id = 1),
+    workoutType      TEXT,
+    reason           TEXT,
+    priority         TEXT,
+    weeklyPlan       TEXT,
+    nextWeekOverview TEXT,
+    loadAssessment   TEXT,
+    generatedAt      TEXT
+  );
 `);
 
 // ── Activities ────────────────────────────────────────────────────────────────
@@ -178,4 +194,76 @@ export const getStoredDevices = (): any[] => {
 export const hasStoredDevices = (): boolean => {
   const row = db.prepare('SELECT COUNT(*) as count FROM devices').get() as { count: number };
   return row.count > 0;
+};
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+export const getSetting = (key: string): string | null => {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+  return row?.value ?? null;
+};
+
+export const setSetting = (key: string, value: string): void => {
+  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
+};
+
+// ── Recommendation ────────────────────────────────────────────────────────────
+export interface PlanEntry {
+  date: string;
+  type: string;
+  reason: string;
+  status: 'planned' | 'completed' | 'skipped' | 'auto-skipped';
+}
+
+export const upsertRecommendation = (rec: {
+  workoutType: string;
+  reason: string;
+  priority: string;
+  weeklyPlan: PlanEntry[];
+  nextWeekOverview: object;
+  loadAssessment: object;
+}): void => {
+  db.prepare(`
+    INSERT OR REPLACE INTO recommendation
+      (id, workoutType, reason, priority, weeklyPlan, nextWeekOverview, loadAssessment, generatedAt)
+    VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    rec.workoutType,
+    rec.reason,
+    rec.priority,
+    JSON.stringify(rec.weeklyPlan),
+    JSON.stringify(rec.nextWeekOverview),
+    JSON.stringify(rec.loadAssessment),
+    new Date().toISOString()
+  );
+};
+
+export const getStoredRecommendation = (): any | null => {
+  const row = db.prepare('SELECT * FROM recommendation WHERE id = 1').get() as any;
+  if (!row) return null;
+  return {
+    workoutType:      row.workoutType,
+    reason:           row.reason,
+    priority:         row.priority,
+    weeklyPlan:       JSON.parse(row.weeklyPlan   || '[]'),
+    nextWeekOverview: JSON.parse(row.nextWeekOverview || 'null'),
+    loadAssessment:   JSON.parse(row.loadAssessment  || 'null'),
+    generatedAt:      row.generatedAt
+  };
+};
+
+/** Update the status of a single plan entry identified by date. Returns true if found. */
+export const updatePlanEntryStatus = (
+  date: string,
+  status: 'completed' | 'skipped' | 'auto-skipped'
+): boolean => {
+  const row = db.prepare('SELECT weeklyPlan FROM recommendation WHERE id = 1').get() as any;
+  if (!row) return false;
+
+  const plan: PlanEntry[] = JSON.parse(row.weeklyPlan || '[]');
+  const idx = plan.findIndex(e => e.date === date);
+  if (idx === -1) return false;
+
+  plan[idx].status = status;
+  db.prepare('UPDATE recommendation SET weeklyPlan = ? WHERE id = 1').run(JSON.stringify(plan));
+  return true;
 };

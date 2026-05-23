@@ -1416,3 +1416,302 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
   opacity: 0;
   transition: opacity 0.4s ease;
 }
+
+/* ── AI Recommendation Card ──────────────────────────────────────────────── */
+
+/* State panels */
+.ai-rec-state { width: 100%; }
+.ai-rec-state.hidden { display: none; }
+
+.ai-rec-empty,
+.ai-rec-loading,
+.ai-rec-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.ai-rec-empty-icon {
+  font-size: 2rem;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+}
+
+.ai-rec-loading {
+  flex-direction: row;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.ai-rec-error {
+  gap: 0.5rem;
+  color: #ef4444;
+}
+.ai-rec-error i { font-size: 1.4rem; }
+
+/* Today block */
+.ai-today-block {
+  background: rgba(99, 102, 241, 0.06);
+  border: 1px solid rgba(99, 102, 241, 0.15);
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.ai-today-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+
+.ai-today-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.ai-today-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+/* Small icon-only buttons (skip / refresh) */
+.btn-icon-sm {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.btn-icon-sm:hover {
+  background: rgba(255,255,255,0.06);
+  color: var(--text-primary);
+}
+
+/* Workout chips */
+.ai-today-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.ai-workout-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.ai-workout-chip.wt-sprint {
+  background: rgba(239,68,68,0.15);
+  border-color: rgba(239,68,68,0.3);
+  color: #ef4444;
+}
+.ai-workout-chip.wt-threshold {
+  background: rgba(245,158,11,0.15);
+  border-color: rgba(245,158,11,0.3);
+  color: #f59e0b;
+}
+.ai-workout-chip.wt-longride {
+  background: rgba(16,185,129,0.15);
+  border-color: rgba(16,185,129,0.3);
+  color: #10b981;
+}
+.ai-workout-chip.wt-rest {
+  background: rgba(100,116,139,0.15);
+  border-color: rgba(100,116,139,0.3);
+  color: #94a3b8;
+}
+
+/* Priority badge */
+.ai-priority-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+}
+.ai-priority-badge.priority-high   { background: rgba(239,68,68,0.15);   color: #ef4444; }
+.ai-priority-badge.priority-medium { background: rgba(245,158,11,0.15);  color: #f59e0b; }
+.ai-priority-badge.priority-low    { background: rgba(16,185,129,0.15);  color: #10b981; }
+
+/* Today reason */
+.ai-today-reason {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* Week section */
+.ai-week-section {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+/* Status overlays on week cells */
+.week-day-cell.is-completed {
+  opacity: 0.7;
+  position: relative;
+}
+.week-day-cell.is-completed::after {
+  content: '\f00c';
+  font-family: 'Font Awesome 6 Free';
+  font-weight: 900;
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 0.65rem;
+  color: #10b981;
+}
+
+.week-day-cell.is-skipped {
+  opacity: 0.45;
+  filter: saturate(0.3);
+}
+.week-day-cell.is-skipped .wdc-workout-label,
+.week-day-cell.is-skipped .wdc-duration {
+  text-decoration: line-through;
+}
+
+/* Next week overview */
+.ai-next-week {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.ai-next-week-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.ai-next-week-summary {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.ai-next-week-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.ai-next-week-chip {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.6rem;
+  gap: 0.3rem;
+}
+
+.ai-next-week-chip .nw-day {
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+
+.ai-next-week-emphasis {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Load assessment */
+.ai-load-assessment {
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--panel-border);
+  margin-bottom: 0.5rem;
+}
+
+.ai-load-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.4rem;
+}
+
+.ai-load-fatigue-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+}
+.ai-load-fatigue-badge.fatigue-low      { background: rgba(16,185,129,0.15);  color: #10b981; }
+.ai-load-fatigue-badge.fatigue-moderate { background: rgba(245,158,11,0.15);  color: #f59e0b; }
+.ai-load-fatigue-badge.fatigue-high     { background: rgba(239,68,68,0.15);   color: #ef4444; }
+
+.ai-load-trend {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.ai-load-insight {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.ai-generated-at {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 0.3rem;
+}
+
+/* Divider + sync note */
+.ai-sync-divider {
+  height: 1px;
+  background: var(--panel-border);
+  margin: 1rem 0;
+}
+
+.ai-sync-note {
+  margin-bottom: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+/* btn-sm variant */
+.btn.btn-sm {
+  padding: 0.4rem 0.9rem;
+  font-size: 0.8rem;
+}
+
+/* wdc-duration in AI week grid — hide empty duration slot */
+.week-day-cell .wdc-duration:empty {
+  display: none;
+}

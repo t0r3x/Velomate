@@ -18,8 +18,19 @@ import {
   getStoredProfile,
   upsertDevices,
   getStoredDevices,
-  hasStoredDevices
+  hasStoredDevices,
+  getSetting,
+  setSetting,
+  getStoredRecommendation,
+  updatePlanEntryStatus
 } from './services/database.service';
+import {
+  generateRecommendation,
+  getGeminiKey,
+  maskKey,
+  detectCompletedEntries,
+  detectAutoSkippedEntries
+} from './services/gemini.service';
 import { UserHRProfile } from './types';
 
 dotenv.config();
@@ -229,6 +240,23 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
 
     const profile = await getActiveProfile();
 
+    // Non-blocking: detect completed plan entries and trigger Gemini re-evaluation
+    try {
+      const stored = getStoredRecommendation();
+      if (stored?.weeklyPlan) {
+        const completed = detectCompletedEntries(stored.weeklyPlan);
+        if (completed.length > 0) {
+          completed.forEach(date => updatePlanEntryStatus(date, 'completed'));
+          const updated = getStoredRecommendation();
+          generateRecommendation(updated.weeklyPlan).catch((err: any) =>
+            console.warn('[Gemini] Auto-regen after activity sync failed:', err.message)
+          );
+        }
+      }
+    } catch (e: any) {
+      console.warn('[Gemini] Completion detection failed:', e.message);
+    }
+
     res.json({
       activities:    allStored,
       analysis,
@@ -360,6 +388,114 @@ app.post('/api/sync-workouts', async (req: Request, res: Response) => {
     });
   }
 });
+
+// ── Gemini Settings ───────────────────────────────────────────────────────────
+
+app.get('/api/settings/gemini-key', (_req: Request, res: Response) => {
+  const key = getGeminiKey();
+  if (key) {
+    res.json({ hasKey: true, maskedKey: maskKey(key) });
+  } else {
+    res.json({ hasKey: false, maskedKey: null });
+  }
+});
+
+app.post('/api/settings/gemini-key', (req: Request, res: Response) => {
+  const { apiKey } = req.body;
+  if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
+    return res.status(400).json({ error: 'apiKey is required.' });
+  }
+  setSetting('gemini_api_key', apiKey.trim());
+  setSetting('gemini_last_generated', '0'); // force regen on next check
+  res.json({ saved: true });
+});
+
+// ── Recommendation ────────────────────────────────────────────────────────────
+
+app.get('/api/recommendation', (_req: Request, res: Response) => {
+  const key = getGeminiKey();
+  if (!key) return res.json({ notConfigured: true });
+
+  const rec = getStoredRecommendation();
+  if (!rec) return res.json({ noData: true });
+
+  const ageMs = Date.now() - new Date(rec.generatedAt).getTime();
+  const stale = ageMs > 23 * 60 * 60 * 1000;
+
+  res.json({ ...rec, stale });
+});
+
+app.post('/api/recommendation/refresh', async (req: Request, res: Response) => {
+  try {
+    const current = getStoredRecommendation();
+    const result  = await generateRecommendation(current?.weeklyPlan);
+    setSetting('gemini_last_generated', new Date().toISOString());
+    res.json(result);
+  } catch (error: any) {
+    if (error.message === 'GEMINI_KEY_NOT_CONFIGURED') {
+      return res.status(400).json({ error: 'Gemini API key not configured.' });
+    }
+    console.error('[Gemini] Refresh error:', error.message);
+    res.status(500).json({ error: 'Failed to generate recommendation.', details: error.message });
+  }
+});
+
+app.post('/api/recommendation/skip-today', async (req: Request, res: Response) => {
+  try {
+    const today = new Date().toLocaleDateString('sv-SE');
+    updatePlanEntryStatus(today, 'skipped');
+    const updated = getStoredRecommendation();
+    const result  = await generateRecommendation(updated?.weeklyPlan);
+    setSetting('gemini_last_generated', new Date().toISOString());
+    res.json(result);
+  } catch (error: any) {
+    if (error.message === 'GEMINI_KEY_NOT_CONFIGURED') {
+      return res.status(400).json({ error: 'Gemini API key not configured.' });
+    }
+    console.error('[Gemini] Skip-today error:', error.message);
+    res.status(500).json({ error: 'Failed to skip and regenerate.', details: error.message });
+  }
+});
+
+// ── Gemini Auto-check (hourly) ────────────────────────────────────────────────
+
+const runGeminiAutoCheck = async () => {
+  try {
+    const key = getGeminiKey();
+    if (!key) return;
+
+    // Detect auto-skips (planned days that passed with no activity)
+    const stored = getStoredRecommendation();
+    if (stored?.weeklyPlan) {
+      const autoSkips = detectAutoSkippedEntries(stored.weeklyPlan);
+      if (autoSkips.length > 0) {
+        autoSkips.forEach(date => updatePlanEntryStatus(date, 'auto-skipped'));
+        const updated = getStoredRecommendation();
+        await generateRecommendation(updated.weeklyPlan);
+        setSetting('gemini_last_generated', new Date().toISOString());
+        console.log(`[Gemini] Auto-check: ${autoSkips.length} auto-skip(s) detected — plan regenerated.`);
+        return; // already regenerated
+      }
+    }
+
+    // Standard daily freshness check
+    const lastGenStr = getSetting('gemini_last_generated');
+    const ageMs = Date.now() - (lastGenStr && lastGenStr !== '0' ? new Date(lastGenStr).getTime() : 0);
+    if (ageMs > 23 * 60 * 60 * 1000) {
+      const current = getStoredRecommendation();
+      await generateRecommendation(current?.weeklyPlan);
+      setSetting('gemini_last_generated', new Date().toISOString());
+      console.log('[Gemini] Auto-check: daily regen complete.');
+    } else {
+      console.log('[Gemini] Auto-check: plan is fresh, no regen needed.');
+    }
+  } catch (err: any) {
+    console.warn('[Gemini] Auto-check failed:', err.message);
+  }
+};
+
+runGeminiAutoCheck();
+setInterval(runGeminiAutoCheck, 60 * 60 * 1000);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
