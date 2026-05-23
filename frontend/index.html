@@ -99,6 +99,41 @@
 
       <div class="panel-divider"></div>
 
+      <!-- AI Recommendation Section -->
+      <div class="panel-section" id="gemini-panel-section">
+        <div class="panel-section-label">
+          <i class="fa-solid fa-brain"></i>
+          <span>AI Recommendation</span>
+        </div>
+        <div id="gemini-key-status" class="hidden">
+          <div class="success-indicator" style="margin-bottom:0.75rem">
+            <i class="fa-solid fa-circle-check success-icon"></i>
+            <div class="success-details">
+              <h3>Gemini Connected</h3>
+              <p id="gemini-key-masked" class="helper-text"></p>
+            </div>
+          </div>
+        </div>
+        <p class="helper-text">Enter your Google Gemini API key to enable AI training recommendations.</p>
+        <form id="gemini-key-form">
+          <div class="input-group">
+            <label for="gemini-api-key">Gemini API Key</label>
+            <div class="input-wrapper">
+              <i class="fa-solid fa-key input-icon"></i>
+              <input type="password" id="gemini-api-key" placeholder="AIza…" autocomplete="off">
+            </div>
+          </div>
+          <button type="submit" class="btn btn-secondary" id="btn-save-gemini-key"
+            data-idle-label="Save API Key"    data-idle-icon="fa-floppy-disk"
+            data-loading-label="Saving…"      data-loading-icon="fa-spinner fa-spin">
+            <span>Save API Key</span>
+            <i class="fa-solid fa-floppy-disk"></i>
+          </button>
+        </form>
+      </div>
+
+      <div class="panel-divider"></div>
+
       <!-- Heart Rate Profile Section -->
       <div class="panel-section">
         <div class="panel-section-label">
@@ -290,61 +325,127 @@
 
         <section class="dashboard-card glass-panel" id="sync-card">
           <div class="card-header">
-            <i class="fa-solid fa-calendar-day header-icon"></i>
-            <h2>Schedule Training</h2>
+            <i class="fa-solid fa-brain header-icon"></i>
+            <h2>AI Training Plan</h2>
           </div>
           <div class="card-body">
-            <p class="helper-text">Choose the date for your threshold workout. Sprint and Long Ride will be automatically scheduled around it.</p>
 
-            <div class="sync-form">
+            <!-- State: not configured -->
+            <div id="rec-state-not-configured" class="ai-rec-state hidden">
+              <div class="ai-rec-empty">
+                <i class="fa-solid fa-brain ai-rec-empty-icon"></i>
+                <p>Add a Gemini API key in <strong>Connection &amp; Profile</strong>.</p>
+                <button class="btn btn-secondary btn-sm" id="btn-open-panel-from-rec">
+                  <span>Open Settings</span><i class="fa-solid fa-sliders"></i>
+                </button>
+              </div>
+            </div>
 
-              <!-- Device Selector — prominent -->
-              <div class="device-selector-block" id="device-select-group">
-                <div class="device-selector-top">
-                  <i class="fa-solid fa-microchip device-sel-icon"></i>
-                  <div class="device-sel-info">
-                    <span class="device-sel-label">Sync to device</span>
-                    <span class="device-sel-hint">Workouts will be synced to this device</span>
+            <!-- State: loading -->
+            <div id="rec-state-loading" class="ai-rec-state hidden">
+              <div class="ai-rec-loading">
+                <i class="fa-solid fa-spinner fa-spin"></i><span>Asking Gemini…</span>
+              </div>
+            </div>
+
+            <!-- State: loaded -->
+            <div id="rec-state-loaded" class="ai-rec-state hidden">
+              <!-- Today's recommendation -->
+              <div class="ai-today-block">
+                <div class="ai-today-header">
+                  <span class="ai-today-label">Today's Recommendation</span>
+                  <div class="ai-today-actions">
+                    <button class="btn-icon-sm" id="btn-skip-today" title="Skip today's workout">
+                      <i class="fa-solid fa-forward-step"></i>
+                    </button>
+                    <button class="btn-icon-sm" id="btn-refresh-rec" title="Refresh recommendation">
+                      <i class="fa-solid fa-rotate"></i>
+                    </button>
                   </div>
-                  <button type="button" id="btn-refresh-devices" class="btn-device-refresh" title="Refresh device list" disabled>
-                    <i class="fa-solid fa-rotate"></i>
-                  </button>
                 </div>
-                <div class="device-sel-select-wrap">
-                  <select id="device-select" disabled>
-                    <option value="">Connect to Garmin first…</option>
-                  </select>
-                  <i class="fa-solid fa-chevron-down device-sel-chevron"></i>
+                <div class="ai-today-chip-row">
+                  <span class="ai-workout-chip" id="ai-today-chip">
+                    <i class="fa-solid" id="ai-today-icon"></i>
+                    <span id="ai-today-type"></span>
+                  </span>
+                  <span class="ai-priority-badge" id="ai-priority-badge"></span>
                 </div>
+                <p class="ai-today-reason" id="ai-today-reason"></p>
               </div>
 
-              <!-- Date input -->
-              <div class="input-group">
-                <label for="schedule-date">Threshold Workout Date</label>
-                <div class="input-wrapper">
-                  <i class="fa-solid fa-calendar input-icon"></i>
-                  <input type="date" id="schedule-date">
-                </div>
-              </div>
-
-              <!-- Week Preview Panel -->
-              <div id="week-preview" class="week-preview hidden">
+              <!-- Current week grid -->
+              <div class="ai-week-section">
                 <div class="week-preview-header">
                   <i class="fa-solid fa-calendar-week"></i>
-                  <span>Week Overview</span>
-                  <span class="week-label" id="week-label"></span>
+                  <span>This Week</span>
+                  <span class="week-label" id="ai-week-label"></span>
                 </div>
-                <div class="week-grid" id="week-grid"></div>
-                <div class="workout-detail-cards" id="workout-detail-cards"></div>
+                <div class="week-grid" id="ai-week-grid"></div>
               </div>
 
-              <button class="btn btn-primary btn-glow" id="btn-sync-workouts" disabled
-                data-idle-label="Sync & Schedule Workouts"  data-idle-icon="fa-cloud-arrow-up"
-                data-loading-label="Syncing Workouts…"       data-loading-icon="fa-spinner fa-spin">
-                <span>Sync & Schedule Workouts</span>
-                <i class="fa-solid fa-cloud-arrow-up"></i>
-              </button>
+              <!-- Next week overview -->
+              <div class="ai-next-week">
+                <div class="ai-next-week-header">
+                  <i class="fa-solid fa-calendar"></i>
+                  <span>Next Week</span>
+                </div>
+                <p class="ai-next-week-summary" id="ai-next-week-summary"></p>
+                <div class="ai-next-week-chips" id="ai-next-week-chips"></div>
+                <p class="ai-next-week-emphasis" id="ai-next-week-emphasis"></p>
+              </div>
+
+              <!-- Load assessment -->
+              <div class="ai-load-assessment">
+                <div class="ai-load-header">
+                  <span class="ai-load-fatigue-badge" id="ai-load-fatigue"></span>
+                  <span class="ai-load-trend" id="ai-load-trend"></span>
+                </div>
+                <p class="ai-load-insight" id="ai-load-insight"></p>
+                <p class="ai-generated-at" id="ai-generated-at"></p>
+              </div>
             </div>
+
+            <!-- State: error -->
+            <div id="rec-state-error" class="ai-rec-state hidden">
+              <div class="ai-rec-error">
+                <i class="fa-solid fa-circle-exclamation"></i>
+                <p id="rec-error-msg">Failed to get recommendation.</p>
+                <button class="btn btn-secondary btn-sm" id="btn-retry-rec">
+                  <span>Retry</span><i class="fa-solid fa-rotate"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="ai-sync-divider"></div>
+
+            <!-- Device Selector -->
+            <div class="device-selector-block" id="device-select-group">
+              <div class="device-selector-top">
+                <i class="fa-solid fa-microchip device-sel-icon"></i>
+                <div class="device-sel-info">
+                  <span class="device-sel-label">Sync to device</span>
+                  <span class="device-sel-hint">Workouts will be synced to this device</span>
+                </div>
+                <button type="button" id="btn-refresh-devices" class="btn-device-refresh" title="Refresh device list" disabled>
+                  <i class="fa-solid fa-rotate"></i>
+                </button>
+              </div>
+              <div class="device-sel-select-wrap">
+                <select id="device-select" disabled>
+                  <option value="">Connect to Garmin first…</option>
+                </select>
+                <i class="fa-solid fa-chevron-down device-sel-chevron"></i>
+              </div>
+            </div>
+
+            <p class="helper-text ai-sync-note" id="ai-sync-note"></p>
+
+            <button class="btn btn-primary btn-glow" id="btn-sync-workouts" disabled
+              data-idle-label="Sync & Schedule Workouts"  data-idle-icon="fa-cloud-arrow-up"
+              data-loading-label="Syncing Workouts…"       data-loading-icon="fa-spinner fa-spin">
+              <span>Sync &amp; Schedule Workouts</span>
+              <i class="fa-solid fa-cloud-arrow-up"></i>
+            </button>
 
             <!-- Sync Results -->
             <div id="sync-result" class="hidden notification-card">
@@ -490,6 +591,14 @@
       Workout <strong class="sw-name"></strong>
       <span class="sw-status"></span>
     </li>
+  </template>
+
+  <template id="tpl-next-week-chip">
+    <span class="ai-workout-chip ai-next-week-chip">
+      <i class="fa-solid"></i>
+      <span class="nw-type"></span>
+      <span class="nw-day"></span>
+    </span>
   </template>
 
   <script src="app.js"></script>

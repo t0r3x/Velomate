@@ -2,10 +2,11 @@
 const API_BASE_URL = 'http://localhost:3001';
 
 // State variables
-let isLoggedIn      = false;
-let currentProfile  = null;
-let suggestedProfile = null;
-let devicesLoaded   = false;
+let isLoggedIn          = false;
+let currentProfile      = null;
+let suggestedProfile    = null;
+let devicesLoaded       = false;
+let currentRecommendation = null;
 
 // DOM Elements
 const statusDot        = document.getElementById('status-dot');
@@ -27,9 +28,34 @@ const btnLogin         = document.getElementById('btn-login');
 const btnLogout        = document.getElementById('btn-logout');
 
 const btnSync            = document.getElementById('btn-sync-workouts');
-const scheduleDateInput  = document.getElementById('schedule-date');
 const syncResult         = document.getElementById('sync-result');
 const syncedWorkoutsList = document.getElementById('synced-workouts-list');
+
+// Gemini / AI Recommendation DOM refs
+const geminiKeyForm       = document.getElementById('gemini-key-form');
+const geminiApiKeyInput   = document.getElementById('gemini-api-key');
+const geminiKeyStatus     = document.getElementById('gemini-key-status');
+const geminiKeyMasked     = document.getElementById('gemini-key-masked');
+const btnSaveGeminiKey    = document.getElementById('btn-save-gemini-key');
+const btnRefreshRec       = document.getElementById('btn-refresh-rec');
+const btnSkipToday        = document.getElementById('btn-skip-today');
+const btnRetryRec         = document.getElementById('btn-retry-rec');
+const btnOpenPanelFromRec = document.getElementById('btn-open-panel-from-rec');
+const aiWeekGrid          = document.getElementById('ai-week-grid');
+const aiWeekLabel         = document.getElementById('ai-week-label');
+const aiTodayType         = document.getElementById('ai-today-type');
+const aiTodayIcon         = document.getElementById('ai-today-icon');
+const aiTodayChip         = document.getElementById('ai-today-chip');
+const aiTodayReason       = document.getElementById('ai-today-reason');
+const aiPriorityBadge     = document.getElementById('ai-priority-badge');
+const aiLoadFatigue       = document.getElementById('ai-load-fatigue');
+const aiLoadTrend         = document.getElementById('ai-load-trend');
+const aiLoadInsight       = document.getElementById('ai-load-insight');
+const aiGeneratedAt       = document.getElementById('ai-generated-at');
+const aiNextWeekSummary   = document.getElementById('ai-next-week-summary');
+const aiNextWeekChips     = document.getElementById('ai-next-week-chips');
+const aiNextWeekEmphasis  = document.getElementById('ai-next-week-emphasis');
+const aiSyncNote          = document.getElementById('ai-sync-note');
 
 const maxHrInput = document.getElementById('profile-max-hr');
 const lthrInput  = document.getElementById('profile-lthr');
@@ -113,10 +139,8 @@ const toast = (type, title, msg = '', duration = 4000) => {
   }, duration);
 };
 
-// ── Week Preview ───────────────────────────────────────────────────────────────
+// ── Week/Workout helpers ───────────────────────────────────────────────────────
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-let previewWorkouts = null; // cache from API
 
 const zoneColors = {
   z1: 'var(--z1-color, #6ec6e6)',
@@ -126,143 +150,197 @@ const zoneColors = {
   z5: 'var(--z5-color, #e66e6e)'
 };
 
-const workoutTypeIcon  = { Sprint: 'fa-bolt', Threshold: 'fa-fire-flame-curved', LongRide: 'fa-road' };
-const workoutTypeLabel = { Sprint: 'Sprint',  Threshold: 'Threshold',            LongRide: 'Long Ride' };
+const workoutTypeIcon  = { Sprint: 'fa-bolt', Threshold: 'fa-fire-flame-curved', LongRide: 'fa-road', Rest: 'fa-bed' };
+const workoutTypeLabel = { Sprint: 'Sprint',  Threshold: 'Threshold',            LongRide: 'Long Ride', Rest: 'Rest' };
 
-const fetchAndRenderPreview = async () => {
-  const dateVal = scheduleDateInput.value;
-  if (!dateVal) return;
+// ── AI Recommendation ──────────────────────────────────────────────────────────
 
-  const weekPreview = document.getElementById('week-preview');
-  const weekGrid    = document.getElementById('week-grid');
-  const weekLabel   = document.getElementById('week-label');
-  const detailCards = document.getElementById('workout-detail-cards');
-
-  // Fetch preview data once (re-fetches when profile changes)
-  if (!previewWorkouts) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/preview-workouts`);
-      if (!res.ok) return;
-      const data = await res.json();
-      previewWorkouts = data.workouts;
-    } catch {
-      return;
-    }
-  }
-
-  const thresholdDate = new Date(dateVal + 'T00:00:00');
-
-  // Find Monday of the week containing thresholdDate
-  const dayOfWeek    = thresholdDate.getDay();
-  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  const monday = new Date(thresholdDate);
-  monday.setDate(thresholdDate.getDate() + mondayOffset);
-
-  const fmt    = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-  const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
-  weekLabel.textContent = `${fmt(monday)} – ${fmt(sunday)}`;
-
-  weekGrid.innerHTML    = '';
-  detailCards.innerHTML = '';
-
-  // Map workouts to their absolute date strings
-  const workoutByDate = {};
-  previewWorkouts.forEach(w => {
-    const d = new Date(thresholdDate);
-    d.setDate(d.getDate() + w.weekOffset);
-    workoutByDate[d.toDateString()] = w;
+/** Show/hide the correct state panel inside the AI card. */
+const setRecState = (state) => {
+  const states = ['not-configured', 'loading', 'loaded', 'error'];
+  states.forEach(s => {
+    const el = document.getElementById(`rec-state-${s}`);
+    if (el) el.classList.toggle('hidden', s !== state);
   });
-
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-
-  // Render 7 day cells (Mon → Sun)
-  for (let i = 0; i < 7; i++) {
-    const cellDate    = new Date(monday);
-    cellDate.setDate(monday.getDate() + i);
-    const workout     = workoutByDate[cellDate.toDateString()];
-    const isToday     = cellDate.toDateString() === today.toDateString();
-    const isThreshold = workout?.type === 'Threshold';
-    const dayLabel    = DAY_NAMES[cellDate.getDay()];
-    const dateNum     = cellDate.getDate();
-
-    let cell;
-    if (workout) {
-      const icon  = workoutTypeIcon[workout.type]  || 'fa-dumbbell';
-      const label = workoutTypeLabel[workout.type] || workout.type;
-      cell = cloneTemplate('tpl-week-day-workout');
-      cell.classList.add('has-workout', `wt-${workout.type.toLowerCase()}`);
-      if (isToday)     cell.classList.add('is-today');
-      if (isThreshold) cell.classList.add('is-threshold');
-      cell.querySelector('.wdc-day-label').textContent      = dayLabel;
-      cell.querySelector('.wdc-date').textContent           = dateNum;
-      cell.querySelector('.wdc-workout-chip i').classList.add(icon);
-      cell.querySelector('.wdc-workout-label').textContent  = label;
-      cell.querySelector('.wdc-duration').textContent       = `${workout.totalMinutes} min`;
-      cell.querySelector('.wdc-scheduled-badge').hidden     = !isThreshold;
-    } else {
-      cell = cloneTemplate('tpl-week-day-rest');
-      if (isToday) cell.classList.add('is-today');
-      cell.querySelector('.wdc-day-label').textContent = dayLabel;
-      cell.querySelector('.wdc-date').textContent      = dateNum;
-    }
-    weekGrid.appendChild(cell);
-  }
-
-  // Render workout detail cards
-  previewWorkouts.forEach(w => {
-    const icon  = workoutTypeIcon[w.type]  || 'fa-dumbbell';
-    const label = workoutTypeLabel[w.type] || w.type;
-
-    const card = cloneTemplate('tpl-workout-card');
-    card.classList.add(`wt-${w.type.toLowerCase()}`);
-
-    card.querySelector('.wc-icon').classList.add(icon);
-    card.querySelector('.wc-title').textContent = label;
-
-    const wDate = new Date(thresholdDate);
-    wDate.setDate(wDate.getDate() + w.weekOffset);
-    card.querySelector('.wc-date').textContent      = wDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-    card.querySelector('.wc-total-dur').textContent = `${w.totalMinutes} min`;
-
-    // Zone bar segments
-    const barEl    = card.querySelector('.wc-zone-bar');
-    const totalMin = w.totalMinutes;
-    w.steps.forEach(s => {
-      const seg = cloneTemplate('tpl-workout-bar-seg');
-      seg.style.width      = `${Math.round((s.minutes / totalMin) * 100)}%`;
-      seg.style.background = zoneColors[s.zoneKey] || '#888';
-      seg.title            = `${s.label} (${s.zone})`;
-      barEl.appendChild(seg);
-    });
-
-    // Step rows
-    const stepsEl = card.querySelector('.wc-steps');
-    w.steps.forEach(s => {
-      const row = cloneTemplate('tpl-workout-step');
-      row.querySelector('.wc-step-dot').style.background = zoneColors[s.zoneKey];
-      row.querySelector('.wc-step-label').textContent    = s.label;
-      row.querySelector('.wc-step-dur').textContent      = s.duration;
-      const zoneEl = row.querySelector('.wc-step-zone');
-      zoneEl.classList.add(s.zoneKey);
-      zoneEl.textContent = s.zone;
-      stepsEl.appendChild(row);
-    });
-
-    // Schedule note — show the appropriate one
-    card.querySelector('.wc-schedule-note--scheduled').hidden = !w.isScheduled;
-    card.querySelector('.wc-schedule-note--upload').hidden    = !!w.isScheduled;
-
-    detailCards.appendChild(card);
-  });
-
-  weekPreview.classList.remove('hidden');
 };
 
-// Initialize tomorrow's date in target schedule input
-const initDateInput = () => {
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  scheduleDateInput.value = tomorrow.toISOString().split('T')[0];
+/** Populate all AI card UI elements from a recommendation object. */
+const renderRecommendation = (rec) => {
+  currentRecommendation = rec;
+
+  // Today chip
+  const type = rec.workoutType || 'Rest';
+  const icon = workoutTypeIcon[type]  || 'fa-dumbbell';
+  const label = workoutTypeLabel[type] || type;
+
+  // Clear previous type classes from chip
+  aiTodayChip.className = `ai-workout-chip wt-${type.toLowerCase()}`;
+  aiTodayIcon.className = `fa-solid ${icon}`;
+  aiTodayType.textContent = label;
+
+  // Priority badge
+  const priority = rec.priority || '';
+  aiPriorityBadge.className = `ai-priority-badge priority-${priority.toLowerCase()}`;
+  aiPriorityBadge.textContent = priority.charAt(0).toUpperCase() + priority.slice(1);
+
+  // Today reason
+  aiTodayReason.textContent = rec.reason || '';
+
+  // Week grid
+  const plan = Array.isArray(rec.weeklyPlan) ? rec.weeklyPlan : [];
+  aiWeekGrid.innerHTML = '';
+
+  if (plan.length > 0) {
+    // Week label: first date to last date
+    const fmt = d => new Date(d + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    aiWeekLabel.textContent = `${fmt(plan[0].date)} – ${fmt(plan[plan.length - 1].date)}`;
+
+    const todayStr = new Date().toLocaleDateString('sv-SE');
+    plan.forEach(entry => {
+      const isToday = entry.date === todayStr;
+      const isRest  = entry.type === 'Rest';
+
+      let cell;
+      if (isRest) {
+        cell = cloneTemplate('tpl-week-day-rest');
+      } else {
+        cell = cloneTemplate('tpl-week-day-workout');
+        cell.classList.add('has-workout', `wt-${entry.type.toLowerCase()}`);
+        cell.querySelector('.wdc-workout-chip i').classList.add(workoutTypeIcon[entry.type] || 'fa-dumbbell');
+        cell.querySelector('.wdc-workout-label').textContent = workoutTypeLabel[entry.type] || entry.type;
+        cell.querySelector('.wdc-duration').textContent = entry.reason ? '' : '';
+        cell.querySelector('.wdc-scheduled-badge').hidden = true;
+        // Show a small tooltip via title
+        cell.title = entry.reason || '';
+      }
+
+      const d = new Date(entry.date + 'T12:00:00');
+      cell.querySelector('.wdc-day-label').textContent = DAY_NAMES[d.getDay()];
+      cell.querySelector('.wdc-date').textContent      = d.getDate();
+
+      if (isToday)                    cell.classList.add('is-today');
+      if (entry.status === 'completed')   cell.classList.add('is-completed');
+      if (entry.status === 'skipped' || entry.status === 'auto-skipped')
+                                      cell.classList.add('is-skipped');
+
+      aiWeekGrid.appendChild(cell);
+    });
+  }
+
+  // Next week overview
+  const nwo = rec.nextWeekOverview;
+  if (nwo) {
+    aiNextWeekSummary.textContent  = nwo.summary  || '';
+    aiNextWeekEmphasis.textContent = nwo.emphasis || '';
+
+    aiNextWeekChips.innerHTML = '';
+    (nwo.sessions || []).forEach(s => {
+      const chip = cloneTemplate('tpl-next-week-chip');
+      const chipIcon = workoutTypeIcon[s.type] || 'fa-dumbbell';
+      chip.classList.add(`wt-${s.type.toLowerCase()}`);
+      chip.querySelector('i').classList.add(chipIcon);
+      chip.querySelector('.nw-type').textContent = workoutTypeLabel[s.type] || s.type;
+      chip.querySelector('.nw-day').textContent  = s.estimatedDay || '';
+      aiNextWeekChips.appendChild(chip);
+    });
+  }
+
+  // Load assessment
+  const la = rec.loadAssessment;
+  if (la) {
+    aiLoadFatigue.textContent  = la.fatigue
+      ? la.fatigue.charAt(0).toUpperCase() + la.fatigue.slice(1) + ' fatigue'
+      : '';
+    aiLoadFatigue.className    = `ai-load-fatigue-badge fatigue-${(la.fatigue || 'low').toLowerCase()}`;
+    aiLoadTrend.textContent    = la.weeklyLoadTrend
+      ? `Load: ${la.weeklyLoadTrend}`
+      : '';
+    aiLoadInsight.textContent  = la.insight || '';
+  }
+
+  // Generated at timestamp
+  if (rec.generatedAt) {
+    aiGeneratedAt.textContent = `Updated ${timeAgo(rec.generatedAt)}`;
+  }
+
+  // Sync note — first planned Threshold in the week
+  const threshold = plan.find(e => e.type === 'Threshold' && e.status === 'planned');
+  if (threshold && aiSyncNote) {
+    const tDate = new Date(threshold.date + 'T12:00:00');
+    const tFmt  = tDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+    aiSyncNote.textContent = `Threshold scheduled for ${tFmt}`;
+  } else if (aiSyncNote) {
+    aiSyncNote.textContent = '';
+  }
+};
+
+/** Fetch Gemini key status from backend and update panel UI. */
+const fetchGeminiKeyStatus = async () => {
+  try {
+    const res  = await fetch(`${API_BASE_URL}/api/settings/gemini-key`);
+    const data = await res.json();
+    if (data.hasKey) {
+      geminiKeyStatus.classList.remove('hidden');
+      geminiKeyMasked.textContent = data.maskedKey;
+    } else {
+      geminiKeyStatus.classList.add('hidden');
+    }
+  } catch {
+    // non-critical
+  }
+};
+
+/** Fetch recommendation from backend. forceRefresh=true triggers a Gemini API call. */
+const fetchRecommendation = async (forceRefresh = false) => {
+  setRecState('loading');
+  try {
+    let data;
+    if (forceRefresh) {
+      const res = await fetch(`${API_BASE_URL}/api/recommendation/refresh`, { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json();
+        document.getElementById('rec-error-msg').textContent = err.details || err.error || 'Failed to get recommendation.';
+        setRecState('error');
+        return;
+      }
+      data = await res.json();
+    } else {
+      const res = await fetch(`${API_BASE_URL}/api/recommendation`);
+      data = await res.json();
+      if (data.notConfigured) { setRecState('not-configured'); return; }
+      if (data.noData)        { return fetchRecommendation(true); } // silent auto-regen
+      if (data.stale)         { toast('info', 'Plan updating…', 'Your plan is over 24h old — refreshing.'); }
+    }
+    renderRecommendation(data);
+    setRecState('loaded');
+  } catch (err) {
+    document.getElementById('rec-error-msg').textContent = 'Failed to connect to backend.';
+    setRecState('error');
+  }
+};
+
+/** Skip today's workout and regenerate the plan. */
+const skipToday = async () => {
+  btnSkipToday.disabled = true;
+  const origIcon = btnSkipToday.querySelector('i').className;
+  btnSkipToday.querySelector('i').className = 'fa-solid fa-spinner fa-spin';
+
+  try {
+    const res  = await fetch(`${API_BASE_URL}/api/recommendation/skip-today`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) {
+      toast('error', 'Skip Failed', data.error || 'Could not skip today.');
+      return;
+    }
+    renderRecommendation(data);
+    setRecState('loaded');
+    toast('success', 'Workout skipped', 'Plan updated by Gemini.');
+  } catch {
+    toast('error', 'Skip Failed', 'Could not reach backend.');
+  } finally {
+    btnSkipToday.disabled = false;
+    btnSkipToday.querySelector('i').className = origIcon;
+  }
 };
 
 // ── Auth ───────────────────────────────────────────────────────────────────────
@@ -295,9 +373,7 @@ const updateAuthUI = (loggedIn) => {
     btnSync.disabled    = false;
     btnAnalyze.disabled = false;
     setBtn(btnAnalyze, 'connected');
-    previewWorkouts = null; // invalidate so preview re-fetches with fresh profile
     if (!devicesLoaded) fetchDevices();
-    fetchAndRenderPreview();
   } else {
     statusDot.className = 'status-dot disconnected';
     statusText.textContent = 'Not connected';
@@ -503,7 +579,6 @@ zonesForm.addEventListener('submit', async (e) => {
       currentProfile = updatedProfile;
       updateZonesVisualizer(updatedProfile);
       updateHeaderHrLabel(updatedProfile);
-      previewWorkouts = null; // invalidate so next preview re-fetches with new LTHR
       toast('success', 'Profile Saved', 'Heart rate zones updated successfully.');
     } else {
       toast('error', 'Save Failed', 'Could not save profile to backend.');
@@ -749,7 +824,6 @@ btnApplyRec.addEventListener('click', async () => {
       populateProfileUI(suggestedProfile);
       updateHeaderHrLabel(suggestedProfile);
       assessmentResults.classList.add('hidden');
-      previewWorkouts = null;
       toast('success', 'Zones Updated', 'Training zones and heart rate profile applied successfully.');
     } else {
       toast('error', 'Update Failed', 'Could not save the recommended profile.');
@@ -770,7 +844,13 @@ btnSync.addEventListener('click', async () => {
   setBtn(btnSync, 'loading');
   syncResult.classList.add('hidden');
 
-  const scheduleDate = scheduleDateInput.value;
+  const plan = currentRecommendation?.weeklyPlan || [];
+  const parsed = Array.isArray(plan) ? plan : [];
+  const threshold = parsed.find(e => e.type === 'Threshold' && e.status === 'planned');
+  const scheduleDate = threshold?.date || (() => {
+    const t = new Date(); t.setDate(t.getDate() + 1);
+    return t.toLocaleDateString('sv-SE');
+  })();
 
   try {
     const response = await fetch(`${API_BASE_URL}/api/sync-workouts`, {
@@ -811,12 +891,51 @@ btnSync.addEventListener('click', async () => {
   }
 });
 
+// ── Gemini Key Form ────────────────────────────────────────────────────────────
+
+geminiKeyForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const key = geminiApiKeyInput.value.trim();
+  if (!key) return;
+
+  btnSaveGeminiKey.disabled = true;
+  setBtn(btnSaveGeminiKey, 'loading');
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/settings/gemini-key`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: key })
+    });
+
+    if (res.ok) {
+      geminiApiKeyInput.value = '';
+      await fetchGeminiKeyStatus();
+      closePanel();
+      toast('success', 'API Key Saved', 'Gemini is now connected — generating your plan…');
+      fetchRecommendation(true);
+    } else {
+      const err = await res.json();
+      toast('error', 'Save Failed', err.error || 'Could not save API key.');
+    }
+  } catch {
+    toast('error', 'Connection Error', 'Could not reach backend while saving API key.');
+  } finally {
+    btnSaveGeminiKey.disabled = false;
+    setBtn(btnSaveGeminiKey, 'idle');
+  }
+});
+
 // ── Init ───────────────────────────────────────────────────────────────────────
 
-scheduleDateInput.addEventListener('change', fetchAndRenderPreview);
 btnRefreshDevices.addEventListener('click', refreshDevices);
+btnRefreshRec.addEventListener('click', () => fetchRecommendation(true));
+btnSkipToday.addEventListener('click', skipToday);
+btnRetryRec.addEventListener('click', () => fetchRecommendation(false));
+btnOpenPanelFromRec.addEventListener('click', openPanel);
 
-initDateInput();
 loadDashboard();              // immediate: render whatever is in the DB (no Garmin needed)
 checkStatus();                // parallel: check session and enable live features if connected
+fetchGeminiKeyStatus();       // show masked key in panel if already saved
+fetchRecommendation();        // load recommendation from DB cache immediately
 setInterval(checkStatus, 30000);
