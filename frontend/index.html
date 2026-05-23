@@ -230,7 +230,39 @@
     </div><!-- /settings-panel-body -->
   </aside>
 
-  <!-- ── App ── -->
+  <!-- ── Setup View (shown until Garmin is connected) ── -->
+  <div id="view-setup">
+    <div class="setup-card glass-panel">
+      <div class="setup-logo">
+        <i class="fa-solid fa-circle-nodes logo-icon"></i>
+        <h1>INNER<span>JOIN</span></h1>
+      </div>
+      <p class="setup-tagline">AI-powered training for cyclists.</p>
+      <ul class="setup-steps">
+        <li>
+          <i class="fa-solid fa-link"></i>
+          <div>
+            <strong>Connect Garmin</strong>
+            <span>Sync your activities and training history</span>
+          </div>
+        </li>
+        <li>
+          <i class="fa-solid fa-brain"></i>
+          <div>
+            <strong>Add Gemini API key</strong>
+            <span>Enable AI adaptive training plans</span>
+          </div>
+        </li>
+      </ul>
+      <button class="btn btn-primary btn-glow setup-configure-btn" id="btn-open-setup">
+        <span>Configure</span>
+        <i class="fa-solid fa-sliders"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Dashboard View (shown after connecting) ── -->
+  <div id="view-dashboard" class="hidden">
   <div class="app-container">
 
     <!-- Header -->
@@ -480,7 +512,8 @@
         </span>
       </div>
     </footer>
-  </div>
+  </div><!-- /app-container -->
+  </div><!-- /view-dashboard -->
 
   <!-- ── Templates ──────────────────────────────────────────────── -->
 

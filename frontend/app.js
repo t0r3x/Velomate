@@ -97,6 +97,15 @@ const setBtn = (btn, state) => {
   if (icon  !== undefined) btn.querySelector('i').className = `fa-solid ${icon}`;
 };
 
+// ── Views ──────────────────────────────────────────────────────────────────────
+const viewSetup     = document.getElementById('view-setup');
+const viewDashboard = document.getElementById('view-dashboard');
+
+const setView = (name) => {
+  viewSetup.classList.toggle('hidden',     name !== 'setup');
+  viewDashboard.classList.toggle('hidden', name !== 'dashboard');
+};
+
 // ── Side Panel ─────────────────────────────────────────────────────────────────
 const openPanel = () => {
   settingsPanel.classList.add('open');
@@ -112,6 +121,7 @@ btnOpenPanel.addEventListener('click', openPanel);
 btnClosePanel.addEventListener('click', closePanel);
 panelOverlay.addEventListener('click', closePanel);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
+document.getElementById('btn-open-setup').addEventListener('click', openPanel);
 
 // ── Toast ──────────────────────────────────────────────────────────────────────
 const toast = (type, title, msg = '', duration = 4000) => {
@@ -366,6 +376,9 @@ const updateAuthUI = (loggedIn) => {
   authLoading.classList.add('hidden');
 
   if (loggedIn) {
+    setView('dashboard');
+    closePanel();
+
     statusDot.className = 'status-dot connected';
     statusText.textContent = 'Connected';
     loggedOutSection.classList.add('hidden');
@@ -375,6 +388,8 @@ const updateAuthUI = (loggedIn) => {
     setBtn(btnAnalyze, 'connected');
     if (!devicesLoaded) fetchDevices();
   } else {
+    setView('setup');
+
     statusDot.className = 'status-dot disconnected';
     statusText.textContent = 'Not connected';
     loggedOutSection.classList.remove('hidden');
