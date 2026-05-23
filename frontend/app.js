@@ -84,7 +84,10 @@ const viewSetup         = document.getElementById('view-setup');
 const viewProfileSetup  = document.getElementById('view-profile-setup');
 const viewDashboard     = document.getElementById('view-dashboard');
 
+let currentView = null;   // set by setView(); null until first async init completes
+
 const setView = (name) => {
+  currentView = name;
   viewSetup.classList.toggle('hidden',        name !== 'setup');
   viewProfileSetup.classList.toggle('hidden', name !== 'profile-setup');
   viewDashboard.classList.toggle('hidden',    name !== 'dashboard');
@@ -192,8 +195,9 @@ const maybeEnterDashboard = () => {
   updateSetupSteps();
   if (!isLoggedIn || !geminiConfigured) return;
 
-  // Only act when the user is still on the initial setup screen
-  if (viewSetup.classList.contains('hidden')) return;
+  // Only act when on (or waiting to show) the initial setup screen.
+  // null = page just loaded, no view shown yet — treat as 'setup'.
+  if (currentView !== 'setup' && currentView !== null) return;
 
   // Only skip Step 2 when the user has explicitly confirmed their HR profile.
   // setupComplete is loaded from the DB on init via fetchGeminiKeyStatus().
