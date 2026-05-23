@@ -1,14 +1,10 @@
 import { GarminConnect } from '@flow-js/garmin-connect';
 import axios from 'axios';
-import path from 'path';
-import fs from 'fs';
 import { GarminSSOClient } from './sso.service';
+import { getSetting, setSetting } from './database.service';
 
-const sessionDir = path.join(__dirname, '../../session');
-
-if (!fs.existsSync(sessionDir)) {
-  fs.mkdirSync(sessionDir, { recursive: true });
-}
+const OAUTH1_KEY = 'garmin_oauth1_token';
+const OAUTH2_KEY = 'garmin_oauth2_token';
 
 let gcClient: GarminConnect | null = null;
 
@@ -20,8 +16,13 @@ let authCache: AuthCache | null = null;
 const AUTH_TTL_SUCCESS = 5 * 60 * 1000;   // 5 minutes
 const AUTH_TTL_FAILURE = 2 * 60 * 1000;   // 2 minutes
 
-/** Call after login/logout to force a fresh check on the next status poll. */
-export const invalidateAuthCache = (): void => { authCache = null; };
+/** Call on logout: clears in-memory cache and removes stored tokens from DB. */
+export const invalidateAuthCache = (): void => {
+  authCache = null;
+  setSetting(OAUTH1_KEY, '');
+  setSetting(OAUTH2_KEY, '');
+  gcClient = null; // force a fresh client instance on next use
+};
 
 export const getGarminClient = (): GarminConnect => {
   if (!gcClient) {
@@ -32,10 +33,13 @@ export const getGarminClient = (): GarminConnect => {
   return gcClient;
 };
 
-export const hasCachedSession = (): boolean => {
-  const tokenFiles = ['oauth1_token.json', 'oauth2_token.json'];
-  return tokenFiles.every(file => fs.existsSync(path.join(sessionDir, file)));
+const hasStoredTokens = (): boolean => {
+  const o1 = getSetting(OAUTH1_KEY);
+  const o2 = getSetting(OAUTH2_KEY);
+  return !!(o1 && o1.length > 2 && o2 && o2.length > 2);
 };
+
+export const hasCachedSession = (): boolean => hasStoredTokens();
 
 export const trySessionAuth = async (): Promise<boolean> => {
   // Return cached result while still fresh — avoids live Garmin call every 30 s
@@ -45,15 +49,18 @@ export const trySessionAuth = async (): Promise<boolean> => {
 
   const client = getGarminClient();
   try {
-    if (hasCachedSession()) {
-      client.loadTokenByFile(sessionDir);
+    if (hasStoredTokens()) {
+      const oauth1Str = getSetting(OAUTH1_KEY)!;
+      const oauth2Str = getSetting(OAUTH2_KEY)!;
+      (client.client as any).oauth1Token = JSON.parse(oauth1Str);
+      (client.client as any).oauth2Token = JSON.parse(oauth2Str);
       await client.getUserSettings();
-      console.log('Successfully authenticated using cached tokens.');
+      console.log('Successfully authenticated using DB-stored tokens.');
       authCache = { valid: true, expiresAt: Date.now() + AUTH_TTL_SUCCESS };
       return true;
     }
   } catch (error) {
-    console.warn('Cached session is invalid or expired.');
+    console.warn('Stored session is invalid or expired.');
   }
   authCache = { valid: false, expiresAt: Date.now() + AUTH_TTL_FAILURE };
   return false;
@@ -68,7 +75,6 @@ export const loginGarmin = async (username?: string, password?: string): Promise
 
   console.log(`Attempting login for user: ${user}`);
   await client.login(user, pass);
-  client.exportTokenToFile(sessionDir);
   console.log('Login successful.');
 };
 
@@ -153,14 +159,16 @@ export const finalizeLogin = async (ticket: string, ssoClient?: GarminSSOClient)
   // Inject the Bearer token directly into the library's internal client
   (client.client as any).oauth2Token = oauth2Token;
 
-  // oauth1Token is required by exportTokenToFile — use a sentinel value
-  (client.client as any).oauth1Token = {
+  const oauth1Token = {
     oauth_token: 'di_bearer_placeholder',
     oauth_token_secret: ''
   };
+  (client.client as any).oauth1Token = oauth1Token;
 
-  console.log('[Garmin] Saving tokens to disk...');
-  client.exportTokenToFile(sessionDir);
+  // Persist tokens to the database
+  setSetting(OAUTH1_KEY, JSON.stringify(oauth1Token));
+  setSetting(OAUTH2_KEY, JSON.stringify(oauth2Token));
+  console.log('[Garmin] Tokens saved to database.');
 
   // Mark session as valid so the next /api/status poll returns immediately
   authCache = { valid: true, expiresAt: Date.now() + AUTH_TTL_SUCCESS };
