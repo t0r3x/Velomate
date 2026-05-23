@@ -15,256 +15,213 @@
   <div class="bg-glow-1"></div>
   <div class="bg-glow-2"></div>
 
+  <!-- ── Side Panel: Garmin Connection + HR Profile ── -->
+  <div class="panel-overlay" id="panel-overlay"></div>
+  <aside class="settings-panel" id="settings-panel">
+    <div class="settings-panel-header">
+      <div class="settings-panel-title">
+        <i class="fa-solid fa-sliders"></i>
+        <span>Connection & Profile</span>
+      </div>
+      <button class="panel-close-btn" id="btn-close-panel" aria-label="Close">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+
+    <div class="settings-panel-body">
+
+      <!-- Auth Section -->
+      <div class="panel-section">
+        <div class="panel-section-label">
+          <i class="fa-solid fa-key"></i>
+          <span>Garmin Connection</span>
+        </div>
+
+        <!-- Skeleton shown while status loads -->
+        <div id="auth-status-loading">
+          <div class="skeleton-line" style="width:65%"></div>
+          <div class="skeleton-line" style="width:100%;height:38px;margin-top:12px;border-radius:10px"></div>
+          <div class="skeleton-line" style="width:100%;height:38px;margin-top:8px;border-radius:10px"></div>
+          <div class="skeleton-line" style="width:100%;height:42px;margin-top:14px;border-radius:10px"></div>
+        </div>
+
+        <div id="auth-status-logged-out" class="hidden">
+          <p class="helper-text">Authenticate with your Garmin Connect account to fetch activities and sync workouts.</p>
+          <form id="login-form">
+            <div class="input-group">
+              <label for="username">Garmin Email</label>
+              <div class="input-wrapper">
+                <i class="fa-solid fa-envelope input-icon"></i>
+                <input type="email" id="username" placeholder="name@example.com" required>
+              </div>
+            </div>
+            <div class="input-group">
+              <label for="password">Password</label>
+              <div class="input-wrapper">
+                <i class="fa-solid fa-lock input-icon"></i>
+                <input type="password" id="password" placeholder="••••••••">
+              </div>
+            </div>
+
+            <div class="input-group hidden" id="mfa-section">
+              <label for="mfa-code" style="color:var(--z4-color)">MFA Verification Code</label>
+              <div class="input-wrapper">
+                <i class="fa-solid fa-shield-halved input-icon" style="color:var(--z4-color)"></i>
+                <input type="text" id="mfa-code" placeholder="123456" maxlength="6">
+              </div>
+              <p class="helper-text">Enter the 6-digit code sent to your email or phone.</p>
+            </div>
+
+            <button type="submit" class="btn btn-primary" id="btn-login">
+              <span>Connect Garmin</span>
+              <i class="fa-solid fa-arrow-right-to-bracket"></i>
+            </button>
+          </form>
+        </div>
+
+        <div id="auth-status-logged-in" class="hidden">
+          <div class="success-indicator">
+            <i class="fa-solid fa-circle-check success-icon"></i>
+            <div class="success-details">
+              <h3>Garmin Connected</h3>
+              <p>Session active. Tokens cached locally.</p>
+            </div>
+          </div>
+          <button class="btn btn-secondary" id="btn-logout">
+            <span>Disconnect</span>
+            <i class="fa-solid fa-arrow-right-from-bracket"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="panel-divider"></div>
+
+      <!-- Heart Rate Profile Section -->
+      <div class="panel-section">
+        <div class="panel-section-label">
+          <i class="fa-solid fa-heart-pulse pulsate"></i>
+          <span>Heart Rate Profile</span>
+        </div>
+
+        <!-- HR Stats row -->
+        <div class="hr-stats-row">
+          <div class="hr-stat-box">
+            <span class="stat-label">Max HR (bpm)</span>
+            <input type="number" id="profile-max-hr" value="190" class="stat-value-input">
+          </div>
+          <div class="hr-stat-box">
+            <span class="stat-label">LTHR (bpm)</span>
+            <input type="number" id="profile-lthr" value="165" class="stat-value-input">
+          </div>
+        </div>
+
+        <!-- Visual Zones Bar -->
+        <div class="zones-visualizer-container">
+          <h3>Heart Rate Zones</h3>
+          <div class="zones-stacked-bar">
+            <div class="zone-bar-segment z1" style="width: 20%;" title="Zone 1: Recovery">Z1</div>
+            <div class="zone-bar-segment z2" style="width: 25%;" title="Zone 2: Endurance">Z2</div>
+            <div class="zone-bar-segment z3" style="width: 20%;" title="Zone 3: Tempo">Z3</div>
+            <div class="zone-bar-segment z4" style="width: 15%;" title="Zone 4: Threshold">Z4</div>
+            <div class="zone-bar-segment z5" style="width: 20%;" title="Zone 5: Anaerobic">Z5</div>
+          </div>
+        </div>
+
+        <!-- Zones Inputs List -->
+        <form id="zones-form" class="zones-editor-form">
+          <div class="zone-input-row z1-row">
+            <span class="zone-badge z1-badge">Zone 1</span>
+            <span class="zone-name">Active Recovery</span>
+            <div class="zone-range-inputs">
+              <input type="number" id="z1-min" readonly value="0">
+              <span>to</span>
+              <input type="number" id="z1-max" required>
+              <span class="unit">bpm</span>
+            </div>
+          </div>
+          <div class="zone-input-row z2-row">
+            <span class="zone-badge z2-badge">Zone 2</span>
+            <span class="zone-name">Aerobic Base</span>
+            <div class="zone-range-inputs">
+              <input type="number" id="z2-min" required>
+              <span>to</span>
+              <input type="number" id="z2-max" required>
+              <span class="unit">bpm</span>
+            </div>
+          </div>
+          <div class="zone-input-row z3-row">
+            <span class="zone-badge z3-badge">Zone 3</span>
+            <span class="zone-name">Tempo</span>
+            <div class="zone-range-inputs">
+              <input type="number" id="z3-min" required>
+              <span>to</span>
+              <input type="number" id="z3-max" required>
+              <span class="unit">bpm</span>
+            </div>
+          </div>
+          <div class="zone-input-row z4-row">
+            <span class="zone-badge z4-badge">Zone 4</span>
+            <span class="zone-name">Lactate Threshold</span>
+            <div class="zone-range-inputs">
+              <input type="number" id="z4-min" required>
+              <span>to</span>
+              <input type="number" id="z4-max" required>
+              <span class="unit">bpm</span>
+            </div>
+          </div>
+          <div class="zone-input-row z5-row">
+            <span class="zone-badge z5-badge">Zone 5</span>
+            <span class="zone-name">Anaerobic Sprint</span>
+            <div class="zone-range-inputs">
+              <input type="number" id="z5-min" required>
+              <span>to</span>
+              <input type="number" id="z5-max" required>
+              <span class="unit">bpm</span>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-secondary" id="btn-save-profile">
+            <span>Save Heart Rate Profile</span>
+            <i class="fa-solid fa-floppy-disk"></i>
+          </button>
+        </form>
+      </div>
+
+    </div><!-- /settings-panel-body -->
+  </aside>
+
+  <!-- ── App ── -->
   <div class="app-container">
+
     <!-- Header -->
     <header class="main-header">
       <div class="logo-section">
         <i class="fa-solid fa-circle-nodes logo-icon"></i>
         <h1>INNER<span>JOIN</span></h1>
       </div>
-      <div class="connection-status-badge" id="connection-status">
-        <span class="status-dot pulsing"></span>
-        <span class="status-text">Checking Garmin...</span>
-      </div>
+
+      <!-- Clickable status button → opens side panel -->
+      <button class="garmin-status-btn" id="btn-open-panel" aria-label="Open Connection & Profile">
+        <span class="status-dot pulsing" id="status-dot"></span>
+        <span class="status-text" id="status-text">Checking Garmin…</span>
+        <span class="garmin-btn-sep"></span>
+        <i class="fa-solid fa-heart-pulse garmin-btn-hr-icon" id="garmin-btn-hr-icon"></i>
+        <span class="garmin-btn-hr-label" id="garmin-btn-hr-label"></span>
+        <i class="fa-solid fa-chevron-right garmin-btn-arrow"></i>
+      </button>
     </header>
 
-    <!-- Main Grid -->
+    <!-- Main Grid: col1 = Assessment+History, col2-3 = Schedule -->
     <main class="dashboard-grid">
-      
-      <!-- Left Column: Garmin Auth & Sync Controls -->
-      <div class="col-left">
-        
-        <!-- Garmin Connection Card -->
-        <section class="dashboard-card glass-panel" id="auth-card">
-          <div class="card-header">
-            <i class="fa-solid fa-key header-icon"></i>
-            <h2>Garmin Connection</h2>
-          </div>
-          <div class="card-body">
-            <!-- Skeleton shown while status loads -->
-            <div id="auth-status-loading">
-              <div class="skeleton-line" style="width:65%"></div>
-              <div class="skeleton-line" style="width:100%;height:38px;margin-top:12px;border-radius:10px"></div>
-              <div class="skeleton-line" style="width:100%;height:38px;margin-top:8px;border-radius:10px"></div>
-              <div class="skeleton-line" style="width:100%;height:42px;margin-top:14px;border-radius:10px"></div>
-            </div>
 
-            <div id="auth-status-logged-out" class="hidden">
-              <p class="helper-text">Authenticeer met je Garmin Connect account om activiteiten op te halen en workouts te synchroniseren.</p>
-              <form id="login-form">
-                <div class="input-group">
-                  <label for="username">Garmin Email</label>
-                  <div class="input-wrapper">
-                    <i class="fa-solid fa-envelope input-icon"></i>
-                    <input type="email" id="username" placeholder="name@example.com" required>
-                  </div>
-                </div>
-                <div class="input-group">
-                  <label for="password">Password</label>
-                  <div class="input-wrapper">
-                    <i class="fa-solid fa-lock input-icon"></i>
-                    <input type="password" id="password" placeholder="••••••••">
-                  </div>
-                </div>
+      <!-- Column 1: Progression + History -->
+      <div class="col-assessment">
 
-                <div class="input-group hidden" id="mfa-section">
-                  <label for="mfa-code" style="color:var(--z4-color)">MFA Verification Code</label>
-                  <div class="input-wrapper">
-                    <i class="fa-solid fa-shield-halved input-icon" style="color:var(--z4-color)"></i>
-                    <input type="text" id="mfa-code" placeholder="123456" maxlength="6">
-                  </div>
-                  <p class="helper-text">Enter the 6-digit code sent to your email or phone.</p>
-                </div>
-
-                <button type="submit" class="btn btn-primary" id="btn-login">
-                  <span>Connect Garmin</span>
-                  <i class="fa-solid fa-arrow-right-to-bracket"></i>
-                </button>
-              </form>
-            </div>
-            
-            <div id="auth-status-logged-in" class="hidden">
-              <div class="success-indicator">
-                <i class="fa-solid fa-circle-check success-icon"></i>
-                <div class="success-details">
-                  <h3>Garmin Connected</h3>
-                  <p>Session active. Tokens cached locally.</p>
-                </div>
-              </div>
-              <button class="btn btn-secondary" id="btn-logout">
-                <span>Disconnect</span>
-                <i class="fa-solid fa-arrow-right-from-bracket"></i>
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <!-- Sync & Schedule Workouts Card -->
-        <section class="dashboard-card glass-panel" id="sync-card">
-          <div class="card-header">
-            <i class="fa-solid fa-calendar-day header-icon"></i>
-            <h2>Schedule Training</h2>
-          </div>
-          <div class="card-body">
-            <p class="helper-text">Kies de datum voor je drempeltraining. Sprint en Lange Rit worden automatisch ingepland rond die datum.</p>
-
-            <div class="sync-form">
-              <div class="input-group" id="device-select-group">
-                <label for="device-select">Apparaat voor sync</label>
-                <div class="input-wrapper select-wrapper">
-                  <i class="fa-solid fa-microchip input-icon"></i>
-                  <select id="device-select" disabled>
-                    <option value="">Verbinden met Garmin...</option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="input-group">
-                <label for="schedule-date">Drempeltraining datum</label>
-                <div class="input-wrapper">
-                  <i class="fa-solid fa-calendar input-icon"></i>
-                  <input type="date" id="schedule-date">
-                </div>
-              </div>
-
-              <!-- Week Preview Panel -->
-              <div id="week-preview" class="week-preview hidden">
-                <div class="week-preview-header">
-                  <i class="fa-solid fa-calendar-week"></i>
-                  <span>Weekoverzicht</span>
-                  <span class="week-label" id="week-label"></span>
-                </div>
-                <div class="week-grid" id="week-grid"><!-- injected by JS --></div>
-                <div class="workout-detail-cards" id="workout-detail-cards"><!-- injected by JS --></div>
-              </div>
-
-              <button class="btn btn-primary btn-glow" id="btn-sync-workouts" disabled>
-                <span>Sync & Schedule Workouts</span>
-                <i class="fa-solid fa-cloud-arrow-up"></i>
-              </button>
-            </div>
-
-            <!-- Sync Results Notification -->
-            <div id="sync-result" class="hidden notification-card">
-              <div class="notification-header">
-                <i class="fa-solid fa-circle-check"></i>
-                <span>Sync Geslaagd</span>
-              </div>
-              <div class="notification-body">
-                <p id="sync-result-msg"></p>
-                <ul id="synced-workouts-list" class="workout-bullets"></ul>
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <!-- Center Column: Heart Rate Profile & Zones -->
-      <div class="col-center">
-        <section class="dashboard-card glass-panel">
-          <div class="card-header">
-            <i class="fa-solid fa-heart-pulse header-icon pulsate"></i>
-            <h2>Heart Rate Profile</h2>
-          </div>
-          <div class="card-body">
-            <!-- HR Stats row -->
-            <div class="hr-stats-row">
-              <div class="hr-stat-box">
-                <span class="stat-label">Max HR (bpm)</span>
-                <input type="number" id="profile-max-hr" value="190" class="stat-value-input">
-              </div>
-              <div class="hr-stat-box">
-                <span class="stat-label">LTHR (bpm)</span>
-                <input type="number" id="profile-lthr" value="165" class="stat-value-input">
-              </div>
-            </div>
-
-            <!-- Visual Zones Bar -->
-            <div class="zones-visualizer-container">
-              <h3>Heart Rate Zones</h3>
-              <div class="zones-stacked-bar">
-                <div class="zone-bar-segment z1" style="width: 20%;" title="Zone 1: Recovery">Z1</div>
-                <div class="zone-bar-segment z2" style="width: 25%;" title="Zone 2: Endurance">Z2</div>
-                <div class="zone-bar-segment z3" style="width: 20%;" title="Zone 3: Tempo">Z3</div>
-                <div class="zone-bar-segment z4" style="width: 15%;" title="Zone 4: Threshold">Z4</div>
-                <div class="zone-bar-segment z5" style="width: 20%;" title="Zone 5: Anaerobic">Z5</div>
-              </div>
-            </div>
-
-            <!-- Zones Inputs List -->
-            <form id="zones-form" class="zones-editor-form">
-              <div class="zone-input-row z1-row">
-                <span class="zone-badge z1-badge">Zone 1</span>
-                <span class="zone-name">Active Recovery</span>
-                <div class="zone-range-inputs">
-                  <input type="number" id="z1-min" readonly value="0">
-                  <span>to</span>
-                  <input type="number" id="z1-max" required>
-                  <span class="unit">bpm</span>
-                </div>
-              </div>
-
-              <div class="zone-input-row z2-row">
-                <span class="zone-badge z2-badge">Zone 2</span>
-                <span class="zone-name">Aerobic Endurance</span>
-                <div class="zone-range-inputs">
-                  <input type="number" id="z2-min" required>
-                  <span>to</span>
-                  <input type="number" id="z2-max" required>
-                  <span class="unit">bpm</span>
-                </div>
-              </div>
-
-              <div class="zone-input-row z3-row">
-                <span class="zone-badge z3-badge">Zone 3</span>
-                <span class="zone-name">Tempo Training</span>
-                <div class="zone-range-inputs">
-                  <input type="number" id="z3-min" required>
-                  <span>to</span>
-                  <input type="number" id="z3-max" required>
-                  <span class="unit">bpm</span>
-                </div>
-              </div>
-
-              <div class="zone-input-row z4-row">
-                <span class="zone-badge z4-badge">Zone 4</span>
-                <span class="zone-name">Lactate Threshold</span>
-                <div class="zone-range-inputs">
-                  <input type="number" id="z4-min" required>
-                  <span>to</span>
-                  <input type="number" id="z4-max" required>
-                  <span class="unit">bpm</span>
-                </div>
-              </div>
-
-              <div class="zone-input-row z5-row">
-                <span class="zone-badge z5-badge">Zone 5</span>
-                <span class="zone-name">Anaerobic Sprint</span>
-                <div class="zone-range-inputs">
-                  <input type="number" id="z5-min" required>
-                  <span>to</span>
-                  <input type="number" id="z5-max" required>
-                  <span class="unit">bpm</span>
-                </div>
-              </div>
-
-              <button type="submit" class="btn btn-secondary" id="btn-save-profile">
-                <span>Save Heart Rate Profile</span>
-                <i class="fa-solid fa-floppy-disk"></i>
-              </button>
-            </form>
-          </div>
-        </section>
-      </div>
-
-      <!-- Right Column: Activities History & Assessments -->
-      <div class="col-right-pane">
-        
         <!-- Progression Assessment Card -->
         <section class="dashboard-card glass-panel" id="assessment-card">
           <div class="card-header">
             <i class="fa-solid fa-chart-line header-icon"></i>
-            <h2>Progression Assessment</h2>
+            <h2>Progression</h2>
           </div>
           <div class="card-body">
             <p class="helper-text">Retrieve Garmin activities and auto-recalculate your optimal training zones based on your progression.</p>
@@ -278,16 +235,15 @@
               <h3>Recommended Updates</h3>
               <div class="rec-metric-row">
                 <div class="rec-metric">
-                  <span class="rec-label">Max HR (Current vs Rec)</span>
+                  <span class="rec-label">Max HR (current → recommended)</span>
                   <span class="rec-value" id="rec-max-hr">190 → 192</span>
                 </div>
                 <div class="rec-metric">
-                  <span class="rec-label">LTHR (Current vs Rec)</span>
+                  <span class="rec-label">LTHR (current → recommended)</span>
                   <span class="rec-value" id="rec-lthr">165 → 169</span>
                 </div>
               </div>
               <p class="assessment-summary-text" id="rec-summary-text"></p>
-              
               <button class="btn btn-primary btn-sm" id="btn-apply-rec">
                 <span>Accept & Update Zones</span>
                 <i class="fa-solid fa-check-double"></i>
@@ -305,13 +261,85 @@
           <div class="card-body scroll-panel">
             <div id="activities-list-container">
               <p class="helper-text empty-state-text">Connect to Garmin and click "Assess Fitness Level" to load recent rides.</p>
-              <ul class="activities-list" id="activities-list">
-                <!-- Activities will be injected here -->
-              </ul>
+              <ul class="activities-list" id="activities-list"></ul>
             </div>
           </div>
         </section>
+
       </div>
+
+      <!-- Columns 2-3: Schedule Training (spans 2 cols) -->
+      <div class="col-schedule">
+
+        <section class="dashboard-card glass-panel" id="sync-card">
+          <div class="card-header">
+            <i class="fa-solid fa-calendar-day header-icon"></i>
+            <h2>Schedule Training</h2>
+          </div>
+          <div class="card-body">
+            <p class="helper-text">Choose the date for your threshold workout. Sprint and Long Ride will be automatically scheduled around it.</p>
+
+            <div class="sync-form">
+
+              <!-- Device Selector — prominent -->
+              <div class="device-selector-block" id="device-select-group">
+                <div class="device-selector-top">
+                  <i class="fa-solid fa-microchip device-sel-icon"></i>
+                  <div class="device-sel-info">
+                    <span class="device-sel-label">Sync to device</span>
+                    <span class="device-sel-hint">Workouts will be synced to this device</span>
+                  </div>
+                </div>
+                <div class="device-sel-select-wrap">
+                  <select id="device-select" disabled>
+                    <option value="">Connect to Garmin first…</option>
+                  </select>
+                  <i class="fa-solid fa-chevron-down device-sel-chevron"></i>
+                </div>
+              </div>
+
+              <!-- Date input -->
+              <div class="input-group">
+                <label for="schedule-date">Threshold Workout Date</label>
+                <div class="input-wrapper">
+                  <i class="fa-solid fa-calendar input-icon"></i>
+                  <input type="date" id="schedule-date">
+                </div>
+              </div>
+
+              <!-- Week Preview Panel -->
+              <div id="week-preview" class="week-preview hidden">
+                <div class="week-preview-header">
+                  <i class="fa-solid fa-calendar-week"></i>
+                  <span>Week Overview</span>
+                  <span class="week-label" id="week-label"></span>
+                </div>
+                <div class="week-grid" id="week-grid"></div>
+                <div class="workout-detail-cards" id="workout-detail-cards"></div>
+              </div>
+
+              <button class="btn btn-primary btn-glow" id="btn-sync-workouts" disabled>
+                <span>Sync & Schedule Workouts</span>
+                <i class="fa-solid fa-cloud-arrow-up"></i>
+              </button>
+            </div>
+
+            <!-- Sync Results -->
+            <div id="sync-result" class="hidden notification-card">
+              <div class="notification-header">
+                <i class="fa-solid fa-circle-check"></i>
+                <span>Sync Complete</span>
+              </div>
+              <div class="notification-body">
+                <p id="sync-result-msg"></p>
+                <ul id="synced-workouts-list" class="workout-bullets"></ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
     </main>
 
     <!-- Footer -->
