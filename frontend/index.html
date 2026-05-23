@@ -87,7 +87,7 @@
             <i class="fa-solid fa-circle-check success-icon"></i>
             <div class="success-details">
               <h3>Garmin Connected</h3>
-              <p>Session active. Tokens cached locally.</p>
+              <p>You can now sync your Garmin data.</p>
             </div>
           </div>
           <button class="btn btn-secondary" id="btn-logout">
@@ -232,10 +232,10 @@
             <p class="helper-text">Retrieve Garmin activities and auto-recalculate your optimal training zones based on your progression.</p>
             <div class="analyze-row">
               <button class="btn btn-secondary" id="btn-analyze" disabled
-                data-idle-label="Assess Fitness Level"     data-idle-icon="fa-wand-magic-sparkles"
+                data-idle-label="Fetch data from Garmin"     data-idle-icon="fa-wand-magic-sparkles"
                 data-loading-label="Syncing from Garmin…"  data-loading-icon="fa-spinner fa-spin"
                 data-connected-label="Refresh from Garmin" data-connected-icon="fa-rotate">
-                <span>Assess Fitness Level</span>
+                <span>Retrieve data from Garmin</span>
                 <i class="fa-solid fa-wand-magic-sparkles"></i>
               </button>
               <span class="last-synced-label" id="last-synced-label"></span>
@@ -278,7 +278,7 @@
           </div>
           <div class="card-body scroll-panel">
             <div id="activities-list-container">
-              <p class="helper-text empty-state-text">Connect to Garmin and click "Assess Fitness Level" to load recent rides.</p>
+              <p class="helper-text empty-state-text">Connect to Garmin to load recent rides.</p>
               <ul class="activities-list" id="activities-list"></ul>
             </div>
           </div>
@@ -373,7 +373,11 @@
     <!-- Footer -->
     <footer class="main-footer">
       <div class="copyright">
-        <span>INNERJOIN Training Engine v1.0 • Decoupled Service Architecture</span>
+        <span>INNERJOIN Training Engine v1.0 - 
+          <!-- De Checkbox Hack Tracker -->
+          <input type="checkbox" id="shablagoo-toggle" class="sr-only">
+          <label for="shablagoo-toggle" class="shablagoo-label">Mintberry Crunch Labs</label>
+        </span>
       </div>
     </footer>
   </div>

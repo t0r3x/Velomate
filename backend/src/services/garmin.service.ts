@@ -12,6 +12,17 @@ if (!fs.existsSync(sessionDir)) {
 
 let gcClient: GarminConnect | null = null;
 
+// ── Auth result cache ──────────────────────────────────────────────────────────
+// Prevents a live Garmin API call on every /api/status poll (every 30 s).
+// Valid sessions are cached for 5 min; failed checks for 2 min.
+interface AuthCache { valid: boolean; expiresAt: number; }
+let authCache: AuthCache | null = null;
+const AUTH_TTL_SUCCESS = 5 * 60 * 1000;   // 5 minutes
+const AUTH_TTL_FAILURE = 2 * 60 * 1000;   // 2 minutes
+
+/** Call after login/logout to force a fresh check on the next status poll. */
+export const invalidateAuthCache = (): void => { authCache = null; };
+
 export const getGarminClient = (): GarminConnect => {
   if (!gcClient) {
     const username = process.env.GARMIN_USERNAME || 'placeholder@example.com';
@@ -27,17 +38,24 @@ export const hasCachedSession = (): boolean => {
 };
 
 export const trySessionAuth = async (): Promise<boolean> => {
+  // Return cached result while still fresh — avoids live Garmin call every 30 s
+  if (authCache && Date.now() < authCache.expiresAt) {
+    return authCache.valid;
+  }
+
   const client = getGarminClient();
   try {
     if (hasCachedSession()) {
       client.loadTokenByFile(sessionDir);
       await client.getUserSettings();
       console.log('Successfully authenticated using cached tokens.');
+      authCache = { valid: true, expiresAt: Date.now() + AUTH_TTL_SUCCESS };
       return true;
     }
   } catch (error) {
     console.warn('Cached session is invalid or expired.');
   }
+  authCache = { valid: false, expiresAt: Date.now() + AUTH_TTL_FAILURE };
   return false;
 };
 
@@ -143,5 +161,9 @@ export const finalizeLogin = async (ticket: string, ssoClient?: GarminSSOClient)
 
   console.log('[Garmin] Saving tokens to disk...');
   client.exportTokenToFile(sessionDir);
+
+  // Mark session as valid so the next /api/status poll returns immediately
+  authCache = { valid: true, expiresAt: Date.now() + AUTH_TTL_SUCCESS };
+
   console.log('[Garmin] Login finalized. Bearer token is active.');
 };

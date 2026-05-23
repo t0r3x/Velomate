@@ -388,10 +388,15 @@ loginForm.addEventListener('submit', async (e) => {
   }
 });
 
-// Logout — local toggle only
-btnLogout.addEventListener('click', () => {
+// Logout — invalidate backend auth cache, then update UI
+btnLogout.addEventListener('click', async () => {
   isLoggedIn = false;
   updateAuthUI(false);
+  try {
+    await fetch(`${API_BASE_URL}/api/logout`, { method: 'POST' });
+  } catch {
+    // Non-critical — UI is already updated
+  }
 });
 
 // ── HR Profile ─────────────────────────────────────────────────────────────────
