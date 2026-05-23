@@ -50,7 +50,8 @@ const recSummaryText = document.getElementById('rec-summary-text');
 const btnApplyRec = document.getElementById('btn-apply-rec');
 
 const activitiesList = document.getElementById('activities-list');
-const deviceDiscoveredName = document.getElementById('device-discovered-name');
+const deviceSelect = document.getElementById('device-select');
+const authLoading = document.getElementById('auth-status-loading');
 
 // Toast notification system
 const toast = (type, title, msg = '', duration = 4000) => {
@@ -66,6 +67,165 @@ const toast = (type, title, msg = '', duration = 4000) => {
     el.classList.add('removing');
     el.addEventListener('animationend', () => el.remove(), { once: true });
   }, duration);
+};
+
+// ── Week Preview ──────────────────────────────────────────────────
+const DAY_NAMES = ['Zo', 'Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za'];
+const DAY_NAMES_FULL = ['Zondag', 'Maandag', 'Dinsdag', 'Woensdag', 'Donderdag', 'Vrijdag', 'Zaterdag'];
+
+let previewWorkouts = null; // cache from API
+
+const zoneColors = {
+  z1: 'var(--z1-color, #6ec6e6)',
+  z2: 'var(--z2-color, #6ee68a)',
+  z3: 'var(--z3-color, #e6d46e)',
+  z4: 'var(--z4-color, #e6a06e)',
+  z5: 'var(--z5-color, #e66e6e)'
+};
+
+const workoutTypeIcon = { Sprint: 'fa-bolt', Threshold: 'fa-fire-flame-curved', LongRide: 'fa-road' };
+const workoutTypeLabel = { Sprint: 'Sprint', Threshold: 'Drempel', LongRide: 'Lange Rit' };
+
+const fetchAndRenderPreview = async () => {
+  const dateVal = scheduleDateInput.value;
+  if (!dateVal) return;
+
+  const weekPreview = document.getElementById('week-preview');
+  const weekGrid = document.getElementById('week-grid');
+  const weekLabel = document.getElementById('week-label');
+  const detailCards = document.getElementById('workout-detail-cards');
+
+  // Fetch preview data (only once or when profile changes)
+  if (!previewWorkouts) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/preview-workouts`);
+      if (!res.ok) return;
+      const data = await res.json();
+      previewWorkouts = data.workouts;
+    } catch {
+      return;
+    }
+  }
+
+  // Calculate the week that contains the threshold date
+  // weekOffset 0 = Threshold, -2 = Sprint, +2 = Long Ride
+  const thresholdDate = new Date(dateVal + 'T00:00:00');
+
+  // Build map: offset → workout
+  const offsetMap = {};
+  previewWorkouts.forEach(w => { offsetMap[w.weekOffset] = w; });
+
+  // Show Mon–Sun of the week containing thresholdDate
+  const dayOfWeek = thresholdDate.getDay(); // 0=Sun,1=Mon,...6=Sat
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const monday = new Date(thresholdDate);
+  monday.setDate(thresholdDate.getDate() + mondayOffset);
+
+  // Week label
+  const fmt = d => d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+  const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+  weekLabel.textContent = `${fmt(monday)} – ${fmt(sunday)}`;
+
+  // Build grid cells (Mon=0 … Sun=6, offset from Monday)
+  weekGrid.innerHTML = '';
+  detailCards.innerHTML = '';
+
+  // Map workouts by their absolute date offset from threshold
+  // Sprint: threshold - 2 days, Threshold: threshold + 0, LongRide: threshold + 2
+  const workoutByDate = {};
+  previewWorkouts.forEach(w => {
+    const d = new Date(thresholdDate);
+    d.setDate(d.getDate() + w.weekOffset);
+    workoutByDate[d.toDateString()] = w;
+  });
+
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  for (let i = 0; i < 7; i++) {
+    const cellDate = new Date(monday);
+    cellDate.setDate(monday.getDate() + i);
+    const workout = workoutByDate[cellDate.toDateString()];
+    const isToday = cellDate.toDateString() === today.toDateString();
+    const isThreshold = workout?.type === 'Threshold';
+
+    const cell = document.createElement('div');
+    cell.className = 'week-day-cell' +
+      (workout ? ` has-workout wt-${workout.type.toLowerCase()}` : ' rest') +
+      (isToday ? ' is-today' : '') +
+      (isThreshold ? ' is-threshold' : '');
+
+    const dayLabel = DAY_NAMES[cellDate.getDay()];
+    const dateNum = cellDate.getDate();
+
+    if (workout) {
+      const icon = workoutTypeIcon[workout.type] || 'fa-dumbbell';
+      const label = workoutTypeLabel[workout.type] || workout.type;
+      cell.innerHTML = `
+        <div class="wdc-day">${dayLabel} <span class="wdc-date">${dateNum}</span></div>
+        <div class="wdc-workout-chip">
+          <i class="fa-solid ${icon}"></i>
+          <span>${label}</span>
+        </div>
+        <div class="wdc-duration">${workout.totalMinutes} min</div>
+        ${isThreshold ? '<div class="wdc-scheduled-badge"><i class="fa-solid fa-calendar-check"></i> Ingepland</div>' : ''}
+      `;
+    } else {
+      cell.innerHTML = `
+        <div class="wdc-day">${dayLabel} <span class="wdc-date">${dateNum}</span></div>
+        <div class="wdc-rest"><i class="fa-solid fa-bed"></i> Rust</div>
+      `;
+    }
+    weekGrid.appendChild(cell);
+  }
+
+  // Render detail cards for each workout
+  previewWorkouts.forEach(w => {
+    const card = document.createElement('div');
+    card.className = `workout-card wt-${w.type.toLowerCase()}`;
+
+    const icon = workoutTypeIcon[w.type] || 'fa-dumbbell';
+    const label = workoutTypeLabel[w.type] || w.type;
+
+    // Zone bar
+    const totalMin = w.totalMinutes;
+    const barSegments = w.steps.map(s => {
+      const pct = Math.round((s.minutes / totalMin) * 100);
+      const color = zoneColors[s.zoneKey] || '#888';
+      return `<div class="wc-bar-seg" style="width:${pct}%;background:${color}" title="${s.label} (${s.zone})"></div>`;
+    }).join('');
+
+    // Step list
+    const stepRows = w.steps.map(s => `
+      <div class="wc-step-row">
+        <span class="wc-step-dot" style="background:${zoneColors[s.zoneKey]}"></span>
+        <span class="wc-step-label">${s.label}</span>
+        <span class="wc-step-dur">${s.duration}</span>
+        <span class="wc-step-zone zone-tag ${s.zoneKey}">${s.zone}</span>
+      </div>
+    `).join('');
+
+    // Date for this workout
+    const wDate = new Date(thresholdDate);
+    wDate.setDate(wDate.getDate() + w.weekOffset);
+    const wDateLabel = wDate.toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' });
+
+    card.innerHTML = `
+      <div class="wc-header">
+        <i class="fa-solid ${icon} wc-icon"></i>
+        <div class="wc-title-block">
+          <span class="wc-title">${label}</span>
+          <span class="wc-date">${wDateLabel}</span>
+        </div>
+        <span class="wc-total-dur">${w.totalMinutes} min</span>
+      </div>
+      <div class="wc-zone-bar">${barSegments}</div>
+      <div class="wc-steps">${stepRows}</div>
+      ${w.isScheduled ? '<div class="wc-schedule-note"><i class="fa-solid fa-calendar-check"></i> Wordt ingepland op Garmin Connect</div>' : '<div class="wc-schedule-note muted"><i class="fa-solid fa-upload"></i> Wordt geüpload naar apparaat</div>'}
+    `;
+    detailCards.appendChild(card);
+  });
+
+  weekPreview.classList.remove('hidden');
 };
 
 // Initialize tomorrow's date in target schedule input
@@ -93,6 +253,9 @@ const checkStatus = async () => {
 
 // Update Authentication UI elements
 const updateAuthUI = (loggedIn) => {
+  // Hide the loading skeleton now that status is known
+  authLoading.classList.add('hidden');
+
   if (loggedIn) {
     statusDot.className = 'status-dot connected';
     statusText.textContent = 'Garmin Connected';
@@ -100,7 +263,9 @@ const updateAuthUI = (loggedIn) => {
     loggedInSection.classList.remove('hidden');
     btnSync.disabled = false;
     btnAnalyze.disabled = false;
+    previewWorkouts = null; // invalidate cache so it re-fetches with real data
     fetchDevices();
+    fetchAndRenderPreview();
   } else {
     statusDot.className = 'status-dot disconnected';
     statusText.textContent = 'Garmin Disconnected';
@@ -108,7 +273,8 @@ const updateAuthUI = (loggedIn) => {
     loggedInSection.classList.add('hidden');
     btnSync.disabled = true;
     btnAnalyze.disabled = true;
-    deviceDiscoveredName.textContent = 'Garmin authentication required.';
+    deviceSelect.innerHTML = '<option value="">Verbinden met Garmin...</option>';
+    deviceSelect.disabled = true;
   }
 };
 
@@ -332,27 +498,50 @@ zonesForm.addEventListener('submit', async (e) => {
   }
 });
 
-// Fetch Garmin Devices (to look for Edge 540)
+// Fetch Garmin Devices and populate dropdown
 const fetchDevices = async () => {
+  deviceSelect.innerHTML = '<option value="">Apparaten laden...</option>';
+  deviceSelect.disabled = true;
+
   try {
     const response = await fetch(`${API_BASE_URL}/api/devices`);
     if (!response.ok) throw new Error('Devices error');
-    
+
     const devices = await response.json();
+    deviceSelect.innerHTML = '';
+
     if (Array.isArray(devices) && devices.length > 0) {
-      // Find Edge 540 or other devices
-      const edge = devices.find(d => d.productDisplayName && d.productDisplayName.toLowerCase().includes('edge'));
-      if (edge) {
-        deviceDiscoveredName.innerHTML = `<strong style="color:var(--z2-color)">${edge.productDisplayName}</strong> (ID: ${edge.deviceId})`;
-      } else {
-        deviceDiscoveredName.textContent = `${devices[0].productDisplayName || 'Garmin Device'} connected.`;
-      }
+      // Sort: Edge-devices first
+      const sorted = [...devices].sort((a, b) => {
+        const aEdge = (a.productDisplayName || '').toLowerCase().includes('edge');
+        const bEdge = (b.productDisplayName || '').toLowerCase().includes('edge');
+        return aEdge === bEdge ? 0 : aEdge ? -1 : 1;
+      });
+
+      sorted.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.deviceId || d.unitId || '';
+        const name = d.productDisplayName || d.deviceMetaDataDTO?.deviceProductDescription || 'Onbekend apparaat';
+        const type = d.activityTypes?.join(', ') || d.activityType || '';
+        opt.textContent = name + (type ? ` — ${type}` : '');
+        deviceSelect.appendChild(opt);
+      });
+
+      deviceSelect.disabled = false;
+
+      // Auto-select first Edge device
+      const edgeOpt = [...deviceSelect.options].find(o => o.text.toLowerCase().includes('edge'));
+      if (edgeOpt) edgeOpt.selected = true;
+
     } else {
-      deviceDiscoveredName.textContent = 'No Garmin devices found. Pair a device with Garmin Connect.';
+      const opt = document.createElement('option');
+      opt.textContent = 'Geen apparaten gevonden';
+      opt.disabled = true;
+      deviceSelect.appendChild(opt);
     }
   } catch (error) {
     console.error('Error discovering devices:', error);
-    deviceDiscoveredName.textContent = 'Could not retrieve devices list.';
+    deviceSelect.innerHTML = '<option value="" disabled>Fout bij ophalen apparaten</option>';
   }
 };
 
@@ -516,6 +705,9 @@ btnSync.addEventListener('click', async () => {
     btnSync.innerHTML = '<span>Sync & Schedule Workouts</span> <i class="fa-solid fa-cloud-arrow-up"></i>';
   }
 });
+
+// Re-render week preview whenever date changes
+scheduleDateInput.addEventListener('change', fetchAndRenderPreview);
 
 // Initialize dashboard elements
 initDateInput();
