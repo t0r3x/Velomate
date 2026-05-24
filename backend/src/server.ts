@@ -224,6 +224,63 @@ app.get('/api/activities', async (req: Request, res: Response) => {
   }
 });
 
+// ── Shared activity sync helper ───────────────────────────────────────────────
+//
+// Pulls fresh cycling activities from Garmin, updates DB + analysis, and
+// classifies any newly-completed plan entries.  Must be called before every
+// generateRecommendation() so the AI always works with up-to-date ride data.
+//
+// Returns true on success, false when not authenticated or Garmin API fails.
+// Never throws — callers may proceed with existing DB data on failure.
+
+const syncActivitiesFromGarmin = async (): Promise<boolean> => {
+  try {
+    const isAuthenticated = await trySessionAuth();
+    if (!isAuthenticated) {
+      console.log('[Sync] Not authenticated with Garmin — skipping activity sync');
+      return false;
+    }
+
+    const prevCount = getStoredActivities().length;
+    console.log(`[Sync] Fetching cycling activities from Garmin (currently ${prevCount} stored)…`);
+    const freshActivities = await fetchCyclingActivities(365);
+    upsertActivities(freshActivities);
+    const newCount = getStoredActivities().length - prevCount;
+    console.log(`[Sync] Fetched ${freshActivities.length} from Garmin → ${newCount > 0 ? `+${newCount} new` : 'no new'} (${getStoredActivities().length} total stored)`);
+
+    // Fetch RPE + feeling from per-activity detail endpoint — awaited so the AI
+    // always has the complete picture before generateRecommendation() is called.
+    await fetchAndStoreRecentFeedback(getStoredActivities());
+
+    // Re-run assessment (last 90 days)
+    const allStored = getStoredActivities();
+    const cutoff    = new Date();
+    cutoff.setDate(cutoff.getDate() - 90);
+    const recentForAnalysis = allStored.filter(a =>
+      a.startTime ? new Date(a.startTime) >= cutoff : true
+    );
+    const analysis = assessProgression(recentForAnalysis);
+    upsertAnalysis(analysis);
+    console.log(`[Sync] Analysis: ${analysis.totalCyclingRides} rides (90d), peak HR ${analysis.maxRecordedHr} bpm, est. LTHR ${analysis.estimatedLthr} bpm, avg ${analysis.averageRideDurationMinutes} min`);
+
+    // Classify completed plan entries so statuses are current before AI generation
+    const stored = getStoredRecommendation();
+    if (stored?.weeklyPlan) {
+      const classified = classifyCompletedEntries(stored.weeklyPlan);
+      if (classified.length > 0) {
+        const summary = classified.map(c => `${c.date}:${c.status}`).join(', ');
+        console.log(`[Sync] Classified ${classified.length} workout(s): ${summary}`);
+        classified.forEach(({ date, status }) => updatePlanEntryStatus(date, status));
+      }
+    }
+
+    return true;
+  } catch (err: any) {
+    console.warn('[Sync] Garmin activity sync failed:', err.message);
+    return false;
+  }
+};
+
 // Pull fresh data from Garmin, merge into DB, re-run analysis
 app.post('/api/activities/refresh', async (req: Request, res: Response) => {
   try {
@@ -232,59 +289,27 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Not authenticated with Garmin Connect.' });
     }
 
-    const prevCount = getStoredActivities().length;
-    console.log(`[Refresh] Fetching cycling activities from Garmin (currently ${prevCount} stored)…`);
-    const freshActivities = await fetchCyclingActivities(365); // fetch up to 1 year
-    upsertActivities(freshActivities);
-    const newCount = getStoredActivities().length - prevCount;
+    // syncActivitiesFromGarmin handles fetch → upsert → analysis → classify
+    await syncActivitiesFromGarmin();
 
-    // Non-blocking: fetch RPE + feeling from per-activity detail endpoint for recent activities.
-    // Runs in the background after the response has been sent — doesn't delay the sync.
-    fetchAndStoreRecentFeedback(getStoredActivities()).catch((err: any) =>
-      console.warn('[Activities] Feedback fetch error:', err.message)
-    );
-    console.log(`[Refresh] Fetched ${freshActivities.length} from Garmin → ${newCount > 0 ? `+${newCount} new` : 'no new'} activities (${getStoredActivities().length} total stored)`);
-
-    // Re-run assessment over all stored activities (use recent 90 days for analysis)
-    const allStored      = getStoredActivities();
-    const cutoff         = new Date();
-    cutoff.setDate(cutoff.getDate() - 90);
-    const recentForAnalysis = allStored.filter(a =>
-      a.startTime ? new Date(a.startTime) >= cutoff : true
-    );
-
-    const analysis  = assessProgression(recentForAnalysis);
-    upsertAnalysis(analysis);
-    console.log(`[Refresh] Analysis: ${analysis.totalCyclingRides} rides (90d), peak HR ${analysis.maxRecordedHr} bpm, est. LTHR ${analysis.estimatedLthr} bpm, avg ${analysis.averageRideDurationMinutes} min`);
-
-    const profile = await getActiveProfile();
-
-    // Non-blocking: classify completed plan entries and trigger Gemini re-evaluation
-    try {
-      const stored = getStoredRecommendation();
-      if (stored?.weeklyPlan) {
-        const classified = classifyCompletedEntries(stored.weeklyPlan);
-        if (classified.length > 0) {
-          const summary = classified.map(c => `${c.date}:${c.status}`).join(', ');
-          console.log(`[Gemini] Activity sync classified ${classified.length} workout(s): ${summary} — triggering re-evaluation`);
-          classified.forEach(({ date, status }) => updatePlanEntryStatus(date, status));
-          const updated = getStoredRecommendation();
-          generateRecommendation(updated?.weeklyPlan).catch((err: any) =>
-            console.warn('[Gemini] Auto-regen after activity sync failed:', err.message)
-          );
-        } else {
-          console.log('[Gemini] Activity sync: no newly completed workouts detected in current plan');
-        }
+    // Non-blocking: if plan entries were just classified, regenerate the AI plan
+    const stored = getStoredRecommendation();
+    if (stored?.weeklyPlan) {
+      const classified = classifyCompletedEntries(stored.weeklyPlan);
+      if (classified.length > 0) {
+        generateRecommendation(stored.weeklyPlan).catch((err: any) =>
+          console.warn('[Gemini] Auto-regen after activity sync failed:', err.message)
+        );
+      } else {
+        console.log('[Gemini] Activity sync: no newly completed workouts detected in current plan');
       }
-    } catch (e: any) {
-      console.warn('[Gemini] Completion classification failed:', e.message);
     }
 
+    const profile = await getActiveProfile();
     res.json({
-      activities:    allStored,
-      analysis,
+      activities:     getStoredActivities(),
+      analysis:       getStoredAnalysis(),
       currentProfile: profile,
-      newCount:      freshActivities.length
     });
   } catch (error: any) {
     console.error('[Refresh] Error:', error);
@@ -415,6 +440,9 @@ const handleGeminiError = (res: Response, error: any, context: string): void => 
 
 app.post('/api/recommendation/refresh', async (req: Request, res: Response) => {
   try {
+    // Always sync activities first so the AI works with current ride data
+    await syncActivitiesFromGarmin();
+
     const current = getStoredRecommendation();
     if (current) {
       const planSummary = current.weeklyPlan.map((e: any) => `${e.date}:${e.type}[${e.status}]`).join(' ');
@@ -422,7 +450,7 @@ app.post('/api/recommendation/refresh', async (req: Request, res: Response) => {
     } else {
       console.log('[Gemini] Manual refresh requested — no existing plan');
     }
-    const result  = await generateRecommendation(current?.weeklyPlan);
+    const result = await generateRecommendation(current?.weeklyPlan);
     setSetting('gemini_last_generated', new Date().toISOString());
     res.json(result);
   } catch (error: any) {
@@ -432,6 +460,9 @@ app.post('/api/recommendation/refresh', async (req: Request, res: Response) => {
 
 app.post('/api/recommendation/skip-today', async (req: Request, res: Response) => {
   try {
+    // Sync first so the AI sees the latest rides before re-planning
+    await syncActivitiesFromGarmin();
+
     const today = new Date().toLocaleDateString('sv-SE');
     const stored = getStoredRecommendation();
     const todayEntry = stored?.weeklyPlan?.find((e: any) => e.date === today);
@@ -455,6 +486,9 @@ app.post('/api/recommendation/reschedule', async (req: Request, res: Response) =
     if (fromDate === toDate) {
       return res.status(400).json({ error: 'fromDate and toDate must be different.' });
     }
+
+    // Sync first so the AI re-plans with current ride data
+    await syncActivitiesFromGarmin();
 
     const swapped = swapPlanEntryDates(fromDate, toDate);
     if (!swapped) {
@@ -561,6 +595,10 @@ const runGeminiAutoCheck = async () => {
       console.log('[Gemini] Auto-check: no API key configured — skipping');
       return;
     }
+
+    // Sync activities first — auto-skip detection depends on having current ride data
+    console.log('[Gemini] Auto-check: syncing activities from Garmin before evaluation…');
+    await syncActivitiesFromGarmin();
 
     // Detect auto-skips (planned days that passed with no activity)
     const stored = getStoredRecommendation();

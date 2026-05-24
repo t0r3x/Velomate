@@ -134,7 +134,8 @@ export const assessProgression = (activities: any[]) => {
  *   directWorkoutFeel 0–100  → divide by 25, add 1 → 1–5 feeling scale
  *                              (0=level 1 Exhausted … 100=level 5 Strong)
  *
- * Call this non-blocking after upsertActivities() to avoid delaying the sync response.
+ * Called (awaited) as part of syncActivitiesFromGarmin() so the AI always has
+ * complete feedback data before generateRecommendation() runs.
  * Capped at FEEDBACK_FETCH_LIMIT to stay within Garmin rate limits.
  */
 const FEEDBACK_FETCH_LIMIT = 5;
