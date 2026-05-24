@@ -199,7 +199,11 @@ const enterProfileSetup = async (fromDashboard = false) => {
  *  to the dashboard for returning users. Never interrupts later views. */
 const maybeEnterDashboard = () => {
   updateSetupSteps();
-  if (!isLoggedIn || !geminiConfigured) return;
+  if (!isLoggedIn || !geminiConfigured) {
+    // Not ready yet — if nothing is visible yet (blank page), show the setup screen.
+    if (currentView === null) setView('setup');
+    return;
+  }
 
   // Only act when on (or waiting to show) the initial setup screen.
   // null = page just loaded, no view shown yet — treat as 'setup'.
@@ -701,38 +705,6 @@ const populateProfileUI = (profile) => {
 // Prevent Enter-key submission on the Gemini key form
 geminiKeyForm.addEventListener('submit', e => e.preventDefault());
 
-// Auto-save preferred long ride days when any checkbox changes
-preferredDaysGrid.addEventListener('change', async () => {
-  const days = [...document.querySelectorAll('.preferred-day-cb')]
-    .filter(cb => cb.checked)
-    .map(cb => cb.value);
-  try {
-    await fetch(`${API_BASE_URL}/api/settings/preferred-long-ride-days`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ days })
-    });
-    const label = days.length > 0 ? days.join(', ') : 'none';
-    toast('success', 'Preference saved', `Long ride days: ${label}.`);
-  } catch {
-    toast('error', 'Save Failed', 'Could not save preference.');
-  }
-});
-
-// Auto-save Gemini model on change
-geminiModelSelect.addEventListener('change', async () => {
-  const model = geminiModelSelect.value;
-  try {
-    await fetch(`${API_BASE_URL}/api/settings/gemini-model`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model })
-    });
-    toast('success', 'Model updated', `Now using ${model}.`);
-  } catch {
-    toast('error', 'Save Failed', 'Could not save model preference.');
-  }
-});
 
 // ── Devices ────────────────────────────────────────────────────────────────────
 
@@ -973,13 +945,30 @@ btnSaveAll.addEventListener('click', async () => {
   btnSaveAll.disabled = true;
   setBtn(btnSaveAll, 'loading');
 
-  const newKey    = geminiApiKeyInput.value.trim();
-  const onSetup   = !viewSetup.classList.contains('hidden');   // Step 1 screen visible
+  const newKey      = geminiApiKeyInput.value.trim();
+  const onSetup     = !viewSetup.classList.contains('hidden');
   const onDashboard = !viewDashboard.classList.contains('hidden');
 
-  if (newKey) {
-    // Save the new Gemini API key
-    try {
+  try {
+    // Always save preferred days + model alongside whatever else is happening
+    const days  = [...document.querySelectorAll('.preferred-day-cb')]
+      .filter(cb => cb.checked).map(cb => cb.value);
+    const model = geminiModelSelect.value;
+
+    await Promise.all([
+      fetch(`${API_BASE_URL}/api/settings/preferred-long-ride-days`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ days })
+      }),
+      fetch(`${API_BASE_URL}/api/settings/gemini-model`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model })
+      })
+    ]);
+
+    if (newKey) {
       const res = await fetch(`${API_BASE_URL}/api/settings/gemini-key`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -987,29 +976,27 @@ btnSaveAll.addEventListener('click', async () => {
       });
       if (res.ok) {
         geminiApiKeyInput.value = '';
-        await fetchGeminiKeyStatus();   // refreshes geminiConfigured flag
+        await fetchGeminiKeyStatus();
         if (onDashboard) {
-          // Already on dashboard — just confirm and close
-          toast('success', 'Gemini Key Updated', 'New API key saved.');
+          toast('success', 'Settings Saved', 'API key and preferences updated.');
           closePanel();
         } else {
-          maybeEnterDashboard();        // setup → profile-setup or dashboard
+          maybeEnterDashboard();
         }
       } else {
         const err = await res.json();
         toast('error', 'Save Failed', err.error || 'Could not save Gemini API key.');
       }
-    } catch {
-      toast('error', 'Connection Error', 'Could not reach backend.');
+    } else if (onDashboard) {
+      toast('success', 'Settings Saved', 'Preferences updated.');
+      closePanel();
+    } else if (onSetup && geminiConfigured) {
+      maybeEnterDashboard();
+    } else {
+      toast('warn', 'Gemini Key Required', 'Enter your Google Gemini API key to continue.');
     }
-  } else if (onDashboard) {
-    // On dashboard, nothing to save — just close the panel
-    closePanel();
-  } else if (onSetup && geminiConfigured) {
-    // On setup screen, key already saved — move forward
-    maybeEnterDashboard();
-  } else {
-    toast('warn', 'Gemini Key Required', 'Enter your Google Gemini API key to continue.');
+  } catch {
+    toast('error', 'Connection Error', 'Could not reach backend.');
   }
 
   btnSaveAll.disabled = false;
