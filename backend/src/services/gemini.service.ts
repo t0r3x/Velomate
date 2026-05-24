@@ -173,8 +173,13 @@ const buildPrompt = (previousPlan?: PlanEntry[]): string => {
       }
       // Include perceived exertion and post-ride feeling when available — these are
       // subjective athlete signals that are strong indicators of recovery state.
-      if (a.perceivedExertion != null)    base.rpe     = a.perceivedExertion;    // 1=very easy … 10=max effort
-      if (a.feelingAfterExercise != null) base.feeling = a.feelingAfterExercise; // 1=exhausted … 5=strong
+      // DB stores raw Garmin 0–100 values; convert here to human-readable scale.
+      if (a.perceivedExertion != null) {
+        base.rpe = Math.max(1, Math.min(10, Math.round(a.perceivedExertion / 10)));   // 1–10 Borg
+      }
+      if (a.feelingAfterExercise != null) {
+        base.feeling = Math.max(1, Math.min(5, Math.round(a.feelingAfterExercise / 25) + 1)); // 1–5
+      }
       return base;
     });
 

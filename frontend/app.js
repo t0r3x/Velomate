@@ -59,7 +59,6 @@ const aiGeneratedAt       = document.getElementById('ai-generated-at');
 const aiNextWeekSummary   = document.getElementById('ai-next-week-summary');
 const aiNextWeekChips     = document.getElementById('ai-next-week-chips');
 const aiNextWeekEmphasis  = document.getElementById('ai-next-week-emphasis');
-const aiSyncNote          = document.getElementById('ai-sync-note');
 
 const preferredDaysGrid     = document.getElementById('preferred-days-grid');
 const geminiModelSelect     = document.getElementById('gemini-model');
@@ -424,15 +423,6 @@ const renderRecommendation = (rec) => {
     aiGeneratedAt.textContent = `Updated ${timeAgo(rec.generatedAt)}`;
   }
 
-  // Sync note — first planned Threshold in the week
-  const threshold = plan.find(e => e.type === 'Threshold' && e.status === 'planned');
-  if (threshold && aiSyncNote) {
-    const tDate = new Date(threshold.date + 'T12:00:00');
-    const tFmt  = tDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-    aiSyncNote.textContent = `Threshold scheduled for ${tFmt}`;
-  } else if (aiSyncNote) {
-    aiSyncNote.textContent = '';
-  }
 };
 
 /** Fetch workout definitions for the preview panel and render them. */
@@ -933,7 +923,22 @@ const renderActivities = (activities) => {
     });
 
     li.querySelector('.activity-title').textContent = act.name || 'Cycling Activity';
-    li.querySelector('.activity-meta').textContent  = `${dateFormatted} • ${act.type || 'Cycling'}`;
+    const ACTIVITY_TYPE_LABELS = {
+      cycling:                   'Cycling',
+      road_biking:               'Road Cycling',
+      mountain_biking:           'Mountain Biking',
+      gravel_cycling:            'Gravel Cycling',
+      indoor_cycling:            'Indoor Cycling',
+      virtual_ride:              'Virtual Ride',
+      e_bike_mountain:           'E-Bike MTB',
+      e_bike_fitness:            'E-Bike',
+      bmx:                       'BMX',
+      cyclocross:                'Cyclocross',
+      track_cycling:             'Track Cycling',
+    };
+    const typeLabel = ACTIVITY_TYPE_LABELS[(act.type || '').toLowerCase()] ||
+      (act.type ? act.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Cycling');
+    li.querySelector('.activity-meta').textContent  = `${dateFormatted} • ${typeLabel}`;
     li.querySelector('.act-stat--dist .act-stat-val').textContent = `${act.distanceKm} km`;
     li.querySelector('.act-stat--time .act-stat-val').textContent = `${act.durationMinutes} min`;
 
@@ -949,8 +954,10 @@ const renderActivities = (activities) => {
     const feelingBadge = li.querySelector('.act-feeling-badge');
     const feedbackRow  = li.querySelector('.act-feedback');
 
+    // Garmin stores directWorkoutRpe and directWorkoutFeel on a 0–100 internal scale.
+    // Convert: rpe / 10 → 1–10 Borg scale; feel / 25 + 1 → 1–5 feeling level.
     if (act.perceivedExertion != null) {
-      const rpe = act.perceivedExertion;
+      const rpe = Math.max(1, Math.min(10, Math.round(act.perceivedExertion / 10)));
       // Color: 1-3 green, 4-5 yellow, 6-7 orange, 8-10 red
       const rpeClass = rpe <= 3 ? 'rpe-easy' : rpe <= 5 ? 'rpe-moderate' : rpe <= 7 ? 'rpe-hard' : 'rpe-max';
       rpeBadge.textContent = `RPE ${rpe}`;
@@ -959,7 +966,7 @@ const renderActivities = (activities) => {
     }
 
     if (act.feelingAfterExercise != null) {
-      const f = act.feelingAfterExercise;
+      const f = Math.max(1, Math.min(5, Math.round(act.feelingAfterExercise / 25) + 1));
       // 1=exhausted, 2=tired, 3=normal, 4=good, 5=strong
       const feelingMap = {
         1: { label: 'Exhausted', icon: 'fa-face-dizzy',        cls: 'feeling-1' },

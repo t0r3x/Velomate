@@ -83,12 +83,29 @@ for (const [sql, msg] of _migrations) {
 }
 
 // ── Activities ────────────────────────────────────────────────────────────────
+// UPSERT: on conflict, update all fields EXCEPT perceivedExertion/feelingAfterExercise —
+// those are fetched via the detail endpoint separately and must not be overwritten by the
+// bulk list sync (which never includes them).
 const stmtUpsertActivity = db.prepare(`
-  INSERT OR REPLACE INTO activities
+  INSERT INTO activities
     (activityId, name, type, startTime, distanceKm, durationMinutes,
      averageHr, maxHr, averagePower, maxPower, timeInZones,
      perceivedExertion, feelingAfterExercise, fetchedAt)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, CURRENT_TIMESTAMP)
+  ON CONFLICT(activityId) DO UPDATE SET
+    name                = excluded.name,
+    type                = excluded.type,
+    startTime           = excluded.startTime,
+    distanceKm          = excluded.distanceKm,
+    durationMinutes     = excluded.durationMinutes,
+    averageHr           = excluded.averageHr,
+    maxHr               = excluded.maxHr,
+    averagePower        = excluded.averagePower,
+    maxPower            = excluded.maxPower,
+    timeInZones         = excluded.timeInZones,
+    fetchedAt           = CURRENT_TIMESTAMP
+    -- perceivedExertion and feelingAfterExercise intentionally NOT updated here;
+    -- they are set exclusively by updateActivityFeedback() after a detail fetch.
 `);
 
 const upsertManyActivities = db.transaction((activities: any[]) => {
@@ -104,12 +121,26 @@ const upsertManyActivities = db.transaction((activities: any[]) => {
       a.maxHr,
       a.averagePower || 0,
       a.maxPower || 0,
-      a.timeInZones != null ? JSON.stringify(a.timeInZones) : null,
-      a.perceivedExertion  ?? null,
-      a.feelingAfterExercise ?? null
+      a.timeInZones != null ? JSON.stringify(a.timeInZones) : null
     );
   }
 });
+
+const stmtUpdateFeedback = db.prepare(`
+  UPDATE activities SET perceivedExertion = ?, feelingAfterExercise = ? WHERE activityId = ?
+`);
+
+/** Set perceived exertion (raw Garmin 0–100) and feeling (raw 0–100) for one activity.
+ *  Raw scale: directWorkoutRpe 0–100, directWorkoutFeel 0–100.
+ *  Display: rpe / 10 → 1–10 Borg scale, feel / 25 + 1 → 1–5 feeling scale.
+ *  Pass null for either value when not available. */
+export const updateActivityFeedback = (
+  activityId: string,
+  perceivedExertion: number | null,
+  feelingAfterExercise: number | null
+): void => {
+  stmtUpdateFeedback.run(perceivedExertion, feelingAfterExercise, activityId);
+};
 
 export const upsertActivities = (activities: any[]): void => {
   upsertManyActivities(activities);

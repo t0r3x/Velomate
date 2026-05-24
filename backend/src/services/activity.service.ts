@@ -1,5 +1,6 @@
 import { getGarminClient, trySessionAuth } from './garmin.service';
 import { calculateDefaultZones, loadProfile } from './profile.service';
+import { updateActivityFeedback } from './database.service';
 
 export const fetchCyclingActivities = async (days: number = 90) => {
   const isAuthenticated = await trySessionAuth();
@@ -122,4 +123,55 @@ export const assessProgression = (activities: any[]) => {
     averageRideDurationMinutes: Math.round(averageRideDuration / 60),
     suggestedZones: calculateDefaultZones(estimatedLthr, estimatedMaxHr)
   };
+};
+
+/**
+ * Fetch per-activity detail for the most recent activities that don't yet have
+ * feedback data (perceivedExertion == null) and store the converted values.
+ *
+ * Garmin API fields from summaryDTO:
+ *   directWorkoutRpe  0–100  → divide by 10 → 1–10 Borg RPE scale
+ *   directWorkoutFeel 0–100  → divide by 25, add 1 → 1–5 feeling scale
+ *                              (0=level 1 Exhausted … 100=level 5 Strong)
+ *
+ * Call this non-blocking after upsertActivities() to avoid delaying the sync response.
+ * Capped at FEEDBACK_FETCH_LIMIT to stay within Garmin rate limits.
+ */
+const FEEDBACK_FETCH_LIMIT = 5;
+
+export const fetchAndStoreRecentFeedback = async (storedActivities: any[]): Promise<void> => {
+  const missing = storedActivities
+    .filter(a => a.perceivedExertion == null)
+    .slice(0, FEEDBACK_FETCH_LIMIT);
+
+  if (missing.length === 0) {
+    console.log('[Activities] Feedback: all recent activities already have RPE data');
+    return;
+  }
+
+  const client = getGarminClient();
+  console.log(`[Activities] Fetching feedback (RPE/feel) for ${missing.length} activit${missing.length === 1 ? 'y' : 'ies'} via detail endpoint…`);
+
+  for (const act of missing) {
+    try {
+      const detail  = await client.getActivity({ activityId: act.activityId }) as any;
+      const summary = detail?.summaryDTO;
+      if (!summary) continue;
+
+      const rawRpe  = summary.directWorkoutRpe;
+      const rawFeel = summary.directWorkoutFeel;
+
+      if (rawRpe == null && rawFeel == null) continue;
+
+      // Convert Garmin's 0–100 internal scale to human-readable units
+      const rpe     = rawRpe  != null ? Math.max(1, Math.min(10, Math.round(rawRpe  / 10)))        : null;
+      const feeling = rawFeel != null ? Math.max(1, Math.min(5,  Math.round(rawFeel / 25) + 1))    : null;
+
+      // Store the raw Garmin values — display layer converts them
+      updateActivityFeedback(String(act.activityId), rawRpe ?? null, rawFeel ?? null);
+      console.log(`[Activities] Feedback stored for ${act.activityId}: raw RPE=${rawRpe ?? '-'} (→${rpe ?? '-'}/10), raw feel=${rawFeel ?? '-'} (→${feeling ?? '-'}/5)`);
+    } catch (err: any) {
+      console.warn(`[Activities] Failed to fetch feedback for ${act.activityId}: ${err.message}`);
+    }
+  }
 };

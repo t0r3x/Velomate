@@ -7,7 +7,7 @@ import { getGarminClient, trySessionAuth, invalidateAuthCache } from './services
 import { GarminSSOClient } from './services/sso.service';
 import { finalizeLogin } from './services/garmin.service';
 import { loadProfile, saveProfile, calculateDefaultZones } from './services/profile.service';
-import { fetchCyclingActivities, assessProgression } from './services/activity.service';
+import { fetchCyclingActivities, assessProgression, fetchAndStoreRecentFeedback } from './services/activity.service';
 import { syncAndScheduleWorkouts } from './services/workout.service';
 import {
   upsertActivities,
@@ -240,6 +240,12 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
     const freshActivities = await fetchCyclingActivities(365); // fetch up to 1 year
     upsertActivities(freshActivities);
     const newCount = getStoredActivities().length - prevCount;
+
+    // Non-blocking: fetch RPE + feeling from per-activity detail endpoint for recent activities.
+    // Runs in the background after the response has been sent — doesn't delay the sync.
+    fetchAndStoreRecentFeedback(getStoredActivities()).catch((err: any) =>
+      console.warn('[Activities] Feedback fetch error:', err.message)
+    );
     console.log(`[Refresh] Fetched ${freshActivities.length} from Garmin → ${newCount > 0 ? `+${newCount} new` : 'no new'} activities (${getStoredActivities().length} total stored)`);
 
     // Re-run assessment over all stored activities (use recent 90 days for analysis)
@@ -564,14 +570,14 @@ app.post('/api/recommendation/reschedule', async (req: Request, res: Response) =
 });
 
 // ── Debug — raw Garmin activity fields (discover perceivedExertion / feeling) ─
-// Hit GET /api/debug/raw-activity after syncing rides to see all fields returned
-// by Garmin's activity list API. Remove this endpoint once field names are confirmed.
+// Hit GET /api/debug/raw-activity after syncing to inspect both the list AND detail
+// API responses and find the exact field names for RPE + post-ride feeling.
 app.get('/api/debug/raw-activity', async (_req: Request, res: Response) => {
   try {
     const isAuthenticated = await trySessionAuth();
     if (!isAuthenticated) return res.status(401).json({ error: 'Not authenticated.' });
     const client = getGarminClient();
-    const acts   = await client.getActivities(0, 5);
+    const acts   = await client.getActivities(0, 10);
     const cycling = acts.filter((a: any) => {
       const t = (a.activityType?.typeKey || '').toLowerCase();
       return t.includes('cycl') || t.includes('bik');
@@ -579,19 +585,44 @@ app.get('/api/debug/raw-activity', async (_req: Request, res: Response) => {
     const first = cycling[0] ?? acts[0];
     if (!first) return res.json({ message: 'No activities found' });
 
-    // Show all fields that have a non-null value — useful for discovering new API fields
-    const allFields: Record<string, any> = {};
+    // ── 1. List-endpoint fields ──────────────────────────────────────────────
+    const listFields: Record<string, any> = {};
     for (const [k, v] of Object.entries(first as object)) {
-      if (v != null) allFields[k] = v;
+      if (v != null) listFields[k] = v;
     }
+
+    // ── 2. Detail endpoint — may contain perceivedExertion when list does not ─
+    let detailFields: Record<string, any> = {};
+    let detailSummaryDTO: Record<string, any> = {};
+    try {
+      const detail = await client.getActivity({ activityId: (first as any).activityId }) as any;
+      for (const [k, v] of Object.entries(detail)) {
+        if (v != null && typeof v !== 'object') detailFields[k] = v;
+      }
+      // summaryDTO contains additional stats
+      if (detail.summaryDTO) {
+        for (const [k, v] of Object.entries(detail.summaryDTO as object)) {
+          if (v != null) detailSummaryDTO[k] = v;
+        }
+      }
+    } catch (e: any) {
+      detailFields = { error: `getActivity failed: ${e.message}` };
+    }
+
+    const TARGET_FIELDS = ['perceivedExertion', 'feelingAfterExercise', 'activityFeedback',
+                           'userTrainingFeedback', 'feedbackPhrase', 'trainingFeedback',
+                           'effort', 'effortFeedback', 'perceivedEffort'];
+
     res.json({
-      activityName: (first as any).activityName,
-      allNonNullFields: allFields,
-      // Highlight the fields we care about
-      perceivedExertion:    (first as any).perceivedExertion   ?? '(not present)',
-      feelingAfterExercise: (first as any).feelingAfterExercise ?? '(not present)',
-      activityFeedback:     (first as any).activityFeedback     ?? '(not present)',
-      userTrainingFeedback: (first as any).userTrainingFeedback ?? '(not present)',
+      activityName:         (first as any).activityName,
+      activityId:           (first as any).activityId,
+      // Quick scan — what we care about across both sources
+      targetFieldsInList:   Object.fromEntries(TARGET_FIELDS.map(f => [f, listFields[f] ?? '(absent)'])),
+      targetFieldsInDetail: Object.fromEntries(TARGET_FIELDS.map(f => [f, detailFields[f] ?? detailSummaryDTO[f] ?? '(absent)'])),
+      // Full dumps for discovering any other relevant field names
+      listNonNullFields:    listFields,
+      detailNonNullScalars: detailFields,
+      detailSummaryDTO,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
