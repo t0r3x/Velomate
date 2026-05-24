@@ -350,6 +350,9 @@ const setRecState = (state) => {
     const el = document.getElementById(`rec-state-${s}`);
     if (el) el.classList.toggle('hidden', s !== state);
   });
+  // Sync button requires an active plan — disable for every non-loaded state.
+  // renderRecommendation() re-enables it when planned workouts are present.
+  if (state !== 'loaded') btnSync.disabled = true;
 };
 
 /** Populate all AI card UI elements from a recommendation object. */
@@ -486,6 +489,10 @@ const renderRecommendation = (rec) => {
   if (rec.generatedAt) {
     aiGeneratedAt.textContent = `Updated ${timeAgo(rec.generatedAt)}`;
   }
+
+  // Enable Sync button only when there are planned syncable workouts and Garmin is connected
+  const hasSyncableWorkout = plan.some(e => e.status === 'planned');
+  btnSync.disabled = !(isLoggedIn && hasSyncableWorkout);
 
 };
 
@@ -628,7 +635,8 @@ const updateAuthUI = (loggedIn) => {
     statusText.textContent = 'Connected';
     loggedOutSection.classList.add('hidden');
     loggedInSection.classList.remove('hidden');
-    btnSync.disabled    = false;
+    // btnSync is NOT enabled here — renderRecommendation() enables it only when
+    // a plan with at least one planned workout exists.
     btnAnalyze.disabled = false;
     setBtn(btnAnalyze, 'connected');
     maybeEnterDashboard();
@@ -1102,11 +1110,13 @@ btnConfirmProfile.addEventListener('click', async () => {
         closePsModal();
         toast('success', 'HR Profile Updated', 'Training zones recalculated and saved.');
       } else {
-        // First-time setup flow — mark complete in DB, then proceed to dashboard
+        // First-time setup flow — mark complete in DB, then proceed to dashboard.
+        // Do NOT generate a plan here — the user must click "Generate my first plan"
+        // so the first generation is always explicit and user-initiated.
         setupComplete = true;
         await fetch(`${API_BASE_URL}/api/settings/setup-complete`, { method: 'POST' });
         loadDashboard();
-        fetchRecommendation(true);   // first-time: generate initial plan immediately
+        fetchRecommendation(false);  // read-only: will show 'no-plan' state with the button
         setView('dashboard');
       }
     } else {
