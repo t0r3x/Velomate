@@ -90,8 +90,23 @@ const classifyExecution = (
 // ── Completion / skip detection ───────────────────────────────────────────────
 
 /**
- * Classify plan entries that are 'planned', in the past, and matched by a Garmin activity.
- * Returns enriched status based on execution quality (zone time + duration + HR).
+ * Returns true when an activity name looks like an INNERJOIN structured workout.
+ * Garmin prefixes the location when recording a scheduled workout, e.g.
+ * "Tilburg - INNERJOIN Long Ride" → contains "INNERJOIN".
+ */
+const isInnerjoinActivity = (name: string): boolean =>
+  (name || '').toLowerCase().includes('innerjoin');
+
+/**
+ * Classify plan entries that are 'planned', on or before today, and matched by a
+ * Garmin activity.  Returns enriched status based on execution quality.
+ *
+ * Activity selection per date (priority order):
+ *   1. Activity whose name contains "INNERJOIN" (Garmin appends workout name)
+ *   2. Longest activity on that date (fallback)
+ *
+ * Including today (<=) means a workout synced the same day it is completed is
+ * immediately classified without waiting until tomorrow's auto-check.
  */
 export const classifyCompletedEntries = (
   plan: PlanEntry[]
@@ -103,14 +118,25 @@ export const classifyCompletedEntries = (
   const z4min      = Math.round(lthr * 0.89) + 1;
   const z5min      = lthr + 1;
 
-  // Latest activity per date (if two rides on same day, use the longer one)
+  // Best activity per date:
+  //   – prefer INNERJOIN-named activities (strong signal it was the structured workout)
+  //   – within same priority tier, prefer the longer activity
   const actMap = new Map<string, any>();
   activities
     .filter(a => a.startTime)
     .forEach(a => {
-      const date = a.startTime.slice(0, 10);
+      const date     = a.startTime.slice(0, 10);
       const existing = actMap.get(date);
-      if (!existing || a.durationMinutes > existing.durationMinutes) {
+      const aIsIJ    = isInnerjoinActivity(a.name);
+      const exIsIJ   = existing ? isInnerjoinActivity(existing.name) : false;
+
+      if (!existing) {
+        actMap.set(date, a);
+      } else if (aIsIJ && !exIsIJ) {
+        // INNERJOIN activity beats any non-INNERJOIN activity on same day
+        actMap.set(date, a);
+      } else if (aIsIJ === exIsIJ && a.durationMinutes > existing.durationMinutes) {
+        // Same tier → prefer the longer ride
         actMap.set(date, a);
       }
     });
@@ -118,7 +144,7 @@ export const classifyCompletedEntries = (
   const today = new Date().toLocaleDateString('sv-SE');
 
   return plan
-    .filter(e => e.status === 'planned' && e.date < today && actMap.has(e.date))
+    .filter(e => e.status === 'planned' && e.date <= today && actMap.has(e.date))
     .map(e => ({
       date:   e.date,
       status: classifyExecution(actMap.get(e.date)!, e.type, lthr, z4min, z5min)

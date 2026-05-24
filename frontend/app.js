@@ -347,7 +347,24 @@ const renderRecommendation = (rec) => {
         cell.querySelector('.wdc-duration').textContent = entry.structure?.totalMinutes
           ? `${entry.structure.totalMinutes} min`
           : '';
-        cell.querySelector('.wdc-scheduled-badge').hidden = true;
+        // Status badge — repurpose wdc-scheduled-badge based on completion state
+        const badge = cell.querySelector('.wdc-scheduled-badge');
+        const STATUS_BADGE = {
+          'completed':          { icon: 'fa-circle-check',      label: 'Done',     cls: 'wdc-badge-done'     },
+          'completed-partial':  { icon: 'fa-circle-half-stroke', label: 'Partial',  cls: 'wdc-badge-partial'  },
+          'completed-mismatch': { icon: 'fa-circle-exclamation', label: 'Mismatch', cls: 'wdc-badge-mismatch' },
+          'skipped':            { icon: 'fa-forward-step',       label: 'Skipped',  cls: 'wdc-badge-skipped'  },
+          'auto-skipped':       { icon: 'fa-forward-step',       label: 'Skipped',  cls: 'wdc-badge-skipped'  },
+        };
+        const badgeDef = STATUS_BADGE[entry.status];
+        if (badge && badgeDef) {
+          badge.innerHTML = `<i class="fa-solid ${badgeDef.icon}"></i> ${badgeDef.label}`;
+          badge.className = `wdc-scheduled-badge ${badgeDef.cls}`;
+          badge.hidden = false;
+        } else if (badge) {
+          badge.hidden = true;
+        }
+
         // Show a small tooltip via title
         cell.title = entry.reason || '';
       }
