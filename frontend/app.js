@@ -944,6 +944,40 @@ const renderActivities = (activities) => {
       hrStat.hidden = true;
     }
 
+    // ── Perceived exertion + feeling badges ───────────────────────────────────
+    const rpeBadge     = li.querySelector('.act-rpe-badge');
+    const feelingBadge = li.querySelector('.act-feeling-badge');
+    const feedbackRow  = li.querySelector('.act-feedback');
+
+    if (act.perceivedExertion != null) {
+      const rpe = act.perceivedExertion;
+      // Color: 1-3 green, 4-5 yellow, 6-7 orange, 8-10 red
+      const rpeClass = rpe <= 3 ? 'rpe-easy' : rpe <= 5 ? 'rpe-moderate' : rpe <= 7 ? 'rpe-hard' : 'rpe-max';
+      rpeBadge.textContent = `RPE ${rpe}`;
+      rpeBadge.classList.add(rpeClass);
+      rpeBadge.classList.remove('hidden');
+    }
+
+    if (act.feelingAfterExercise != null) {
+      const f = act.feelingAfterExercise;
+      // 1=exhausted, 2=tired, 3=normal, 4=good, 5=strong
+      const feelingMap = {
+        1: { label: 'Exhausted', icon: 'fa-face-dizzy',        cls: 'feeling-1' },
+        2: { label: 'Tired',     icon: 'fa-face-tired',        cls: 'feeling-2' },
+        3: { label: 'Normal',    icon: 'fa-face-meh',          cls: 'feeling-3' },
+        4: { label: 'Good',      icon: 'fa-face-smile',        cls: 'feeling-4' },
+        5: { label: 'Strong',    icon: 'fa-face-grin-stars',   cls: 'feeling-5' },
+      };
+      const entry = feelingMap[f] || feelingMap[3];
+      feelingBadge.innerHTML = `<i class="fa-regular ${entry.icon}"></i> ${entry.label}`;
+      feelingBadge.classList.add(entry.cls);
+      feelingBadge.classList.remove('hidden');
+    }
+
+    if (act.perceivedExertion != null || act.feelingAfterExercise != null) {
+      feedbackRow.classList.remove('hidden');
+    }
+
     activitiesList.appendChild(li);
   });
 };

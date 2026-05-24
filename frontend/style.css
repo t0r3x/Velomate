@@ -979,6 +979,40 @@ body {
   text-transform: uppercase;
 }
 
+/* ── Activity feedback badges (RPE + Feeling) ─────────────────────────────── */
+.act-feedback {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-top: 0.3rem;
+}
+
+.act-rpe-badge,
+.act-feeling-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 0.9rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+/* RPE intensity colors */
+.act-rpe-badge.rpe-easy     { background: rgba(16,185,129,0.12); color: #10b981; border-color: rgba(16,185,129,0.25); }
+.act-rpe-badge.rpe-moderate { background: rgba(245,158,11,0.12);  color: #f59e0b; border-color: rgba(245,158,11,0.25); }
+.act-rpe-badge.rpe-hard     { background: rgba(249,115,22,0.12);  color: #f97316; border-color: rgba(249,115,22,0.25); }
+.act-rpe-badge.rpe-max      { background: rgba(239,68,68,0.12);   color: #ef4444; border-color: rgba(239,68,68,0.25); }
+
+/* Feeling scale colors */
+.act-feeling-badge.feeling-1 { background: rgba(239,68,68,0.12);   color: #ef4444; border-color: rgba(239,68,68,0.25); }
+.act-feeling-badge.feeling-2 { background: rgba(249,115,22,0.12);  color: #f97316; border-color: rgba(249,115,22,0.25); }
+.act-feeling-badge.feeling-3 { background: rgba(100,116,139,0.12); color: #94a3b8; border-color: rgba(100,116,139,0.2); }
+.act-feeling-badge.feeling-4 { background: rgba(16,185,129,0.12);  color: #10b981; border-color: rgba(16,185,129,0.25); }
+.act-feeling-badge.feeling-5 { background: rgba(99,102,241,0.12);  color: #818cf8; border-color: rgba(99,102,241,0.25); }
+
 /* Progression Assessment Card */
 .recommendation-box {
   margin-top: 1rem;

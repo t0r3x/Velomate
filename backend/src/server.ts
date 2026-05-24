@@ -563,6 +563,41 @@ app.post('/api/recommendation/reschedule', async (req: Request, res: Response) =
   }
 });
 
+// ── Debug — raw Garmin activity fields (discover perceivedExertion / feeling) ─
+// Hit GET /api/debug/raw-activity after syncing rides to see all fields returned
+// by Garmin's activity list API. Remove this endpoint once field names are confirmed.
+app.get('/api/debug/raw-activity', async (_req: Request, res: Response) => {
+  try {
+    const isAuthenticated = await trySessionAuth();
+    if (!isAuthenticated) return res.status(401).json({ error: 'Not authenticated.' });
+    const client = getGarminClient();
+    const acts   = await client.getActivities(0, 5);
+    const cycling = acts.filter((a: any) => {
+      const t = (a.activityType?.typeKey || '').toLowerCase();
+      return t.includes('cycl') || t.includes('bik');
+    });
+    const first = cycling[0] ?? acts[0];
+    if (!first) return res.json({ message: 'No activities found' });
+
+    // Show all fields that have a non-null value — useful for discovering new API fields
+    const allFields: Record<string, any> = {};
+    for (const [k, v] of Object.entries(first as object)) {
+      if (v != null) allFields[k] = v;
+    }
+    res.json({
+      activityName: (first as any).activityName,
+      allNonNullFields: allFields,
+      // Highlight the fields we care about
+      perceivedExertion:    (first as any).perceivedExertion   ?? '(not present)',
+      feelingAfterExercise: (first as any).feelingAfterExercise ?? '(not present)',
+      activityFeedback:     (first as any).activityFeedback     ?? '(not present)',
+      userTrainingFeedback: (first as any).userTrainingFeedback ?? '(not present)',
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Gemini Auto-check (hourly) ────────────────────────────────────────────────
 
 const logAutoCheckState = () => {

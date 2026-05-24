@@ -171,6 +171,10 @@ const buildPrompt = (previousPlan?: PlanEntry[]): string => {
           z5: Math.round(zones[4] / 60)
         };
       }
+      // Include perceived exertion and post-ride feeling when available — these are
+      // subjective athlete signals that are strong indicators of recovery state.
+      if (a.perceivedExertion != null)    base.rpe     = a.perceivedExertion;    // 1=very easy … 10=max effort
+      if (a.feelingAfterExercise != null) base.feeling = a.feelingAfterExercise; // 1=exhausted … 5=strong
       return base;
     });
 
@@ -252,6 +256,9 @@ ${JSON.stringify(recentActivities, null, 2)}
 
 Note: zonesMin shows minutes spent in each Garmin HR zone (z1=lowest, z5=highest intensity).
 Zone data is from Garmin's default 5-zone system based on max HR — boundaries may differ slightly from the athlete's custom LTHR zones below.
+rpe = athlete-reported perceived exertion after the ride (1=very easy, 5=moderate, 10=maximal effort). Absent = not rated.
+feeling = athlete-reported post-ride feeling (1=exhausted/very tired, 2=tired, 3=normal, 4=good, 5=strong/excellent). Absent = not rated.
+When rpe and feeling are present, weight them heavily — they are direct athlete feedback on recovery state. High rpe (≥8) or low feeling (≤2) after a session signals real fatigue even if HR data looks moderate.
 
 HR PROFILE:
 - Max HR: ${profile?.maxHr ?? 'unknown'} bpm | LTHR: ${profile?.lthr ?? 'unknown'} bpm
