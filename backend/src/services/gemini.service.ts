@@ -360,6 +360,7 @@ OUTPUT: Respond ONLY with this exact JSON schema:
 
 STRICT RULES:
 - For Rest days: set "structure": null
+- For entries whose status is already completed, completed-partial, completed-mismatch, skipped, or auto-skipped: set "structure": null (they are done, no workout to sync)
 - stepType MUST be one of: WarmUp, Run, Recovery, Cooldown
 - zone MUST be one of: z1, z2, z3, z4, z5
 - durationSec MUST be a positive integer (minimum 20 for sprint intervals)
@@ -392,7 +393,7 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[]): Promis
       generationConfig: {
         responseMimeType: 'application/json',
         temperature: 0.4,
-        maxOutputTokens: 4096
+        maxOutputTokens: 8192
       }
     }
   );
