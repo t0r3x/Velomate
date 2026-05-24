@@ -900,6 +900,10 @@ btnAnalyze.addEventListener('click', async () => {
     const n = data.newCount || 0;
     toast('success', 'Synced from Garmin',
       `${n} new ${n === 1 ? 'ride' : 'rides'} added — ${data.activities?.length || 0} total stored.`);
+
+    // Reload the AI card — backend may have classified workouts as completed
+    // after comparing plan entries against the newly-synced activities.
+    fetchRecommendation(false);
   } catch (error) {
     toast('error', 'Refresh Failed', 'Could not reach the backend.');
   } finally {
@@ -980,8 +984,10 @@ btnSync.addEventListener('click', async () => {
         const li       = tpl.content.cloneNode(true).firstElementChild;
         li.querySelector('.sw-name').textContent = w.name;
         const statusEl = li.querySelector('.sw-status');
-        if (w.scheduledDate) {
-          // Format date nicely: "Wed 27 May"
+        if (w.scheduleError) {
+          statusEl.textContent = '(Upload only — schedule manually)';
+          statusEl.style.color = 'var(--z3-color, #e6d46e)';
+        } else if (w.scheduledDate) {
           const d    = new Date(w.scheduledDate + 'T12:00:00');
           const dFmt = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
           statusEl.textContent = `(Scheduled for ${dFmt})`;
@@ -995,6 +1001,18 @@ btnSync.addEventListener('click', async () => {
 
       syncResult.classList.remove('hidden');
       syncResult.scrollIntoView({ behavior: 'smooth' });
+
+      // Warn if fallback structures were used (AI plan had no structure for some types)
+      if (data.usingFallback?.length) {
+        toast('warn', 'Default structures used',
+          `${data.usingFallback.join(', ')} used built-in defaults — regenerate the AI plan for personalised workouts.`);
+      }
+      // Warn if any workout could not be scheduled on the calendar
+      if (data.scheduleErrors?.length) {
+        data.scheduleErrors.forEach(msg =>
+          toast('warn', 'Scheduling incomplete', msg)
+        );
+      }
     } else {
       toast('error', 'Sync Failed', data.error || 'Check backend logs for details.');
     }
