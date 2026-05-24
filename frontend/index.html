@@ -109,15 +109,15 @@
           <div class="success-indicator" style="margin-bottom:0.75rem">
             <i class="fa-solid fa-circle-check success-icon"></i>
             <div class="success-details">
-              <h3>Gemini Connected</h3>
+              <h3>AI Connected</h3>
               <p id="gemini-key-masked" class="helper-text"></p>
             </div>
           </div>
         </div>
-        <p class="helper-text">Enter your Google Gemini API key to enable AI training recommendations.</p>
+        <p class="helper-text">Enter your AI API key to enable adaptive training recommendations.</p>
         <form id="gemini-key-form">
           <div class="input-group">
-            <label for="gemini-api-key">Gemini API Key</label>
+            <label for="gemini-api-key">AI API Key</label>
             <div class="input-wrapper">
               <i class="fa-solid fa-key input-icon"></i>
               <input type="password" id="gemini-api-key" placeholder="AIza…" autocomplete="off">
@@ -134,7 +134,7 @@
               <label class="day-chip"><input type="checkbox" class="preferred-day-cb" value="Saturday"><span>Sat</span></label>
               <label class="day-chip"><input type="checkbox" class="preferred-day-cb" value="Sunday">  <span>Sun</span></label>
             </div>
-            <p class="helper-text" style="margin-top:0.35rem">Gemini will prefer these days for long endurance rides. Select multiple.</p>
+            <p class="helper-text" style="margin-top:0.35rem">The AI will prefer these days for long endurance rides. Select multiple.</p>
           </div>
 
           <div class="input-group" style="margin-top:0.85rem">
@@ -198,7 +198,7 @@
         <li id="setup-step-gemini">
           <i class="fa-solid fa-brain"></i>
           <div>
-            <strong>Add Gemini API key</strong>
+            <strong>Add AI API key</strong>
             <span>Required for AI adaptive training plans</span>
           </div>
           <span class="setup-step-status" id="setup-step-gemini-status">–</span>
@@ -349,7 +349,7 @@
             <div id="rec-state-not-configured" class="ai-rec-state hidden">
               <div class="ai-rec-empty">
                 <i class="fa-solid fa-brain ai-rec-empty-icon"></i>
-                <p>Add a Gemini API key in <strong>Connection &amp; Profile</strong>.</p>
+                <p>Add an AI API key in <strong>Connection &amp; Profile</strong>.</p>
                 <button class="btn btn-secondary btn-sm" id="btn-open-panel-from-rec">
                   <span>Open Settings</span><i class="fa-solid fa-sliders"></i>
                 </button>
@@ -364,7 +364,7 @@
                   <li><i class="fa-solid fa-rotate"></i><span><strong>Rolls forward every day.</strong> The plan always starts from today. Each morning a fresh window is generated in the background — no action needed.</span></li>
                   <li><i class="fa-solid fa-circle-check"></i><span><strong>Detects what you actually did.</strong> After a Garmin sync, completed workouts are matched to the plan. Zone data shows whether intervals were fully executed, partially done, or the intensity didn't match.</span></li>
                   <li><i class="fa-solid fa-forward-step"></i><span><strong>Adapts to skips and changes.</strong> Missed a session? The plan recalculates. Want to move a workout to today? Use the calendar button on any future day.</span></li>
-                  <li><i class="fa-solid fa-chart-line"></i><span><strong>Builds progression over time.</strong> Gemini tracks your compliance and fatigue across weeks, gradually increasing load when you're ready and backing off when you need recovery.</span></li>
+                  <li><i class="fa-solid fa-chart-line"></i><span><strong>Builds progression over time.</strong> The AI tracks your compliance and fatigue across weeks, gradually increasing load when you're ready and backing off when you need recovery.</span></li>
                 </ul>
                 <button class="btn btn-primary" id="btn-generate-first-plan">
                   <span>Generate my first plan</span><i class="fa-solid fa-wand-magic-sparkles"></i>
@@ -375,7 +375,7 @@
             <!-- State: loading -->
             <div id="rec-state-loading" class="ai-rec-state hidden">
               <div class="ai-rec-loading">
-                <i class="fa-solid fa-spinner fa-spin"></i><span>Asking Gemini…</span>
+                <i class="fa-solid fa-spinner fa-spin"></i><span>Asking AI…</span>
               </div>
             </div>
 
