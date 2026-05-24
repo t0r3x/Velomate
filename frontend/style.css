@@ -912,7 +912,7 @@ body {
 
 .activity-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 1rem;
   padding: 0.75rem 1rem;
   background: rgba(0,0,0,0.2);
@@ -936,6 +936,8 @@ body {
   justify-content: center;
   color: var(--primary-color);
   font-size: 1.1rem;
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .activity-details-main {
@@ -961,6 +963,8 @@ body {
   gap: 0.8rem;
   font-size: 0.8rem;
   font-weight: 600;
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .act-stat {
