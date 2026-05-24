@@ -16,22 +16,113 @@ export const getGeminiKey = (): string | null => getSetting('gemini_api_key');
 export const maskKey = (key: string): string =>
   key.length > 6 ? key.slice(0, 6) + '***' : '***';
 
+// ── Zone helpers ──────────────────────────────────────────────────────────────
+
+/** Parse timeInZones from a stored activity row (stored as JSON string or already an array). */
+const parseZones = (raw: any): number[] | null => {
+  if (!raw) return null;
+  if (Array.isArray(raw)) return raw.length >= 5 ? raw : null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length >= 5 ? parsed : null;
+  } catch { return null; }
+};
+
+/** Format zone seconds array as a readable string for the prompt, e.g. "z1=8m z2=32m z3=6m z4=14m z5=3m" */
+const fmtZones = (zones: number[]): string =>
+  zones.map((s, i) => `z${i + 1}=${Math.round(s / 60)}m`).join(' ');
+
+// ── Execution quality classifier ──────────────────────────────────────────────
+
+/**
+ * Given a Garmin activity and a planned workout type, return how well it was executed.
+ *
+ * Garmin's 5 HR zones (indices 0–4) roughly correspond to z1–z5.
+ * They use % of max HR rather than LTHR, so zone boundaries differ slightly from
+ * our custom zones — but the classification is accurate enough for AI context.
+ */
+const classifyExecution = (
+  act: any,
+  planType: string,
+  lthr: number,
+  z4min: number,
+  z5min: number
+): 'completed' | 'completed-partial' | 'completed-mismatch' => {
+  const durationMin = act.durationMinutes || 0;
+  const avgHr       = act.averageHr || 0;
+  const zones       = parseZones(act.timeInZones);
+  const hasZones    = zones !== null;
+  const z4Sec       = hasZones ? (zones![3] || 0) : 0;
+  const z5Sec       = hasZones ? (zones![4] || 0) : 0;
+
+  switch (planType) {
+    case 'Sprint':
+      if (hasZones) {
+        if (z5Sec >= 60)  return 'completed';        // ≥ 1 min in Z5
+        if (z5Sec > 0)    return 'completed-partial'; // some Z5 but below threshold
+        return 'completed-mismatch';                   // no Z5 time at all
+      }
+      // Fallback: avgHr-based
+      if (avgHr >= z5min)  return 'completed';
+      if (avgHr >= z4min)  return 'completed-partial';
+      return 'completed-mismatch';
+
+    case 'Threshold':
+      if (hasZones) {
+        if (z4Sec >= 720)  return 'completed';        // ≥ 12 min in Z4
+        if (z4Sec >= 240)  return 'completed-partial'; // ≥ 4 min — started but cut short
+        return 'completed-mismatch';                   // barely any Z4 work
+      }
+      if (avgHr >= z4min && avgHr < z5min) return 'completed';
+      if (avgHr >= Math.round(lthr * 0.80) + 1) return 'completed-partial';
+      return 'completed-mismatch';
+
+    case 'LongRide':
+      if (durationMin >= 75 && avgHr < z4min) return 'completed';
+      if (durationMin >= 45)                   return 'completed-partial'; // shorter than intended
+      return 'completed-mismatch';
+
+    default:
+      return 'completed';
+  }
+};
+
 // ── Completion / skip detection ───────────────────────────────────────────────
 
-/** Returns dates of plan entries that are 'planned', in the past, and matched by a Garmin activity. */
-export const detectCompletedEntries = (plan: PlanEntry[]): string[] => {
+/**
+ * Classify plan entries that are 'planned', in the past, and matched by a Garmin activity.
+ * Returns enriched status based on execution quality (zone time + duration + HR).
+ */
+export const classifyCompletedEntries = (
+  plan: PlanEntry[]
+): Array<{ date: string; status: 'completed' | 'completed-partial' | 'completed-mismatch' }> => {
   const activities = getStoredActivities();
-  const activityDates = new Set(
-    activities
-      .filter(a => a.startTime)
-      .map(a => a.startTime.slice(0, 10))   // YYYY-MM-DD
-  );
+  const profile    = getStoredProfile();
+  const lthr       = profile?.lthr  || 165;
+  const maxHr      = profile?.maxHr || 190;
+  const z4min      = Math.round(lthr * 0.89) + 1;
+  const z5min      = lthr + 1;
+
+  // Latest activity per date (if two rides on same day, use the longer one)
+  const actMap = new Map<string, any>();
+  activities
+    .filter(a => a.startTime)
+    .forEach(a => {
+      const date = a.startTime.slice(0, 10);
+      const existing = actMap.get(date);
+      if (!existing || a.durationMinutes > existing.durationMinutes) {
+        actMap.set(date, a);
+      }
+    });
 
   const today = new Date().toLocaleDateString('sv-SE');
 
   return plan
-    .filter(e => e.status === 'planned' && e.date < today && activityDates.has(e.date))
-    .map(e => e.date);
+    .filter(e => e.status === 'planned' && e.date < today && actMap.has(e.date))
+    .map(e => ({
+      date:   e.date,
+      status: classifyExecution(actMap.get(e.date)!, e.type, lthr, z4min, z5min)
+    }));
 };
 
 /** Returns dates of plan entries that are 'planned', in the past, and NOT matched by any Garmin activity. */
@@ -56,18 +147,32 @@ const buildPrompt = (previousPlan?: PlanEntry[]): string => {
   const today     = new Date().toLocaleDateString('sv-SE');
   const dayOfWeek = new Date().toLocaleDateString('en-GB', { weekday: 'long' });
 
-  // Recent 21 days of activities
+  // Recent 21 days of activities — include zone distribution when available
   const allActivities = getStoredActivities();
   const cutoff21 = new Date();
   cutoff21.setDate(cutoff21.getDate() - 21);
   const recentActivities = allActivities
     .filter(a => a.startTime && new Date(a.startTime) >= cutoff21)
-    .map(a => ({
-      date:        a.startTime?.slice(0, 10) ?? '',
-      durationMin: a.durationMinutes ?? 0,
-      avgHr:       a.averageHr ?? 0,
-      distKm:      a.distanceKm ?? 0
-    }));
+    .map(a => {
+      const zones = parseZones(a.timeInZones);
+      const base: any = {
+        date:        a.startTime?.slice(0, 10) ?? '',
+        durationMin: a.durationMinutes ?? 0,
+        avgHr:       a.averageHr ?? 0,
+        distKm:      a.distanceKm ?? 0
+      };
+      if (zones) {
+        // Convert seconds → minutes for readability in the prompt
+        base.zonesMin = {
+          z1: Math.round(zones[0] / 60),
+          z2: Math.round(zones[1] / 60),
+          z3: Math.round(zones[2] / 60),
+          z4: Math.round(zones[3] / 60),
+          z5: Math.round(zones[4] / 60)
+        };
+      }
+      return base;
+    });
 
   // HR profile + zone string
   const profile = getStoredProfile();
@@ -83,26 +188,47 @@ const buildPrompt = (previousPlan?: PlanEntry[]): string => {
   // Previous plan compliance block
   let prevBlock = '';
   if (previousPlan && previousPlan.length > 0) {
-    const actMap = new Map(
-      allActivities
-        .filter(a => a.startTime)
-        .map(a => [a.startTime.slice(0, 10), a])
-    );
+    const actMap = new Map<string, any>();
+    allActivities
+      .filter(a => a.startTime)
+      .forEach(a => {
+        const date = a.startTime.slice(0, 10);
+        const existing = actMap.get(date);
+        if (!existing || a.durationMinutes > existing.durationMinutes) {
+          actMap.set(date, a);
+        }
+      });
 
     const lines = previousPlan.map(e => {
       const dow = new Date(e.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short' });
-      if (e.status === 'completed') {
+
+      if (e.status === 'completed' || e.status === 'completed-partial' || e.status === 'completed-mismatch') {
         const act = actMap.get(e.date);
-        const detail = act ? ` (matched Garmin activity: ${act.durationMinutes} min avg ${act.averageHr} bpm)` : '';
-        return `- ${e.date} (${dow}): ${e.type} → COMPLETED${detail}`;
+        let detail = '';
+        if (act) {
+          detail = ` (${act.durationMinutes} min, avg ${act.averageHr} bpm`;
+          const zones = parseZones(act.timeInZones);
+          if (zones) detail += `, zones: ${fmtZones(zones)}`;
+          detail += ')';
+        }
+        if (e.status === 'completed') {
+          return `- ${e.date} (${dow}): ${e.type} → COMPLETED${detail}`;
+        }
+        if (e.status === 'completed-partial') {
+          return `- ${e.date} (${dow}): ${e.type} → COMPLETED-PARTIAL — workout started but not fully executed${detail}`;
+        }
+        // completed-mismatch
+        return `- ${e.date} (${dow}): ${e.type} → COMPLETED-MISMATCH — activity recorded but intensity profile did not match planned type${detail}`;
       }
+
       if (e.status === 'skipped')      return `- ${e.date} (${dow}): ${e.type} → SKIPPED (explicit)`;
       if (e.status === 'auto-skipped') return `- ${e.date} (${dow}): ${e.type} → AUTO-SKIPPED (no activity recorded)`;
+
       const isToday = e.date === today;
       return `- ${e.date} (${dow}): ${e.type} → ${isToday ? '[today, planned]' : e.status}`;
     });
 
-    prevBlock = `PREVIOUS PLAN COMPLIANCE:\n${lines.join('\n')}\n\n`;
+    prevBlock = `PREVIOUS PLAN COMPLIANCE:\n${lines.join('\n')}\n\nNote on compliance labels:\n- COMPLETED: activity matched planned type (correct zone profile)\n- COMPLETED-PARTIAL: activity done but execution quality below target (cut short or wrong intensity)\n- COMPLETED-MISMATCH: activity recorded on that day but did not match expected workout type\n- AUTO-SKIPPED: no activity at all\n\n`;
   }
 
   // Support multiple preferred days (new plural key) with fallback to old singular key
@@ -123,6 +249,9 @@ ${prefLine}
 
 ${prevBlock}RECENT ACTIVITIES (last 21 days):
 ${JSON.stringify(recentActivities, null, 2)}
+
+Note: zonesMin shows minutes spent in each Garmin HR zone (z1=lowest, z5=highest intensity).
+Zone data is from Garmin's default 5-zone system based on max HR — boundaries may differ slightly from the athlete's custom LTHR zones below.
 
 HR PROFILE:
 - Max HR: ${profile?.maxHr ?? 'unknown'} bpm | LTHR: ${profile?.lthr ?? 'unknown'} bpm
@@ -145,6 +274,7 @@ Threshold (when moderately fresh — core aerobic progression):
   Intervals: 2-4 sets of [Work [Run] 360-720 sec Z4 → Recovery [Recovery] 180-300 sec Z1/Z2]
   Cool-down [Cooldown]: 480-600 sec Z1
   Reduce interval count/duration when fatigued; increase when athlete is adapting well.
+  Pay attention to COMPLETED-PARTIAL history — if athlete keeps cutting threshold short, reduce interval duration.
 
 LongRide (safe even when moderately fatigued):
   Single steady block [Run]: 3600-14400 sec Z2
@@ -154,6 +284,7 @@ Rest: no structure needed — set structure to null.
 
 PROGRESSION GOAL: Systematically build the athlete's threshold capacity over weeks.
 Gradually increase intensity/frequency when fatigue is low and compliance is good.
+If COMPLETED-PARTIAL or COMPLETED-MISMATCH patterns appear, prioritise consolidation over progression.
 
 OUTPUT: Respond ONLY with this exact JSON schema:
 {

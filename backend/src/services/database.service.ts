@@ -72,12 +72,18 @@ db.exec(`
   );
 `);
 
+// ── Migrations (safe — ignore if column already exists) ───────────────────────
+try {
+  db.exec(`ALTER TABLE activities ADD COLUMN timeInZones TEXT DEFAULT NULL`);
+  console.log('[DB] Migration: added timeInZones column to activities');
+} catch { /* column already exists */ }
+
 // ── Activities ────────────────────────────────────────────────────────────────
 const stmtUpsertActivity = db.prepare(`
   INSERT OR REPLACE INTO activities
     (activityId, name, type, startTime, distanceKm, durationMinutes,
-     averageHr, maxHr, averagePower, maxPower, fetchedAt)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+     averageHr, maxHr, averagePower, maxPower, timeInZones, fetchedAt)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 `);
 
 const upsertManyActivities = db.transaction((activities: any[]) => {
@@ -92,7 +98,8 @@ const upsertManyActivities = db.transaction((activities: any[]) => {
       a.averageHr,
       a.maxHr,
       a.averagePower || 0,
-      a.maxPower || 0
+      a.maxPower || 0,
+      a.timeInZones != null ? JSON.stringify(a.timeInZones) : null
     );
   }
 });
@@ -223,7 +230,7 @@ export interface PlanEntry {
   date: string;
   type: string;
   reason: string;
-  status: 'planned' | 'completed' | 'skipped' | 'auto-skipped';
+  status: 'planned' | 'completed' | 'completed-partial' | 'completed-mismatch' | 'skipped' | 'auto-skipped';
   structure?: WorkoutStructure | null;
 }
 
@@ -267,7 +274,7 @@ export const getStoredRecommendation = (): any | null => {
 /** Update the status of a single plan entry identified by date. Returns true if found. */
 export const updatePlanEntryStatus = (
   date: string,
-  status: 'completed' | 'skipped' | 'auto-skipped'
+  status: 'completed' | 'completed-partial' | 'completed-mismatch' | 'skipped' | 'auto-skipped'
 ): boolean => {
   const row = db.prepare('SELECT weeklyPlan FROM recommendation WHERE id = 1').get() as any;
   if (!row) return false;
@@ -277,6 +284,28 @@ export const updatePlanEntryStatus = (
   if (idx === -1) return false;
 
   plan[idx].status = status;
+  db.prepare('UPDATE recommendation SET weeklyPlan = ? WHERE id = 1').run(JSON.stringify(plan));
+  return true;
+};
+
+/** Swap the dates of two plan entries. Used for "move to today" reschedule.
+ *  Keeps all other entry properties (type, reason, structure) intact. */
+export const swapPlanEntryDates = (date1: string, date2: string): boolean => {
+  const row = db.prepare('SELECT weeklyPlan FROM recommendation WHERE id = 1').get() as any;
+  if (!row) return false;
+
+  const plan: PlanEntry[] = JSON.parse(row.weeklyPlan || '[]');
+  const idx1 = plan.findIndex(e => e.date === date1);
+  const idx2 = plan.findIndex(e => e.date === date2);
+  if (idx1 === -1 || idx2 === -1) return false;
+
+  // Swap only the date fields; everything else (type, reason, structure, status) stays
+  plan[idx1].date = date2;
+  plan[idx2].date = date1;
+
+  // Re-sort chronologically so the array stays in order
+  plan.sort((a, b) => a.date.localeCompare(b.date));
+
   db.prepare('UPDATE recommendation SET weeklyPlan = ? WHERE id = 1').run(JSON.stringify(plan));
   return true;
 };

@@ -22,13 +22,14 @@ import {
   getSetting,
   setSetting,
   getStoredRecommendation,
-  updatePlanEntryStatus
+  updatePlanEntryStatus,
+  swapPlanEntryDates
 } from './services/database.service';
 import {
   generateRecommendation,
   getGeminiKey,
   maskKey,
-  detectCompletedEntries,
+  classifyCompletedEntries,
   detectAutoSkippedEntries
 } from './services/gemini.service';
 import { UserHRProfile } from './types';
@@ -255,14 +256,15 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
 
     const profile = await getActiveProfile();
 
-    // Non-blocking: detect completed plan entries and trigger Gemini re-evaluation
+    // Non-blocking: classify completed plan entries and trigger Gemini re-evaluation
     try {
       const stored = getStoredRecommendation();
       if (stored?.weeklyPlan) {
-        const completed = detectCompletedEntries(stored.weeklyPlan);
-        if (completed.length > 0) {
-          console.log(`[Gemini] Activity sync detected ${completed.length} completed workout(s): ${completed.join(', ')} — triggering re-evaluation`);
-          completed.forEach(date => updatePlanEntryStatus(date, 'completed'));
+        const classified = classifyCompletedEntries(stored.weeklyPlan);
+        if (classified.length > 0) {
+          const summary = classified.map(c => `${c.date}:${c.status}`).join(', ');
+          console.log(`[Gemini] Activity sync classified ${classified.length} workout(s): ${summary} — triggering re-evaluation`);
+          classified.forEach(({ date, status }) => updatePlanEntryStatus(date, status));
           const updated = getStoredRecommendation();
           generateRecommendation(updated.weeklyPlan).catch((err: any) =>
             console.warn('[Gemini] Auto-regen after activity sync failed:', err.message)
@@ -272,7 +274,7 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
         }
       }
     } catch (e: any) {
-      console.warn('[Gemini] Completion detection failed:', e.message);
+      console.warn('[Gemini] Completion classification failed:', e.message);
     }
 
     res.json({
@@ -524,6 +526,33 @@ app.post('/api/recommendation/skip-today', async (req: Request, res: Response) =
     res.json(result);
   } catch (error: any) {
     handleGeminiError(res, error, 'Skip-today error');
+  }
+});
+
+app.post('/api/recommendation/reschedule', async (req: Request, res: Response) => {
+  try {
+    const { fromDate, toDate } = req.body;
+    if (!fromDate || !toDate) {
+      return res.status(400).json({ error: 'fromDate and toDate are required.' });
+    }
+    if (fromDate === toDate) {
+      return res.status(400).json({ error: 'fromDate and toDate must be different.' });
+    }
+
+    const swapped = swapPlanEntryDates(fromDate, toDate);
+    if (!swapped) {
+      return res.status(404).json({ error: 'One or both dates not found in the current plan.' });
+    }
+
+    console.log(`[Plan] Rescheduled: swapped ${fromDate} ↔ ${toDate}`);
+
+    // Re-evaluate with the updated plan so the AI adjusts the rest of the week
+    const updated = getStoredRecommendation();
+    const result  = await generateRecommendation(updated?.weeklyPlan);
+    setSetting('gemini_last_generated', new Date().toISOString());
+    res.json(result);
+  } catch (error: any) {
+    handleGeminiError(res, error, 'Reschedule error');
   }
 });
 
