@@ -1270,12 +1270,17 @@ body {
 
 .wdc-scheduled-badge {
   font-size: 0.62rem;
-  color: var(--z4-color);
   display: flex;
   align-items: center;
   gap: 3px;
   font-weight: 600;
+  margin-top: 2px;
 }
+/* Status variants */
+.wdc-badge-done     { color: #10b981; }   /* green  — completed      */
+.wdc-badge-partial  { color: #f59e0b; }   /* amber  — partial        */
+.wdc-badge-mismatch { color: #f97316; }   /* orange — mismatch       */
+.wdc-badge-skipped  { color: var(--text-muted); }
 
 /* Workout detail cards below the grid */
 .workout-detail-cards {
