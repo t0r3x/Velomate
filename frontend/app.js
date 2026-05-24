@@ -970,26 +970,26 @@ btnSync.addEventListener('click', async () => {
     const data = await response.json();
 
     if (response.ok) {
-      const count     = data.workouts?.length || 0;
-      const hasThresh = data.workouts?.some(w => w.type === 'Threshold');
-      let msg = `Uploaded ${count} workout${count !== 1 ? 's' : ''} to Garmin.`;
-      if (hasThresh && data.scheduledDate) {
-        msg += ` Threshold scheduled for <strong>${data.scheduledDate}</strong>.`;
-      }
-      msg += ' Sync your device to apply!';
+      const count = data.workouts?.length || 0;
+      const msg   = `Uploaded and scheduled ${count} workout${count !== 1 ? 's' : ''} on Garmin. Sync your device to apply!`;
       document.getElementById('sync-result-msg').innerHTML = msg;
 
       syncedWorkoutsList.innerHTML = '';
       const tpl = document.getElementById('tpl-synced-workout');
       data.workouts.forEach(w => {
-        const isScheduled = w.type === 'Threshold';
-        const li          = tpl.content.cloneNode(true).firstElementChild;
+        const li       = tpl.content.cloneNode(true).firstElementChild;
         li.querySelector('.sw-name').textContent = w.name;
         const statusEl = li.querySelector('.sw-status');
-        statusEl.textContent = isScheduled
-          ? `(Scheduled for ${data.scheduledDate})`
-          : '(Available on Device)';
-        statusEl.style.color = isScheduled ? 'var(--z4-color)' : 'var(--text-muted)';
+        if (w.scheduledDate) {
+          // Format date nicely: "Wed 27 May"
+          const d    = new Date(w.scheduledDate + 'T12:00:00');
+          const dFmt = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+          statusEl.textContent = `(Scheduled for ${dFmt})`;
+          statusEl.style.color = 'var(--z4-color)';
+        } else {
+          statusEl.textContent = '(Available on Device)';
+          statusEl.style.color = 'var(--text-muted)';
+        }
         syncedWorkoutsList.appendChild(li);
       });
 
