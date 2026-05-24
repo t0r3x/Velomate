@@ -1973,6 +1973,47 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
   color: var(--primary-color);
 }
 
+/* ── Preferred days checkbox chip grid ───────────────────────────────────── */
+.preferred-days-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+}
+.day-chip {
+  cursor: pointer;
+  user-select: none;
+  line-height: 1;
+}
+.day-chip input[type="checkbox"] {
+  display: none;
+}
+.day-chip span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.85rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--panel-border);
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.18);
+  transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.day-chip span:hover {
+  border-color: rgba(99, 102, 241, 0.45);
+  color: var(--text-secondary);
+  background: rgba(99, 102, 241, 0.06);
+}
+.day-chip input[type="checkbox"]:checked + span {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: var(--primary-color);
+  color: var(--text-primary);
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.25);
+}
+
 /* ── Select input wrapper ────────────────────────────────────────────────── */
 .input-wrapper--select select {
   width: 100%;

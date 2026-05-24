@@ -395,30 +395,48 @@ app.post('/api/sync-workouts', async (req: Request, res: Response) => {
 // ── Gemini Settings ───────────────────────────────────────────────────────────
 
 app.get('/api/settings/gemini-key', (_req: Request, res: Response) => {
-  const key                = getGeminiKey();
-  const setupComplete      = getSetting('setup_complete') === '1';
-  const preferredLongRideDay = getSetting('preferred_long_ride_day') || '';
+  const key           = getGeminiKey();
+  const setupComplete = getSetting('setup_complete') === '1';
+  const geminiModel   = getSetting('gemini_model') || 'gemini-3.5-flash';
+
+  // Preferred long ride days — read from plural key, fall back to legacy singular key
+  const rawDays = getSetting('preferred_long_ride_days') || getSetting('preferred_long_ride_day') || '';
+  const preferredLongRideDays = rawDays
+    ? rawDays.split(',').map((d: string) => d.trim()).filter(Boolean)
+    : [];
+
   res.json({
-    hasKey:             !!key,
-    maskedKey:          key ? maskKey(key) : null,
+    hasKey:               !!key,
+    maskedKey:            key ? maskKey(key) : null,
     setupComplete,
-    preferredLongRideDay
+    preferredLongRideDays,
+    geminiModel
   });
 });
 
-app.post('/api/settings/preferred-long-ride-day', (req: Request, res: Response) => {
-  const { day } = req.body;
-  const valid = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-  if (!valid.includes(day ?? '')) {
-    return res.status(400).json({ error: 'Invalid day.' });
+// Multi-day preferred long ride days (replaces the old single-day endpoint)
+app.post('/api/settings/preferred-long-ride-days', (req: Request, res: Response) => {
+  const { days } = req.body;
+  if (!Array.isArray(days)) {
+    return res.status(400).json({ error: 'days must be an array.' });
   }
-  if (day) {
-    setSetting('preferred_long_ride_day', day);
-    console.log(`[Settings] Preferred long ride day set to: ${day}`);
-  } else {
-    setSetting('preferred_long_ride_day', '');
-    console.log('[Settings] Preferred long ride day cleared');
+  const valid = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const invalid = (days as string[]).find(d => !valid.includes(d));
+  if (invalid) return res.status(400).json({ error: `Invalid day: ${invalid}` });
+
+  const value = (days as string[]).join(',');
+  setSetting('preferred_long_ride_days', value);
+  console.log(`[Settings] Preferred long ride days set to: ${value || '(none)'}`);
+  res.json({ saved: true });
+});
+
+app.post('/api/settings/gemini-model', (req: Request, res: Response) => {
+  const { model } = req.body;
+  if (!model || typeof model !== 'string' || !model.trim()) {
+    return res.status(400).json({ error: 'model is required.' });
   }
+  setSetting('gemini_model', model.trim());
+  console.log(`[Settings] Gemini model set to: ${model.trim()}`);
   res.json({ saved: true });
 });
 

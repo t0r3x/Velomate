@@ -59,8 +59,9 @@ const aiNextWeekChips     = document.getElementById('ai-next-week-chips');
 const aiNextWeekEmphasis  = document.getElementById('ai-next-week-emphasis');
 const aiSyncNote          = document.getElementById('ai-sync-note');
 
-const preferredLongRideDaySelect = document.getElementById('preferred-long-ride-day');
-const workoutPreviewSection      = document.getElementById('workout-preview-section');
+const preferredDaysGrid     = document.getElementById('preferred-days-grid');
+const geminiModelSelect     = document.getElementById('gemini-model');
+const workoutPreviewSection = document.getElementById('workout-preview-section');
 const workoutPreviewList         = document.getElementById('workout-preview-list');
 const btnTogglePreview           = document.getElementById('btn-toggle-preview');
 
@@ -468,8 +469,14 @@ const fetchGeminiKeyStatus = async () => {
     } else {
       geminiKeyStatus.classList.add('hidden');
     }
-    if (preferredLongRideDaySelect) {
-      preferredLongRideDaySelect.value = data.preferredLongRideDay || '';
+    // Populate preferred long ride day checkboxes
+    const preferredDays = Array.isArray(data.preferredLongRideDays) ? data.preferredLongRideDays : [];
+    document.querySelectorAll('.preferred-day-cb').forEach(cb => {
+      cb.checked = preferredDays.includes(cb.value);
+    });
+    // Set model selector
+    if (geminiModelSelect && data.geminiModel) {
+      geminiModelSelect.value = data.geminiModel;
     }
     updateSetupSteps();
     maybeEnterDashboard();   // fire gate now that both flags are known
@@ -694,19 +701,36 @@ const populateProfileUI = (profile) => {
 // Prevent Enter-key submission on the Gemini key form
 geminiKeyForm.addEventListener('submit', e => e.preventDefault());
 
-// Auto-save preferred long ride day when the select changes
-preferredLongRideDaySelect.addEventListener('change', async () => {
-  const day = preferredLongRideDaySelect.value;
+// Auto-save preferred long ride days when any checkbox changes
+preferredDaysGrid.addEventListener('change', async () => {
+  const days = [...document.querySelectorAll('.preferred-day-cb')]
+    .filter(cb => cb.checked)
+    .map(cb => cb.value);
   try {
-    await fetch(`${API_BASE_URL}/api/settings/preferred-long-ride-day`, {
+    await fetch(`${API_BASE_URL}/api/settings/preferred-long-ride-days`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ day })
+      body: JSON.stringify({ days })
     });
-    toast('success', 'Preference saved',
-      day ? `Long rides will prefer ${day}.` : 'No preferred long ride day set.');
+    const label = days.length > 0 ? days.join(', ') : 'none';
+    toast('success', 'Preference saved', `Long ride days: ${label}.`);
   } catch {
     toast('error', 'Save Failed', 'Could not save preference.');
+  }
+});
+
+// Auto-save Gemini model on change
+geminiModelSelect.addEventListener('change', async () => {
+  const model = geminiModelSelect.value;
+  try {
+    await fetch(`${API_BASE_URL}/api/settings/gemini-model`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model })
+    });
+    toast('success', 'Model updated', `Now using ${model}.`);
+  } catch {
+    toast('error', 'Save Failed', 'Could not save model preference.');
   }
 });
 

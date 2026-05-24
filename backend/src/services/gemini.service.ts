@@ -105,10 +105,12 @@ const buildPrompt = (previousPlan?: PlanEntry[]): string => {
     prevBlock = `PREVIOUS PLAN COMPLIANCE:\n${lines.join('\n')}\n\n`;
   }
 
-  const preferredLongRideDay = getSetting('preferred_long_ride_day');
-  const prefLine = preferredLongRideDay
-    ? `- Preferred Long Ride day: ${preferredLongRideDay} — schedule the LongRide here when load allows.`
-    : `- No preferred Long Ride day specified.`;
+  // Support multiple preferred days (new plural key) with fallback to old singular key
+  const rawDays = getSetting('preferred_long_ride_days') || getSetting('preferred_long_ride_day') || '';
+  const preferredDays = rawDays ? rawDays.split(',').map(d => d.trim()).filter(Boolean) : [];
+  const prefLine = preferredDays.length > 0
+    ? `- Preferred Long Ride day(s): ${preferredDays.join(', ')} — schedule the LongRide on one of these days when load allows.`
+    : `- No preferred Long Ride days specified.`;
 
   return `You are a professional cycling coach AI specializing in heart-rate based training.
 Analyze the athlete's data and generate an adaptive training plan with exact, personalised workout structures.
@@ -211,8 +213,11 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[]): Promis
   console.log(prompt);
   console.log('─'.repeat(72) + '\n');
 
+  const model = getSetting('gemini_model') || 'gemini-3.5-flash';
+  console.log(`[Gemini] Model: ${model}`);
+
   const response = await axios.post(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
     {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
