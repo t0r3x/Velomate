@@ -59,6 +59,11 @@ const aiNextWeekChips     = document.getElementById('ai-next-week-chips');
 const aiNextWeekEmphasis  = document.getElementById('ai-next-week-emphasis');
 const aiSyncNote          = document.getElementById('ai-sync-note');
 
+const preferredLongRideDaySelect = document.getElementById('preferred-long-ride-day');
+const workoutPreviewSection      = document.getElementById('workout-preview-section');
+const workoutPreviewList         = document.getElementById('workout-preview-list');
+const btnTogglePreview           = document.getElementById('btn-toggle-preview');
+
 const btnAnalyze        = document.getElementById('btn-analyze');
 const activitiesList    = document.getElementById('activities-list');
 const deviceSelect      = document.getElementById('device-select');
@@ -303,6 +308,8 @@ const renderRecommendation = (rec) => {
   // Week grid
   const plan = Array.isArray(rec.weeklyPlan) ? rec.weeklyPlan : [];
   aiWeekGrid.innerHTML = '';
+  const longRideDur = rec.longRideDuration || 120;
+  const workoutDuration = { Sprint: '47 min', Threshold: '56 min', LongRide: `${longRideDur} min` };
 
   if (plan.length > 0) {
     // Week label: first date to last date
@@ -322,7 +329,7 @@ const renderRecommendation = (rec) => {
         cell.classList.add('has-workout', `wt-${entry.type.toLowerCase()}`);
         cell.querySelector('.wdc-workout-chip i').classList.add(workoutTypeIcon[entry.type] || 'fa-dumbbell');
         cell.querySelector('.wdc-workout-label').textContent = workoutTypeLabel[entry.type] || entry.type;
-        cell.querySelector('.wdc-duration').textContent = entry.reason ? '' : '';
+        cell.querySelector('.wdc-duration').textContent = workoutDuration[entry.type] || '';
         cell.querySelector('.wdc-scheduled-badge').hidden = true;
         // Show a small tooltip via title
         cell.title = entry.reason || '';
@@ -388,6 +395,65 @@ const renderRecommendation = (rec) => {
   }
 };
 
+/** Fetch workout definitions for the preview panel and render them. */
+const fetchWorkoutPreview = async () => {
+  if (!workoutPreviewSection) return;
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/preview-workouts`);
+    if (!res.ok) return;
+    const data = await res.json();
+    renderWorkoutPreview(data.workouts || []);
+    workoutPreviewSection.classList.remove('hidden');
+  } catch { /* non-critical — preview is decorative */ }
+};
+
+/** Render workout preview cards inside the collapsible section. */
+const renderWorkoutPreview = (workouts) => {
+  workoutPreviewList.innerHTML = '';
+
+  workouts.forEach(w => {
+    const card = cloneTemplate('tpl-workout-card');
+    // Add type class for icon theming
+    card.classList.add(`wt-${w.type.toLowerCase()}`);
+    card.querySelector('.wc-icon').classList.add(workoutTypeIcon[w.type] || 'fa-dumbbell');
+    card.querySelector('.wc-title').textContent     = workoutTypeLabel[w.type] || w.type;
+    card.querySelector('.wc-date').textContent      = w.name;
+    card.querySelector('.wc-total-dur').textContent = `${w.totalMinutes} min`;
+
+    // Zone bar — each segment's flex-grow is proportional to its minutes
+    const bar = card.querySelector('.wc-zone-bar');
+    (w.steps || []).forEach(step => {
+      const seg = cloneTemplate('tpl-workout-bar-seg');
+      seg.style.flex       = String(step.minutes);
+      seg.style.background = zoneColors[step.zoneKey] || 'var(--z2-color)';
+      bar.appendChild(seg);
+    });
+
+    // Step rows
+    const stepsEl = card.querySelector('.wc-steps');
+    (w.steps || []).forEach(step => {
+      const row = cloneTemplate('tpl-workout-step');
+      // Dot color matches zone
+      const dot = row.querySelector('.wc-step-dot');
+      if (dot) dot.style.background = zoneColors[step.zoneKey] || 'var(--z2-color)';
+      row.querySelector('.wc-step-label').textContent = step.label;
+      row.querySelector('.wc-step-dur').textContent   = step.duration;
+      const zoneTag = row.querySelector('.wc-step-zone');
+      zoneTag.textContent = step.zone;
+      zoneTag.classList.add(step.zoneKey);   // .z1/.z2/… for CSS color classes
+      stepsEl.appendChild(row);
+    });
+
+    // Schedule / upload notes
+    const scheduledNote = card.querySelector('.wc-schedule-note--scheduled');
+    const uploadNote    = card.querySelector('.wc-schedule-note--upload');
+    if (scheduledNote) scheduledNote.hidden = !w.isScheduled;
+    if (uploadNote)    uploadNote.hidden    = !!w.isScheduled;
+
+    workoutPreviewList.appendChild(card);
+  });
+};
+
 /** Fetch Gemini key status + setupComplete flag from backend, update panel UI and gate state. */
 const fetchGeminiKeyStatus = async () => {
   try {
@@ -400,6 +466,9 @@ const fetchGeminiKeyStatus = async () => {
       geminiKeyMasked.textContent = data.maskedKey;
     } else {
       geminiKeyStatus.classList.add('hidden');
+    }
+    if (preferredLongRideDaySelect) {
+      preferredLongRideDaySelect.value = data.preferredLongRideDay || '';
     }
     updateSetupSteps();
     maybeEnterDashboard();   // fire gate now that both flags are known
@@ -432,6 +501,7 @@ const fetchRecommendation = async (forceRefresh = false) => {
     }
     renderRecommendation(data);
     setRecState('loaded');
+    fetchWorkoutPreview();
   } catch (err) {
     document.getElementById('rec-error-msg').textContent = 'Failed to connect to backend.';
     setRecState('error');
@@ -453,6 +523,7 @@ const skipToday = async () => {
     }
     renderRecommendation(data);
     setRecState('loaded');
+    fetchWorkoutPreview();
     toast('success', 'Workout skipped', 'Plan updated by Gemini.');
   } catch {
     toast('error', 'Skip Failed', 'Could not reach backend.');
@@ -621,6 +692,22 @@ const populateProfileUI = (profile) => {
 
 // Prevent Enter-key submission on the Gemini key form
 geminiKeyForm.addEventListener('submit', e => e.preventDefault());
+
+// Auto-save preferred long ride day when the select changes
+preferredLongRideDaySelect.addEventListener('change', async () => {
+  const day = preferredLongRideDaySelect.value;
+  try {
+    await fetch(`${API_BASE_URL}/api/settings/preferred-long-ride-day`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ day })
+    });
+    toast('success', 'Preference saved',
+      day ? `Long rides will prefer ${day}.` : 'No preferred long ride day set.');
+  } catch {
+    toast('error', 'Save Failed', 'Could not save preference.');
+  }
+});
 
 // ── Devices ────────────────────────────────────────────────────────────────────
 
@@ -969,6 +1056,9 @@ document.getElementById('btn-generate-first-plan').addEventListener('click', () 
   fetchRecommendation(true);
 });
 document.getElementById('btn-cancel-profile').addEventListener('click', closePsModal);
+btnTogglePreview.addEventListener('click', () => {
+  workoutPreviewSection.classList.toggle('is-open');
+});
 document.getElementById('btn-edit-hr-profile').addEventListener('click', () => {
   closePanel();
   // Open as modal overlay — re-fetches Garmin data for fresh suggestions

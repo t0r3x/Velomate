@@ -102,25 +102,32 @@ app.get('/api/status', async (req: Request, res: Response) => {
 
 app.post('/api/logout', (_req: Request, res: Response) => {
   invalidateAuthCache();
+  console.log('[Auth] User logged out — session invalidated');
   res.json({ loggedOut: true });
 });
 
 app.post('/api/login', async (req: Request, res: Response) => {
   const { username, password } = req.body;
+  const maskedUser = username ? username.replace(/(?<=.).(?=.*@)/g, '*') : '(unknown)';
+  console.log(`[Auth] Login attempt: ${maskedUser}`);
   try {
     const ssoClient = new GarminSSOClient();
     const result = await ssoClient.initiate(username, password);
 
     if ('mfaRequired' in result) {
       ssoClients.set('last', ssoClient);
+      console.log(`[Auth] MFA required for ${maskedUser}`);
       return res.json({ mfaRequired: true });
     }
     if ('success' in result && result.ticket) {
       await finalizeLogin(result.ticket, ssoClient);
+      console.log(`[Auth] Login successful: ${maskedUser}`);
       return res.json({ success: true });
     }
+    console.warn(`[Auth] Login failed: ${maskedUser}`);
     res.status(401).json({ error: 'Login failed.' });
   } catch (error: any) {
+    console.error(`[Auth] Login error for ${maskedUser}:`, error.message);
     res.status(401).json({ error: 'Authentication failed.', details: error.message });
   }
 });
@@ -130,15 +137,19 @@ app.post('/api/mfa', async (req: Request, res: Response) => {
   const ssoClient = ssoClients.get('last');
   if (!ssoClient) return res.status(400).json({ error: 'No active MFA session.' });
 
+  console.log('[Auth] MFA code submitted');
   try {
     const result = await ssoClient.verify(code);
     if (result.success && result.ticket) {
       await finalizeLogin(result.ticket, ssoClient);
       ssoClients.delete('last');
+      console.log('[Auth] MFA verification successful — session established');
       return res.json({ success: true });
     }
+    console.warn('[Auth] MFA verification failed — wrong code?');
     res.status(401).json({ error: 'MFA verification failed.' });
   } catch (error: any) {
+    console.error('[Auth] MFA error:', error.message);
     res.status(401).json({ error: 'MFA failed.', details: error.message });
   }
 });
@@ -197,6 +208,7 @@ app.post('/api/profile', async (req: Request, res: Response) => {
 
   upsertProfileDB(profile);
   saveProfile(profile); // keep config.json in sync for backward compat
+  console.log(`[Profile] Saved — maxHR: ${maxHr} bpm, LTHR: ${lthr} bpm, zones: Z1≤${zones.z1?.max} Z2≤${zones.z2?.max} Z3≤${zones.z3?.max} Z4≤${zones.z4?.max} Z5≤${maxHr}`);
   res.json({ success: true, profile });
 });
 
@@ -222,10 +234,12 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Not authenticated with Garmin Connect.' });
     }
 
-    console.log('[Refresh] Fetching cycling activities from Garmin...');
+    const prevCount = getStoredActivities().length;
+    console.log(`[Refresh] Fetching cycling activities from Garmin (currently ${prevCount} stored)…`);
     const freshActivities = await fetchCyclingActivities(365); // fetch up to 1 year
     upsertActivities(freshActivities);
-    console.log(`[Refresh] Merged ${freshActivities.length} activities into DB.`);
+    const newCount = getStoredActivities().length - prevCount;
+    console.log(`[Refresh] Fetched ${freshActivities.length} from Garmin → ${newCount > 0 ? `+${newCount} new` : 'no new'} activities (${getStoredActivities().length} total stored)`);
 
     // Re-run assessment over all stored activities (use recent 90 days for analysis)
     const allStored      = getStoredActivities();
@@ -237,6 +251,7 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
 
     const analysis  = assessProgression(recentForAnalysis);
     upsertAnalysis(analysis);
+    console.log(`[Refresh] Analysis: ${analysis.totalCyclingRides} rides (90d), peak HR ${analysis.maxRecordedHr} bpm, est. LTHR ${analysis.estimatedLthr} bpm, avg ${analysis.averageRideDurationMinutes} min`);
 
     const profile = await getActiveProfile();
 
@@ -246,11 +261,14 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
       if (stored?.weeklyPlan) {
         const completed = detectCompletedEntries(stored.weeklyPlan);
         if (completed.length > 0) {
+          console.log(`[Gemini] Activity sync detected ${completed.length} completed workout(s): ${completed.join(', ')} — triggering re-evaluation`);
           completed.forEach(date => updatePlanEntryStatus(date, 'completed'));
           const updated = getStoredRecommendation();
           generateRecommendation(updated.weeklyPlan).catch((err: any) =>
             console.warn('[Gemini] Auto-regen after activity sync failed:', err.message)
           );
+        } else {
+          console.log('[Gemini] Activity sync: no newly completed workouts detected in current plan');
         }
       }
     } catch (e: any) {
@@ -392,13 +410,31 @@ app.post('/api/sync-workouts', async (req: Request, res: Response) => {
 // ── Gemini Settings ───────────────────────────────────────────────────────────
 
 app.get('/api/settings/gemini-key', (_req: Request, res: Response) => {
-  const key          = getGeminiKey();
-  const setupComplete = getSetting('setup_complete') === '1';
+  const key                = getGeminiKey();
+  const setupComplete      = getSetting('setup_complete') === '1';
+  const preferredLongRideDay = getSetting('preferred_long_ride_day') || '';
   res.json({
-    hasKey:       !!key,
-    maskedKey:    key ? maskKey(key) : null,
-    setupComplete
+    hasKey:             !!key,
+    maskedKey:          key ? maskKey(key) : null,
+    setupComplete,
+    preferredLongRideDay
   });
+});
+
+app.post('/api/settings/preferred-long-ride-day', (req: Request, res: Response) => {
+  const { day } = req.body;
+  const valid = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  if (!valid.includes(day ?? '')) {
+    return res.status(400).json({ error: 'Invalid day.' });
+  }
+  if (day) {
+    setSetting('preferred_long_ride_day', day);
+    console.log(`[Settings] Preferred long ride day set to: ${day}`);
+  } else {
+    setSetting('preferred_long_ride_day', '');
+    console.log('[Settings] Preferred long ride day cleared');
+  }
+  res.json({ saved: true });
 });
 
 app.post('/api/settings/gemini-key', (req: Request, res: Response) => {
@@ -408,11 +444,13 @@ app.post('/api/settings/gemini-key', (req: Request, res: Response) => {
   }
   setSetting('gemini_api_key', apiKey.trim());
   setSetting('gemini_last_generated', '0'); // force regen on next check
+  console.log(`[Gemini] API key saved (${maskKey(apiKey.trim())}) — will generate plan on next check`);
   res.json({ saved: true });
 });
 
 app.post('/api/settings/setup-complete', (_req: Request, res: Response) => {
   setSetting('setup_complete', '1');
+  console.log('[Setup] Setup marked complete — user confirmed HR profile');
   res.json({ saved: true });
 });
 
@@ -428,7 +466,16 @@ app.get('/api/recommendation', (_req: Request, res: Response) => {
   const ageMs = Date.now() - new Date(rec.generatedAt).getTime();
   const stale = ageMs > 23 * 60 * 60 * 1000;
 
-  res.json({ ...rec, stale });
+  // Compute dynamic long ride duration from stored activities
+  const stored   = getStoredActivities();
+  const recent   = stored.slice(0, 20);
+  let longRideDuration = 120;
+  if (recent.length > 0) {
+    const avg = recent.reduce((s, a) => s + (a.durationMinutes || 0), 0) / recent.length;
+    longRideDuration = Math.min(240, Math.max(90, Math.round(avg * 1.2)));
+  }
+
+  res.json({ ...rec, stale, longRideDuration });
 });
 
 /** Extract the human-readable message from a Gemini API error response. */
@@ -456,6 +503,12 @@ const handleGeminiError = (res: Response, error: any, context: string): void => 
 app.post('/api/recommendation/refresh', async (req: Request, res: Response) => {
   try {
     const current = getStoredRecommendation();
+    if (current) {
+      const planSummary = current.weeklyPlan.map((e: any) => `${e.date}:${e.type}[${e.status}]`).join(' ');
+      console.log(`[Gemini] Manual refresh requested — current plan: ${planSummary}`);
+    } else {
+      console.log('[Gemini] Manual refresh requested — no existing plan');
+    }
     const result  = await generateRecommendation(current?.weeklyPlan);
     setSetting('gemini_last_generated', new Date().toISOString());
     res.json(result);
@@ -467,6 +520,9 @@ app.post('/api/recommendation/refresh', async (req: Request, res: Response) => {
 app.post('/api/recommendation/skip-today', async (req: Request, res: Response) => {
   try {
     const today = new Date().toLocaleDateString('sv-SE');
+    const stored = getStoredRecommendation();
+    const todayEntry = stored?.weeklyPlan?.find((e: any) => e.date === today);
+    console.log(`[Gemini] Skip-today: marking ${today} as skipped (was: ${todayEntry?.type ?? 'unknown'} [${todayEntry?.status ?? 'unknown'}])`);
     updatePlanEntryStatus(today, 'skipped');
     const updated = getStoredRecommendation();
     const result  = await generateRecommendation(updated?.weeklyPlan);
@@ -479,41 +535,64 @@ app.post('/api/recommendation/skip-today', async (req: Request, res: Response) =
 
 // ── Gemini Auto-check (hourly) ────────────────────────────────────────────────
 
+const logAutoCheckState = () => {
+  const stored    = getStoredRecommendation();
+  const lastGenStr = getSetting('gemini_last_generated');
+  const ageMs     = Date.now() - (lastGenStr && lastGenStr !== '0' ? new Date(lastGenStr).getTime() : 0);
+  const ageHours  = (ageMs / 3600000).toFixed(1);
+
+  if (!stored) {
+    console.log(`[Gemini] Auto-check state: no plan in DB, last_generated=${lastGenStr ?? 'never'}`);
+    return;
+  }
+
+  const planLine = stored.weeklyPlan
+    .map((e: any) => `${e.date}:${e.type[0]}[${e.status[0]}]`)
+    .join(' ');
+  console.log(`[Gemini] Auto-check state: plan age ${ageHours}h, fatigue=${stored.loadAssessment?.fatigue ?? '?'}`);
+  console.log(`[Gemini] Plan: ${planLine}`);
+};
+
 const runGeminiAutoCheck = async () => {
+  logAutoCheckState();
   try {
     const key = getGeminiKey();
-    if (!key) return;
+    if (!key) {
+      console.log('[Gemini] Auto-check: no API key configured — skipping');
+      return;
+    }
 
     // Detect auto-skips (planned days that passed with no activity)
     const stored = getStoredRecommendation();
     if (stored?.weeklyPlan) {
       const autoSkips = detectAutoSkippedEntries(stored.weeklyPlan);
       if (autoSkips.length > 0) {
+        console.log(`[Gemini] Auto-check: ${autoSkips.length} auto-skip(s) detected (${autoSkips.join(', ')}) — marking and regenerating`);
         autoSkips.forEach(date => updatePlanEntryStatus(date, 'auto-skipped'));
         const updated = getStoredRecommendation();
         await generateRecommendation(updated.weeklyPlan);
         setSetting('gemini_last_generated', new Date().toISOString());
-        console.log(`[Gemini] Auto-check: ${autoSkips.length} auto-skip(s) detected — plan regenerated.`);
         return; // already regenerated
       }
     }
 
-    // Standard daily freshness check
+    // Standard daily freshness check — regenerate if stale OR no plan exists yet
     const lastGenStr = getSetting('gemini_last_generated');
-    const ageMs = Date.now() - (lastGenStr && lastGenStr !== '0' ? new Date(lastGenStr).getTime() : 0);
-    if (ageMs > 23 * 60 * 60 * 1000) {
-      const current = getStoredRecommendation();
+    const ageMs      = Date.now() - (lastGenStr && lastGenStr !== '0' ? new Date(lastGenStr).getTime() : 0);
+    const current    = getStoredRecommendation();
+    if (ageMs > 23 * 60 * 60 * 1000 || !current) {
+      const reason = !current ? 'no plan in DB' : `plan is ${(ageMs / 3600000).toFixed(1)}h old (> 23h)`;
+      console.log(`[Gemini] Auto-check: regenerating — ${reason}`);
       await generateRecommendation(current?.weeklyPlan);
       setSetting('gemini_last_generated', new Date().toISOString());
-      console.log('[Gemini] Auto-check: daily regen complete.');
     } else {
-      console.log('[Gemini] Auto-check: plan is fresh, no regen needed.');
+      console.log(`[Gemini] Auto-check: plan is fresh (${(ageMs / 3600000).toFixed(1)}h old) — no regen needed`);
     }
   } catch (err: any) {
     if (err.response?.status === 429) {
       // Stamp now so the 23h freshness check doesn't retry on next server restart
       setSetting('gemini_last_generated', new Date().toISOString());
-      console.warn('[Gemini] Auto-check: 429 —', geminiErrorMessage(err), '— backed off for 23h.');
+      console.warn('[Gemini] Auto-check: 429 —', geminiErrorMessage(err), '— backed off for 23h');
     } else {
       console.warn('[Gemini] Auto-check failed:', geminiErrorMessage(err));
     }
@@ -526,5 +605,22 @@ setInterval(runGeminiAutoCheck, 60 * 60 * 1000);
 // ── Start ─────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
-  console.log(`Backend running on http://localhost:${PORT}`);
+  const line = '─'.repeat(52);
+  const profile   = getStoredProfile();
+  const acts      = getStoredActivities();
+  const rec       = getStoredRecommendation();
+  const geminiKey = getGeminiKey();
+  const setup     = getSetting('setup_complete') === '1';
+  const lastGen   = getSetting('gemini_last_generated');
+
+  console.log(`\n┌${line}┐`);
+  console.log(`│  INNERJOIN backend  ·  http://localhost:${PORT}${' '.repeat(8)}│`);
+  console.log(`├${line}┤`);
+  console.log(`│  Garmin profile : maxHR ${profile?.maxHr ?? '?'} bpm, LTHR ${profile?.lthr ?? '?'} bpm${' '.repeat(Math.max(0, 11 - String(profile?.maxHr ?? '?').length - String(profile?.lthr ?? '?').length))}│`);
+  console.log(`│  Activities     : ${acts.length} stored${' '.repeat(Math.max(0, 33 - String(acts.length).length))}│`);
+  console.log(`│  Setup complete : ${setup ? 'yes' : 'no'}${' '.repeat(setup ? 38 : 37)}│`);
+  console.log(`│  Gemini key     : ${geminiKey ? maskKey(geminiKey) : 'not configured'}${' '.repeat(Math.max(0, 32 - (geminiKey ? maskKey(geminiKey).length : 14)))}│`);
+  console.log(`│  Last generated : ${lastGen && lastGen !== '0' ? lastGen : 'never'}${' '.repeat(Math.max(0, 32 - (lastGen && lastGen !== '0' ? lastGen.length : 5)))}│`);
+  console.log(`│  Plan in DB     : ${rec ? `yes — ${rec.workoutType} (${rec.loadAssessment?.fatigue} fatigue)` : 'none'}${' '.repeat(Math.max(0, rec ? 28 - rec.workoutType.length - (rec.loadAssessment?.fatigue?.length ?? 0) : 33))}│`);
+  console.log(`└${line}┘\n`);
 });

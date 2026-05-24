@@ -105,11 +105,18 @@ const buildPrompt = (previousPlan?: PlanEntry[]): string => {
     prevBlock = `PREVIOUS PLAN COMPLIANCE:\n${lines.join('\n')}\n\n`;
   }
 
+  const preferredLongRideDay = getSetting('preferred_long_ride_day');
+  const prefLine = preferredLongRideDay
+    ? `- Preferred Long Ride day: ${preferredLongRideDay} — schedule the LongRide here when load allows.`
+    : `- No preferred Long Ride day specified.`;
+
   return `You are a professional cycling coach AI specializing in heart-rate based training.
-Analyze the athlete's data and generate an adaptive training plan. The most important factor is
-BELASTBAARHEID (training load management) — never sacrifice recovery for volume.
+Analyze the athlete's data and generate an adaptive training plan. The most important factor is training load management — never sacrifice recovery for volume.
 
 TODAY: ${today} (${dayOfWeek})
+
+ATHLETE PREFERENCES:
+${prefLine}
 
 ${prevBlock}RECENT ACTIVITIES (last 21 days):
 ${JSON.stringify(recentActivities, null, 2)}
@@ -166,6 +173,13 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[]): Promis
 
   const prompt = buildPrompt(previousPlan);
 
+  // ── Log outgoing prompt ───────────────────────────────────────────────────────
+  console.log('\n' + '═'.repeat(72));
+  console.log('[Gemini] ── PROMPT SENT ─────────────────────────────────────────────');
+  console.log('─'.repeat(72));
+  console.log(prompt);
+  console.log('─'.repeat(72) + '\n');
+
   const response = await axios.post(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${key}`,
     {
@@ -179,6 +193,13 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[]): Promis
   );
 
   const rawText: string = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+  // ── Log raw response ──────────────────────────────────────────────────────────
+  console.log('[Gemini] ── RAW RESPONSE ────────────────────────────────────────────');
+  console.log('─'.repeat(72));
+  console.log(rawText ?? '(empty)');
+  console.log('─'.repeat(72) + '\n');
+
   if (!rawText) throw new Error('Empty response from Gemini API');
 
   let parsed: any;
@@ -224,6 +245,18 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[]): Promis
     loadAssessment:   parsed.loadAssessment
   });
 
-  console.log(`[Gemini] Recommendation generated: ${parsed.today.type} (${parsed.loadAssessment?.fatigue} fatigue)`);
+  // ── Log parsed result summary ─────────────────────────────────────────────────
+  console.log('[Gemini] ── PARSED RESULT ───────────────────────────────────────────');
+  console.log(`  Today:    ${parsed.today.type} (priority: ${parsed.today.priority})`);
+  console.log(`  Reason:   ${parsed.today.reason}`);
+  console.log(`  Fatigue:  ${parsed.loadAssessment?.fatigue}  |  Trend: ${parsed.loadAssessment?.weeklyLoadTrend}`);
+  console.log(`  Insight:  ${parsed.loadAssessment?.insight}`);
+  console.log('  Weekly plan:');
+  weeklyPlan.forEach(e =>
+    console.log(`    ${e.date}  ${e.type.padEnd(10)}  [${e.status}]  ${e.reason}`)
+  );
+  console.log(`  Next week: ${parsed.nextWeekOverview?.summary}`);
+  console.log('═'.repeat(72) + '\n');
+
   return getStoredRecommendation();
 };
