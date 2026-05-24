@@ -228,10 +228,16 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[]): Promis
     }
   );
 
-  const rawText: string = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  const candidate  = response.data?.candidates?.[0];
+  const parts: any[] = candidate?.content?.parts || [];
+  const rawText: string = parts.map((p: any) => p.text ?? '').join('');
+
+  // Log finish reason so we can spot premature stops
+  const finishReason = candidate?.finishReason ?? 'unknown';
 
   // ── Log raw response ──────────────────────────────────────────────────────────
   console.log('[Gemini] ── RAW RESPONSE ────────────────────────────────────────────');
+  console.log(`[Gemini] finishReason: ${finishReason} | length: ${rawText.length} chars`);
   console.log('─'.repeat(72));
   console.log(rawText ?? '(empty)');
   console.log('─'.repeat(72) + '\n');
@@ -242,9 +248,7 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[]): Promis
   try {
     parsed = JSON.parse(rawText);
   } catch (e) {
-    const snippet = rawText.slice(0, 300);
-    const truncated = rawText.length >= 300 ? '… (truncated)' : '';
-    throw new Error(`Gemini returned invalid JSON (${rawText.length} chars):\n${snippet}${truncated}`);
+    throw new Error(`Gemini returned invalid JSON (${rawText.length} chars):\n${rawText}`);
   }
 
   // Validate required fields

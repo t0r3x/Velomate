@@ -114,7 +114,7 @@ export class GarminSSOClient {
     });
 
     if (postResp.statusCode >= 400) {
-      throw new Error(`Mobile POST failed with status ${postResp.statusCode}: ${String(postResp.body).slice(0, 200)}`);
+      throw new Error(`Mobile POST failed with status ${postResp.statusCode}: ${String(postResp.body)}`);
     }
 
     return this.handleLoginResponse(postResp.body);
@@ -156,7 +156,7 @@ export class GarminSSOClient {
     try {
       data = typeof rawBody === 'string' ? JSON.parse(rawBody) : rawBody;
     } catch {
-      throw new Error(`Non-JSON response from Garmin: ${String(rawBody).slice(0, 300)}`);
+      throw new Error(`Non-JSON response from Garmin: ${String(rawBody)}`);
     }
 
     const status = this.parseResponseStatus(data);
@@ -205,7 +205,7 @@ export class GarminSSOClient {
     try {
       data = JSON.parse(response.body as string);
     } catch {
-      throw new Error(`Non-JSON MFA response: ${String(response.body).slice(0, 300)}`);
+      throw new Error(`Non-JSON MFA response: ${String(response.body)}`);
     }
 
     const status = this.parseResponseStatus(data);

@@ -127,13 +127,22 @@ const updatePsZonesBar = (maxHr, lthr) => {
   const bar = document.getElementById('ps-zones-bar');
   if (!bar) return;
   const z = calcZones(lthr, maxHr);
-  bar.querySelector('.z1').style.width = `${Math.max(1, Math.round(z.z1.max / maxHr * 100))}%`;
-  bar.querySelector('.z2').style.width = `${Math.max(1, Math.round((z.z2.max - z.z2.min) / maxHr * 100))}%`;
-  bar.querySelector('.z3').style.width = `${Math.max(1, Math.round((z.z3.max - z.z3.min) / maxHr * 100))}%`;
-  bar.querySelector('.z4').style.width = `${Math.max(1, Math.round((z.z4.max - z.z4.min) / maxHr * 100))}%`;
-  bar.querySelector('.z5').style.width = `${Math.max(1, Math.round((maxHr - lthr) / maxHr * 100))}%`;
-  const hint = document.getElementById('ps-zones-hint');
-  if (hint) hint.textContent = `Z4: ${z.z4.min}–${lthr} bpm  ·  Z5: ${lthr + 1}–${maxHr} bpm`;
+
+  const zones = [
+    { key: 'z1', min: z.z1.min, max: z.z1.max, width: Math.max(1, Math.round(z.z1.max / maxHr * 100)) },
+    { key: 'z2', min: z.z2.min, max: z.z2.max, width: Math.max(1, Math.round((z.z2.max - z.z2.min) / maxHr * 100)) },
+    { key: 'z3', min: z.z3.min, max: z.z3.max, width: Math.max(1, Math.round((z.z3.max - z.z3.min) / maxHr * 100)) },
+    { key: 'z4', min: z.z4.min, max: z.z4.max, width: Math.max(1, Math.round((z.z4.max - z.z4.min) / maxHr * 100)) },
+    { key: 'z5', min: z.z5.min, max: z.z5.max, width: Math.max(1, Math.round((maxHr - lthr) / maxHr * 100)) },
+  ];
+
+  zones.forEach(({ key, min, max, width }) => {
+    const seg = bar.querySelector(`.${key}`);
+    if (!seg) return;
+    seg.style.width = `${width}%`;
+    seg.querySelector('.zbs-range').textContent = `${min}–${max}`;
+    seg.title = `${key.toUpperCase()}: ${min}–${max} bpm`;
+  });
 };
 
 /** Close the profile-setup modal (only used when psModalMode is true). */

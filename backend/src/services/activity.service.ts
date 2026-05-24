@@ -15,13 +15,13 @@ export const fetchCyclingActivities = async (days: number = 90) => {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
 
-  // Log the first few activity types so we can see what Garmin returns
-  const sample = activities.slice(0, 10).map(a => ({
+  // Log all activity types so we can see what Garmin returns
+  const sample = activities.map(a => ({
     name: a.activityName,
     typeKey: a.activityType?.typeKey,
     date: a.startTimeLocal
   }));
-  console.log('[Activities] Sample (first 10):', JSON.stringify(sample, null, 2));
+  console.log('[Activities] All activities from Garmin:', JSON.stringify(sample, null, 2));
 
   const cyclingActivities = activities.filter(act => {
     const typeKey = (act.activityType?.typeKey || '').toLowerCase();
