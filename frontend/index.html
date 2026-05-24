@@ -449,35 +449,6 @@
 
             <div class="ai-sync-divider"></div>
 
-            <!-- Device Selector -->
-            <div class="device-selector-block" id="device-select-group">
-              <div class="device-selector-top">
-                <i class="fa-solid fa-microchip device-sel-icon"></i>
-                <div class="device-sel-info">
-                  <span class="device-sel-label">Sync to device</span>
-                  <span class="device-sel-hint">Workouts will be synced to this device</span>
-                </div>
-                <button type="button" id="btn-refresh-devices" class="btn-device-refresh" title="Refresh device list" disabled>
-                  <i class="fa-solid fa-rotate"></i>
-                </button>
-              </div>
-              <div class="device-sel-select-wrap">
-                <select id="device-select" disabled>
-                  <option value="">Connect to Garmin first…</option>
-                </select>
-                <i class="fa-solid fa-chevron-down device-sel-chevron"></i>
-              </div>
-            </div>
-
-            <!-- Workout Preview (shown when a plan is loaded) -->
-            <div id="workout-preview-section" class="workout-preview-section hidden">
-              <div class="workout-preview-header" id="btn-toggle-preview">
-                <span><i class="fa-solid fa-dumbbell"></i> Workouts to sync</span>
-                <i class="fa-solid fa-chevron-down workout-preview-chevron"></i>
-              </div>
-              <div id="workout-preview-list" class="workout-preview-list"></div>
-            </div>
-
             <button class="btn btn-primary btn-glow" id="btn-sync-workouts" disabled
               data-idle-label="Sync & Schedule Workouts"  data-idle-icon="fa-cloud-arrow-up"
               data-loading-label="Syncing Workouts…"       data-loading-icon="fa-spinner fa-spin">

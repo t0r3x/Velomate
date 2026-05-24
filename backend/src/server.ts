@@ -16,9 +16,6 @@ import {
   getStoredAnalysis,
   upsertProfileDB,
   getStoredProfile,
-  upsertDevices,
-  getStoredDevices,
-  hasStoredDevices,
   getSetting,
   setSetting,
   getStoredRecommendation,
@@ -295,99 +292,6 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
       error: 'Failed to refresh activities.',
       details: error.message
     });
-  }
-});
-
-// ── Devices ───────────────────────────────────────────────────────────────────
-
-// GET /api/devices — serve from DB cache; fetch from Garmin only on first use
-app.get('/api/devices', async (req: Request, res: Response) => {
-  try {
-    const isAuthenticated = await trySessionAuth();
-    if (!isAuthenticated) return res.status(401).json({ error: 'Not authenticated.' });
-
-    if (hasStoredDevices()) {
-      return res.json(getStoredDevices());
-    }
-
-    // First time: fetch from Garmin and persist
-    const devices = await garminApi('/device-service/deviceregistration/devices');
-    if (Array.isArray(devices) && devices.length > 0) {
-      upsertDevices(devices);
-    }
-    res.json(devices);
-  } catch (error: any) {
-    res.status(500).json({ error: 'Failed to fetch devices.', details: error.message });
-  }
-});
-
-// POST /api/devices/refresh — force re-fetch from Garmin and update cache
-app.post('/api/devices/refresh', async (req: Request, res: Response) => {
-  try {
-    const isAuthenticated = await trySessionAuth();
-    if (!isAuthenticated) return res.status(401).json({ error: 'Not authenticated.' });
-
-    const devices = await garminApi('/device-service/deviceregistration/devices');
-    if (Array.isArray(devices) && devices.length > 0) {
-      upsertDevices(devices);
-    }
-    res.json(devices);
-  } catch (error: any) {
-    res.status(500).json({ error: 'Failed to refresh devices.', details: error.message });
-  }
-});
-
-// ── Workout Preview ───────────────────────────────────────────────────────────
-
-app.get('/api/preview-workouts', (_req: Request, res: Response) => {
-  try {
-    const rec = getStoredRecommendation();
-    const plan: any[] = rec?.weeklyPlan || [];
-
-    /** Format durationSec as human-readable string */
-    const fmtDur = (sec: number): string =>
-      sec < 60 ? `${sec} sec` : sec % 60 === 0 ? `${sec / 60} min` : `${Math.round(sec / 60)} min`;
-
-    const typeLabels: Record<string, string> = {
-      Sprint: 'Sprint', Threshold: 'Threshold', LongRide: 'Long Ride'
-    };
-
-    // Collect the next planned occurrence of each syncable type, then sort by date
-    const workouts = (['Sprint', 'Threshold', 'LongRide'] as const)
-      .map(type => {
-        const entry = plan.find((e: any) => e.type === type && e.status === 'planned' && e.structure?.steps?.length);
-        if (!entry?.structure) return null;
-
-        const s = entry.structure;
-        const totalSec = s.steps.reduce((acc: number, st: any) => acc + (st.durationSec || 0), 0);
-
-        // Human-readable date, e.g. "Wed 27 May"
-        const d = new Date(entry.date + 'T12:00:00');
-        const dateLabel = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-
-        return {
-          type,
-          date:         entry.date,          // YYYY-MM-DD for sorting
-          dateLabel,                          // "Wed 27 May" for display
-          name:         `INNERJOIN ${typeLabels[type]}`,
-          totalMinutes: Math.round(totalSec / 60),
-          isScheduled:  type === 'Threshold',
-          steps: s.steps.map((st: any) => ({
-            label:    st.label,
-            duration: fmtDur(st.durationSec),
-            zone:     st.zone.toUpperCase(),
-            zoneKey:  st.zone,
-            minutes:  st.durationSec / 60,
-          }))
-        };
-      })
-      .filter(Boolean)
-      // Sort chronologically — show workouts in the order they appear in the week
-      .sort((a: any, b: any) => a.date.localeCompare(b.date));
-
-    res.json({ workouts });
-  } catch (error: any) {
-    res.status(500).json({ error: 'Failed to generate preview.', details: error.message });
   }
 });
 
