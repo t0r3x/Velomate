@@ -575,7 +575,7 @@ const rescheduleToToday = async (fromDate) => {
     renderRecommendation(data);
     setRecState('loaded');
     fetchWorkoutPreview();
-    toast('success', 'Workout moved to today', 'Plan updated — Gemini recalculated the week.');
+    toast('success', 'Workout moved to today', 'Plan updated — AI recalculated the week.');
   } catch {
     toast('error', 'Connection Error', 'Could not reach backend.');
   }
@@ -597,7 +597,7 @@ const skipToday = async () => {
     renderRecommendation(data);
     setRecState('loaded');
     fetchWorkoutPreview();
-    toast('success', 'Workout skipped', 'Plan updated by Gemini.');
+    toast('success', 'Workout skipped', 'Plan updated by AI.');
   } catch {
     toast('error', 'Skip Failed', 'Could not reach backend.');
   } finally {
@@ -1045,7 +1045,7 @@ btnSaveAll.addEventListener('click', async () => {
         }
       } else {
         const err = await res.json();
-        toast('error', 'Save Failed', err.error || 'Could not save Gemini API key.');
+        toast('error', 'Save Failed', err.error || 'Could not save API key.');
       }
     } else if (onDashboard) {
       toast('success', 'Settings Saved', 'Preferences updated.');
@@ -1053,7 +1053,7 @@ btnSaveAll.addEventListener('click', async () => {
     } else if (onSetup && geminiConfigured) {
       maybeEnterDashboard();
     } else {
-      toast('warn', 'Gemini Key Required', 'Enter your Google Gemini API key to continue.');
+      toast('warn', 'AI Key Required', 'Enter your AI API key to continue.');
     }
   } catch {
     toast('error', 'Connection Error', 'Could not reach backend.');
