@@ -599,14 +599,19 @@ const runGeminiAutoCheck = async () => {
       }
     }
 
-    // Standard daily freshness check — regenerate if stale OR no plan exists yet
+    // Standard daily freshness check — only regenerate if a plan already exists.
+    // The very first plan must be initiated by the user via the "Generate my first plan" button.
+    const current = getStoredRecommendation();
+    if (!current) {
+      console.log('[Gemini] Auto-check: no plan in DB — waiting for user to generate first plan');
+      return;
+    }
+
     const lastGenStr = getSetting('gemini_last_generated');
     const ageMs      = Date.now() - (lastGenStr && lastGenStr !== '0' ? new Date(lastGenStr).getTime() : 0);
-    const current    = getStoredRecommendation();
-    if (ageMs > 23 * 60 * 60 * 1000 || !current) {
-      const reason = !current ? 'no plan in DB' : `plan is ${(ageMs / 3600000).toFixed(1)}h old (> 23h)`;
-      console.log(`[Gemini] Auto-check: regenerating — ${reason}`);
-      await generateRecommendation(current?.weeklyPlan);
+    if (ageMs > 23 * 60 * 60 * 1000) {
+      console.log(`[Gemini] Auto-check: regenerating — plan is ${(ageMs / 3600000).toFixed(1)}h old (> 23h)`);
+      await generateRecommendation(current.weeklyPlan);
       setSetting('gemini_last_generated', new Date().toISOString());
     } else {
       console.log(`[Gemini] Auto-check: plan is fresh (${(ageMs / 3600000).toFixed(1)}h old) — no regen needed`);

@@ -2051,9 +2051,64 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
   display: flex;
 }
 
-/* ── rec-state-no-plan empty icon color ─────────────────────────────────── */
+/* ── rec-state-no-plan: intro card ──────────────────────────────────────── */
 #rec-state-no-plan .ai-rec-empty-icon {
   color: var(--primary-color);
+}
+
+.ai-rec-intro {
+  align-items: flex-start;
+  text-align: left;
+  gap: 0.6rem;
+  padding: 0.25rem 0;
+}
+
+.ai-rec-intro-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.ai-rec-intro-lead {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 0 0 0.4rem;
+  line-height: 1.55;
+}
+
+.ai-rec-intro-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+}
+
+.ai-rec-intro-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.ai-rec-intro-list li i {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  color: var(--primary-color);
+  opacity: 0.85;
+}
+
+.ai-rec-intro-list li strong {
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 /* ── Preferred days checkbox chip grid ───────────────────────────────────── */
