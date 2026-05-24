@@ -320,10 +320,11 @@ const renderRecommendation = (rec) => {
   aiTodayIcon.className = `fa-solid ${icon}`;
   aiTodayType.textContent = label;
 
-  // Priority badge
+  // Priority badge — map raw AI value to user-friendly label
   const priority = rec.priority || '';
+  const priorityLabels = { high: 'Essential', medium: 'Recommended', low: 'Optional' };
   aiPriorityBadge.className = `ai-priority-badge priority-${priority.toLowerCase()}`;
-  aiPriorityBadge.textContent = priority.charAt(0).toUpperCase() + priority.slice(1);
+  aiPriorityBadge.textContent = priorityLabels[priority.toLowerCase()] || priority;
 
   // Today reason
   aiTodayReason.textContent = rec.reason || '';
