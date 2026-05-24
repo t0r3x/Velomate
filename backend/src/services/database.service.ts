@@ -73,17 +73,22 @@ db.exec(`
 `);
 
 // ── Migrations (safe — ignore if column already exists) ───────────────────────
-try {
-  db.exec(`ALTER TABLE activities ADD COLUMN timeInZones TEXT DEFAULT NULL`);
-  console.log('[DB] Migration: added timeInZones column to activities');
-} catch { /* column already exists */ }
+const _migrations: Array<[string, string]> = [
+  [`ALTER TABLE activities ADD COLUMN timeInZones TEXT DEFAULT NULL`,         '[DB] Migration: added timeInZones column'],
+  [`ALTER TABLE activities ADD COLUMN perceivedExertion INTEGER DEFAULT NULL`, '[DB] Migration: added perceivedExertion column'],
+  [`ALTER TABLE activities ADD COLUMN feelingAfterExercise INTEGER DEFAULT NULL`, '[DB] Migration: added feelingAfterExercise column'],
+];
+for (const [sql, msg] of _migrations) {
+  try { db.exec(sql); console.log(msg); } catch { /* column already exists */ }
+}
 
 // ── Activities ────────────────────────────────────────────────────────────────
 const stmtUpsertActivity = db.prepare(`
   INSERT OR REPLACE INTO activities
     (activityId, name, type, startTime, distanceKm, durationMinutes,
-     averageHr, maxHr, averagePower, maxPower, timeInZones, fetchedAt)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+     averageHr, maxHr, averagePower, maxPower, timeInZones,
+     perceivedExertion, feelingAfterExercise, fetchedAt)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 `);
 
 const upsertManyActivities = db.transaction((activities: any[]) => {
@@ -99,7 +104,9 @@ const upsertManyActivities = db.transaction((activities: any[]) => {
       a.maxHr,
       a.averagePower || 0,
       a.maxPower || 0,
-      a.timeInZones != null ? JSON.stringify(a.timeInZones) : null
+      a.timeInZones != null ? JSON.stringify(a.timeInZones) : null,
+      a.perceivedExertion  ?? null,
+      a.feelingAfterExercise ?? null
     );
   }
 });
