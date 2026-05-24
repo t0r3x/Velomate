@@ -207,11 +207,24 @@ export const setSetting = (key: string, value: string): void => {
 };
 
 // ── Recommendation ────────────────────────────────────────────────────────────
+export interface WorkoutStep {
+  stepType: 'WarmUp' | 'Run' | 'Recovery' | 'Cooldown';
+  durationSec: number;
+  zone: 'z1' | 'z2' | 'z3' | 'z4' | 'z5';
+  label: string;
+}
+
+export interface WorkoutStructure {
+  totalMinutes: number;
+  steps: WorkoutStep[];
+}
+
 export interface PlanEntry {
   date: string;
   type: string;
   reason: string;
   status: 'planned' | 'completed' | 'skipped' | 'auto-skipped';
+  structure?: WorkoutStructure | null;
 }
 
 export const upsertRecommendation = (rec: {

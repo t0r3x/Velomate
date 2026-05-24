@@ -9,8 +9,8 @@ import {
   WorkoutType
 } from '@flow-js/garmin-connect';
 import { getGarminClient, trySessionAuth } from './garmin.service';
-import { getStoredProfile, loadProfile } from './profile.service';
-import { getStoredActivities } from './database.service';
+import { loadProfile } from './profile.service';
+import { getStoredProfile, PlanEntry, WorkoutStep, WorkoutStructure } from './database.service';
 
 /** Write workout definitions to ./tmp/garmin-workouts/{timestamp}/ for dev inspection. */
 const devDumpWorkouts = (workoutDefs: Record<string, any>, dateStr: string): void => {
@@ -31,65 +31,130 @@ const devDumpWorkouts = (workoutDefs: Record<string, any>, dateStr: string): voi
   }
 };
 
-export const syncAndScheduleWorkouts = async (scheduleDate?: string) => {
-  const isAuthenticated = await trySessionAuth();
-  if (!isAuthenticated) {
-    throw new Error('Not authenticated.');
+const STEP_TYPE_MAP: Record<string, StepType> = {
+  WarmUp:   StepType.WarmUp,
+  Run:      StepType.Run,
+  Recovery: StepType.Recovery,
+  Cooldown: StepType.Cooldown,
+};
+
+/** Fallback structures used only when the AI plan has no structure for a given type. */
+const FALLBACK_STRUCTURES: Record<string, WorkoutStructure> = {
+  Sprint: {
+    totalMinutes: 47,
+    steps: [
+      { stepType: 'WarmUp',   durationSec: 600, zone: 'z2', label: 'Warm-up Z2' },
+      { stepType: 'Run',      durationSec: 30,  zone: 'z5', label: 'Sprint 1/6 — Z5' },
+      { stepType: 'Recovery', durationSec: 240, zone: 'z1', label: 'Recovery 1/6 — Z1' },
+      { stepType: 'Run',      durationSec: 30,  zone: 'z5', label: 'Sprint 2/6 — Z5' },
+      { stepType: 'Recovery', durationSec: 240, zone: 'z1', label: 'Recovery 2/6 — Z1' },
+      { stepType: 'Run',      durationSec: 30,  zone: 'z5', label: 'Sprint 3/6 — Z5' },
+      { stepType: 'Recovery', durationSec: 240, zone: 'z1', label: 'Recovery 3/6 — Z1' },
+      { stepType: 'Run',      durationSec: 30,  zone: 'z5', label: 'Sprint 4/6 — Z5' },
+      { stepType: 'Recovery', durationSec: 240, zone: 'z1', label: 'Recovery 4/6 — Z1' },
+      { stepType: 'Run',      durationSec: 30,  zone: 'z5', label: 'Sprint 5/6 — Z5' },
+      { stepType: 'Recovery', durationSec: 240, zone: 'z1', label: 'Recovery 5/6 — Z1' },
+      { stepType: 'Run',      durationSec: 30,  zone: 'z5', label: 'Sprint 6/6 — Z5' },
+      { stepType: 'Recovery', durationSec: 240, zone: 'z1', label: 'Recovery 6/6 — Z1' },
+      { stepType: 'Cooldown', durationSec: 600, zone: 'z1', label: 'Cool-down Z1' },
+    ]
+  },
+  Threshold: {
+    totalMinutes: 56,
+    steps: [
+      { stepType: 'WarmUp',   durationSec: 600, zone: 'z2', label: 'Warm-up Z2' },
+      { stepType: 'Run',      durationSec: 480, zone: 'z4', label: 'Threshold 1/3 — Z4' },
+      { stepType: 'Recovery', durationSec: 240, zone: 'z1', label: 'Recovery 1/3 — Z1' },
+      { stepType: 'Run',      durationSec: 480, zone: 'z4', label: 'Threshold 2/3 — Z4' },
+      { stepType: 'Recovery', durationSec: 240, zone: 'z1', label: 'Recovery 2/3 — Z1' },
+      { stepType: 'Run',      durationSec: 480, zone: 'z4', label: 'Threshold 3/3 — Z4' },
+      { stepType: 'Recovery', durationSec: 240, zone: 'z1', label: 'Recovery 3/3 — Z1' },
+      { stepType: 'Cooldown', durationSec: 600, zone: 'z1', label: 'Cool-down Z1' },
+    ]
+  },
+  LongRide: {
+    totalMinutes: 120,
+    steps: [
+      { stepType: 'Run', durationSec: 7200, zone: 'z2', label: 'Steady Z2 endurance' }
+    ]
   }
+};
 
-  const client = getGarminClient();
+export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], scheduleDate?: string) => {
+  const isAuthenticated = await trySessionAuth();
+  if (!isAuthenticated) throw new Error('Not authenticated.');
 
-  // Use DB profile (most up-to-date), fall back to config.json
+  const client  = getGarminClient();
   const profile = getStoredProfile() ?? loadProfile();
 
-  // Calculate long ride duration from stored activities (no live Garmin call needed)
-  const storedActs = getStoredActivities();
-  let longRideDurationMinutes = 120;
-  if (storedActs.length > 0) {
-    const recent   = storedActs.slice(0, 20);
-    const avgMin   = recent.reduce((s, a) => s + (a.durationMinutes || 0), 0) / recent.length;
-    longRideDurationMinutes = Math.min(240, Math.max(90, Math.round(avgMin * 1.2)));
-  }
+  /** Get HRM target for a zone key (z1–z5). */
+  const zoneTarget = (zoneKey: string): HrmTarget => {
+    const z = (profile.zones as any)[zoneKey];
+    return z ? new HrmTarget(z.min, z.max) : new HrmTarget(0, 220);
+  };
 
-  const results: { type: string; workoutId: any; name: string }[] = [];
+  /** Build a Garmin WorkoutDef from an AI-generated (or fallback) structure. */
+  const buildFromStructure = (
+    name: string,
+    description: string,
+    structure: WorkoutStructure
+  ) => {
+    const builder = new WorkoutBuilder(WorkoutType.Cycling, name, description);
+    for (const step of structure.steps) {
+      const stepType = STEP_TYPE_MAP[step.stepType] ?? StepType.Run;
+      builder.addStep(new Step(
+        stepType,
+        TimeDuration.fromSeconds(step.durationSec),
+        zoneTarget(step.zone),
+        step.label
+      ));
+    }
+    return builder.build();
+  };
+
+  /**
+   * Find the AI-provided structure for a type from the plan.
+   * Returns the structure + whether it was AI-provided (for logging).
+   */
+  const resolveStructure = (type: string): { structure: WorkoutStructure; aiProvided: boolean } => {
+    const entry = planEntries?.find(e => e.type === type && e.status === 'planned' && e.structure);
+    if (entry?.structure) return { structure: entry.structure, aiProvided: true };
+    console.warn(`[Sync] No AI structure for ${type} — using fallback defaults`);
+    return { structure: FALLBACK_STRUCTURES[type]!, aiProvided: false };
+  };
+
   const dateStr = scheduleDate || new Date().toISOString().split('T')[0];
+  const results: { type: string; workoutId: any; name: string }[] = [];
 
   // ── 1. Sprint ────────────────────────────────────────────────────────────────
-  const sprintBuilder = new WorkoutBuilder(
-    WorkoutType.Cycling,
+  const { structure: sprintStr, aiProvided: sprintAI } = resolveStructure('Sprint');
+  const sprintTotal = Math.round(sprintStr.steps.reduce((s, st) => s + st.durationSec, 0) / 60);
+  console.log(`[Sync] Sprint: ${sprintAI ? 'AI' : 'fallback'} — ${sprintTotal} min, ${sprintStr.steps.length} steps`);
+  const sprintDef = buildFromStructure(
     `INNERJOIN Sprint — ${profile.lthr} LTHR`,
-    'Sprint intervals targeted to heart rate zones'
+    'Sprint intervals targeted to heart rate zones',
+    sprintStr
   );
-  sprintBuilder.addStep(new Step(StepType.WarmUp,  TimeDuration.fromMinutes(10), new HrmTarget(profile.zones.z2.min, profile.zones.z2.max), 'Warm-up Z2'));
-  for (let i = 0; i < 6; i++) {
-    sprintBuilder.addStep(new Step(StepType.Run,      TimeDuration.fromSeconds(30), new HrmTarget(profile.zones.z5.min, profile.zones.z5.max), `Sprint ${i+1}/6 — Z5`));
-    sprintBuilder.addStep(new Step(StepType.Recovery, TimeDuration.fromMinutes(4),  new HrmTarget(profile.zones.z1.min, profile.zones.z1.max), `Recovery ${i+1}/6 — Z1`));
-  }
-  sprintBuilder.addStep(new Step(StepType.Cooldown, TimeDuration.fromMinutes(10), new HrmTarget(profile.zones.z1.min, profile.zones.z1.max), 'Cool-down Z1'));
-  const sprintDef = sprintBuilder.build();
 
   // ── 2. Threshold ─────────────────────────────────────────────────────────────
-  const thresholdBuilder = new WorkoutBuilder(
-    WorkoutType.Cycling,
+  const { structure: threshStr, aiProvided: threshAI } = resolveStructure('Threshold');
+  const threshTotal = Math.round(threshStr.steps.reduce((s, st) => s + st.durationSec, 0) / 60);
+  console.log(`[Sync] Threshold: ${threshAI ? 'AI' : 'fallback'} — ${threshTotal} min, ${threshStr.steps.length} steps`);
+  const thresholdDef = buildFromStructure(
     `INNERJOIN Threshold — ${profile.lthr} LTHR`,
-    'Threshold intervals (Z4) to increase aerobic power'
+    'Threshold intervals (Z4) to increase aerobic power',
+    threshStr
   );
-  thresholdBuilder.addStep(new Step(StepType.WarmUp,  TimeDuration.fromMinutes(10), new HrmTarget(profile.zones.z2.min, profile.zones.z2.max), 'Warm-up Z2'));
-  for (let i = 0; i < 3; i++) {
-    thresholdBuilder.addStep(new Step(StepType.Run,      TimeDuration.fromMinutes(8), new HrmTarget(profile.zones.z4.min, profile.zones.z4.max), `Threshold ${i+1}/3 — Z4`));
-    thresholdBuilder.addStep(new Step(StepType.Recovery, TimeDuration.fromMinutes(4), new HrmTarget(profile.zones.z1.min, profile.zones.z2.max), `Recovery ${i+1}/3 — Z1/Z2`));
-  }
-  thresholdBuilder.addStep(new Step(StepType.Cooldown, TimeDuration.fromMinutes(10), new HrmTarget(profile.zones.z1.min, profile.zones.z1.max), 'Cool-down Z1'));
-  const thresholdDef = thresholdBuilder.build();
 
   // ── 3. Long Ride ─────────────────────────────────────────────────────────────
-  const longRideBuilder = new WorkoutBuilder(
-    WorkoutType.Cycling,
-    `INNERJOIN Long Ride — ${longRideDurationMinutes} min`,
-    'Steady endurance ride scaled to recent training volume'
+  const { structure: longStr, aiProvided: longAI } = resolveStructure('LongRide');
+  const longTotal = Math.round(longStr.steps.reduce((s, st) => s + st.durationSec, 0) / 60);
+  console.log(`[Sync] LongRide: ${longAI ? 'AI' : 'fallback'} — ${longTotal} min, ${longStr.steps.length} steps`);
+  const longRideDef = buildFromStructure(
+    `INNERJOIN Long Ride — ${longTotal} min`,
+    'Steady endurance ride scaled to recent training volume',
+    longStr
   );
-  longRideBuilder.addStep(new Step(StepType.Run, TimeDuration.fromMinutes(longRideDurationMinutes), new HrmTarget(profile.zones.z2.min, profile.zones.z2.max), 'Steady Z2 endurance'));
-  const longRideDef = longRideBuilder.build();
 
   // ── Dev dump (DEV_WORKOUT_DUMP=true in .env) ──────────────────────────────────
   devDumpWorkouts({ sprint: sprintDef, threshold: thresholdDef, longride: longRideDef }, dateStr);
@@ -110,13 +175,12 @@ export const syncAndScheduleWorkouts = async (scheduleDate?: string) => {
   console.log(`[Sync] Scheduling Threshold (${thresholdWorkout.workoutName}) for ${dateStr}`);
   await client.scheduleWorkout({ workoutId: String(thresholdWorkout.workoutId) }, dateStr);
 
-  console.log(`[Sync] Done — uploaded ${results.length} workouts, Threshold scheduled for ${dateStr}, long ride = ${longRideDurationMinutes} min`);
+  console.log(`[Sync] Done — Sprint ${sprintTotal} min (${sprintAI ? 'AI' : 'fallback'}), Threshold ${threshTotal} min (${threshAI ? 'AI' : 'fallback'}), LongRide ${longTotal} min (${longAI ? 'AI' : 'fallback'}), scheduled for ${dateStr}`);
 
   return {
     scheduledWorkoutId: thresholdWorkout.workoutId,
     scheduledDate:      dateStr,
     workouts:           results,
-    profileUsed:        profile,
-    dynamicLongRideMinutes: longRideDurationMinutes
+    profileUsed:        profile
   };
 };
