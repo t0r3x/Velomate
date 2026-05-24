@@ -5,6 +5,7 @@ import {
   Step,
   StepType,
   TimeDuration,
+  LapPressDuration,
   HrmTarget,
   WorkoutType
 } from '@flow-js/garmin-connect';
@@ -93,18 +94,31 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
     return z ? new HrmTarget(z.min, z.max) : new HrmTarget(0, 220);
   };
 
-  /** Build a Garmin WorkoutDef from a structure. */
+  /** Build a Garmin WorkoutDef from a structure.
+   *
+   * LongRide uses LapPressDuration for the main ride block so the workout never
+   * ends prematurely — the athlete presses Lap when they are done, regardless of
+   * how long they ride. Sprint and Threshold keep precise TimeDuration timers.
+   */
   const buildFromStructure = (
     name: string,
     description: string,
-    structure: WorkoutStructure
+    structure: WorkoutStructure,
+    workoutType: string
   ) => {
+    const isLongRide = workoutType === 'LongRide';
     const builder = new WorkoutBuilder(WorkoutType.Cycling, name, description);
     for (const step of structure.steps) {
       const stepType = STEP_TYPE_MAP[step.stepType] ?? StepType.Run;
+      // LongRide main block: open-ended — athlete presses Lap to end.
+      // All other steps (including WarmUp/Cooldown on interval workouts) use a fixed timer.
+      const useOpenEnd = isLongRide && step.stepType === 'Run';
+      const duration   = useOpenEnd
+        ? new LapPressDuration()
+        : TimeDuration.fromSeconds(step.durationSec);
       builder.addStep(new Step(
         stepType,
-        TimeDuration.fromSeconds(step.durationSec),
+        duration,
         zoneTarget(step.zone),
         step.label
       ));
@@ -180,10 +194,10 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
       workoutDesc = 'Threshold intervals (Z4) to increase aerobic power';
     } else {
       workoutName = `INNERJOIN Long Ride`;
-      workoutDesc = 'Steady endurance ride scaled to recent training volume';
+      workoutDesc = 'Steady Z2 endurance ride — press Lap when done';
     }
 
-    const def = buildFromStructure(workoutName, workoutDesc, structure);
+    const def = buildFromStructure(workoutName, workoutDesc, structure, type);
     devDump[type.toLowerCase()] = def;
 
     // Upload the workout definition
