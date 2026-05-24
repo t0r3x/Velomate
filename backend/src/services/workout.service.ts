@@ -113,7 +113,8 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
   };
 
   const dateStr = scheduleDate || new Date().toISOString().split('T')[0];
-  const results: { type: string; workoutId: any; name: string; scheduledDate: string }[] = [];
+  const results: { type: string; workoutId: any; name: string; scheduledDate: string; scheduleError: string }[] = [];
+  const usingFallback: string[] = [];   // tracks which types had no AI structure
 
   // ── Derive which workout types to sync from the plan ──────────────────────────
   // Only sync types that are actually planned — never upload workouts for types not in the plan.
@@ -149,20 +150,24 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
   for (const type of typesToSync) {
     const entry = plannedEntryByType.get(type)!;
 
-    // Resolve structure: use AI-provided structure if available, else fallback
+    // Resolve structure: AI-generated is always preferred.
+    // Fallback only fires if the plan has the type but no structure (shouldn't normally happen).
     let structure: WorkoutStructure;
     let aiProvided: boolean;
     if (entry.structure?.steps?.length) {
       structure  = entry.structure;
       aiProvided = true;
-    } else {
-      console.warn(`[Sync] No AI structure for ${type} — using fallback defaults`);
+    } else if (FALLBACK_STRUCTURES[type]) {
+      console.warn(`[Sync] No AI structure for ${type} — using built-in fallback`);
       structure  = FALLBACK_STRUCTURES[type]!;
       aiProvided = false;
+    } else {
+      throw new Error(`No workout structure available for ${type}. Regenerate the AI plan first.`);
     }
 
     const totalMin = Math.round(structure.steps.reduce((s, st) => s + st.durationSec, 0) / 60);
     console.log(`[Sync] ${type}: ${aiProvided ? 'AI' : 'fallback'} — ${totalMin} min, ${structure.steps.length} steps`);
+    if (!aiProvided) usingFallback.push(type);
 
     // Build workout name
     let workoutName: string;
@@ -181,31 +186,57 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
     const def = buildFromStructure(workoutName, workoutDesc, structure);
     devDump[type.toLowerCase()] = def;
 
+    // Upload the workout definition
     console.log(`[Sync] Uploading ${type} workout…`);
-    const uploaded = await client.createWorkout(def);
+    let uploaded: any;
+    try {
+      uploaded = await client.createWorkout(def);
+    } catch (err: any) {
+      throw new Error(`Failed to upload ${type} workout: ${err.message}`);
+    }
 
-    // Schedule on the workout's own plan date (each type gets its own calendar day)
+    // Schedule on the workout's own plan date
     const entryDate = entry.date || dateStr;
-    console.log(`[Sync] Scheduling ${type} (${uploaded.workoutName}) for ${entryDate}`);
-    await client.scheduleWorkout({ workoutId: String(uploaded.workoutId) }, entryDate);
+    try {
+      console.log(`[Sync] Scheduling ${type} (${uploaded.workoutName}) for ${entryDate}`);
+      await client.scheduleWorkout({ workoutId: String(uploaded.workoutId) }, entryDate);
+    } catch (err: any) {
+      // createWorkout succeeded but scheduleWorkout failed — workout is now in the library
+      // but not on the calendar. Tell the user explicitly so they can schedule it manually.
+      console.warn(`[Sync] ${type} uploaded (id ${uploaded.workoutId}) but scheduling failed: ${err.message}`);
+      results.push({
+        type,
+        workoutId:     uploaded.workoutId,
+        name:          uploaded.workoutName,
+        scheduledDate: '',
+        scheduleError: `Could not schedule for ${entryDate} — schedule manually in Garmin Connect`
+      });
+      if (type === 'Threshold') scheduledWorkoutId = uploaded.workoutId;
+      continue;
+    }
 
     results.push({
       type,
       workoutId:     uploaded.workoutId,
       name:          uploaded.workoutName,
-      scheduledDate: entryDate
+      scheduledDate: entryDate,
+      scheduleError: ''
     });
 
     if (type === 'Threshold') scheduledWorkoutId = uploaded.workoutId;
   }
 
   devDumpWorkouts(devDump, dateStr);
-  console.log(`[Sync] Done — ${results.length} workout(s) uploaded, Threshold scheduled for ${dateStr}`);
+  const scheduleErrors = results.filter(r => r.scheduleError).map(r => `${r.type}: ${r.scheduleError}`);
+  console.log(`[Sync] Done — ${results.length} workout(s) uploaded${scheduleErrors.length ? `, ${scheduleErrors.length} scheduling error(s)` : ', all scheduled'}`);
+  if (usingFallback.length) console.warn(`[Sync] Fallback structures used for: ${usingFallback.join(', ')}`);
 
   return {
     scheduledWorkoutId,
-    scheduledDate: dateStr,
-    workouts:      results,
-    profileUsed:   profile
+    scheduledDate:  dateStr,
+    workouts:       results,
+    usingFallback,           // non-empty → frontend should warn user to regenerate plan
+    scheduleErrors,          // non-empty → some workouts need manual scheduling
+    profileUsed:    profile
   };
 };
