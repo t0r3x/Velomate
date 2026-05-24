@@ -113,7 +113,7 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
   };
 
   const dateStr = scheduleDate || new Date().toISOString().split('T')[0];
-  const results: { type: string; workoutId: any; name: string }[] = [];
+  const results: { type: string; workoutId: any; name: string; scheduledDate: string }[] = [];
 
   // ── Derive which workout types to sync from the plan ──────────────────────────
   // Only sync types that are actually planned — never upload workouts for types not in the plan.
@@ -183,14 +183,20 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
 
     console.log(`[Sync] Uploading ${type} workout…`);
     const uploaded = await client.createWorkout(def);
-    results.push({ type, workoutId: uploaded.workoutId, name: uploaded.workoutName });
 
-    // Schedule Threshold on the target date
-    if (type === 'Threshold') {
-      console.log(`[Sync] Scheduling Threshold (${uploaded.workoutName}) for ${dateStr}`);
-      await client.scheduleWorkout({ workoutId: String(uploaded.workoutId) }, dateStr);
-      scheduledWorkoutId = uploaded.workoutId;
-    }
+    // Schedule on the workout's own plan date (each type gets its own calendar day)
+    const entryDate = entry.date || dateStr;
+    console.log(`[Sync] Scheduling ${type} (${uploaded.workoutName}) for ${entryDate}`);
+    await client.scheduleWorkout({ workoutId: String(uploaded.workoutId) }, entryDate);
+
+    results.push({
+      type,
+      workoutId:     uploaded.workoutId,
+      name:          uploaded.workoutName,
+      scheduledDate: entryDate
+    });
+
+    if (type === 'Threshold') scheduledWorkoutId = uploaded.workoutId;
   }
 
   devDumpWorkouts(devDump, dateStr);
