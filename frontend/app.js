@@ -456,7 +456,7 @@ const renderWorkoutPreview = (workouts) => {
     card.classList.add(`wt-${w.type.toLowerCase()}`);
     card.querySelector('.wc-icon').classList.add(workoutTypeIcon[w.type] || 'fa-dumbbell');
     card.querySelector('.wc-title').textContent     = workoutTypeLabel[w.type] || w.type;
-    card.querySelector('.wc-date').textContent      = w.name;
+    card.querySelector('.wc-date').textContent      = w.dateLabel || '';
     card.querySelector('.wc-total-dur').textContent = `${w.totalMinutes} min`;
 
     // Zone bar — each segment's flex-grow is proportional to its minutes

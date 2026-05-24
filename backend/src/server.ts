@@ -266,7 +266,7 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
           console.log(`[Gemini] Activity sync classified ${classified.length} workout(s): ${summary} — triggering re-evaluation`);
           classified.forEach(({ date, status }) => updatePlanEntryStatus(date, status));
           const updated = getStoredRecommendation();
-          generateRecommendation(updated.weeklyPlan).catch((err: any) =>
+          generateRecommendation(updated?.weeklyPlan).catch((err: any) =>
             console.warn('[Gemini] Auto-regen after activity sync failed:', err.message)
           );
         } else {
@@ -342,35 +342,42 @@ app.get('/api/preview-workouts', (_req: Request, res: Response) => {
     const fmtDur = (sec: number): string =>
       sec < 60 ? `${sec} sec` : sec % 60 === 0 ? `${sec / 60} min` : `${Math.round(sec / 60)} min`;
 
-    const WORKOUT_TYPES = ['Sprint', 'Threshold', 'LongRide'] as const;
+    const typeLabels: Record<string, string> = {
+      Sprint: 'Sprint', Threshold: 'Threshold', LongRide: 'Long Ride'
+    };
 
-    const workouts = WORKOUT_TYPES.map(type => {
-      // Find the next planned occurrence of this type with an AI structure
-      const entry = plan.find((e: any) => e.type === type && e.status === 'planned' && e.structure?.steps?.length);
+    // Collect the next planned occurrence of each syncable type, then sort by date
+    const workouts = (['Sprint', 'Threshold', 'LongRide'] as const)
+      .map(type => {
+        const entry = plan.find((e: any) => e.type === type && e.status === 'planned' && e.structure?.steps?.length);
+        if (!entry?.structure) return null;
 
-      if (entry?.structure) {
         const s = entry.structure;
         const totalSec = s.steps.reduce((acc: number, st: any) => acc + (st.durationSec || 0), 0);
+
+        // Human-readable date, e.g. "Wed 27 May"
+        const d = new Date(entry.date + 'T12:00:00');
+        const dateLabel = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+
         return {
           type,
-          name: entry.type === 'LongRide'
-            ? `INNERJOIN Long Ride — ${Math.round(totalSec / 60)} min`
-            : `INNERJOIN ${type} — ${entry.date}`,
+          date:         entry.date,          // YYYY-MM-DD for sorting
+          dateLabel,                          // "Wed 27 May" for display
+          name:         `INNERJOIN ${typeLabels[type]}`,
           totalMinutes: Math.round(totalSec / 60),
-          isScheduled: type === 'Threshold',
+          isScheduled:  type === 'Threshold',
           steps: s.steps.map((st: any) => ({
-            label:   st.label,
+            label:    st.label,
             duration: fmtDur(st.durationSec),
-            zone:    st.zone.toUpperCase(),
-            zoneKey: st.zone,
-            minutes: st.durationSec / 60,
+            zone:     st.zone.toUpperCase(),
+            zoneKey:  st.zone,
+            minutes:  st.durationSec / 60,
           }))
         };
-      }
-
-      // No AI structure yet — return null (filtered out below)
-      return null;
-    }).filter(Boolean);
+      })
+      .filter(Boolean)
+      // Sort chronologically — show workouts in the order they appear in the week
+      .sort((a: any, b: any) => a.date.localeCompare(b.date));
 
     res.json({ workouts });
   } catch (error: any) {
@@ -593,7 +600,7 @@ const runGeminiAutoCheck = async () => {
         console.log(`[Gemini] Auto-check: ${autoSkips.length} auto-skip(s) detected (${autoSkips.join(', ')}) — marking and regenerating`);
         autoSkips.forEach(date => updatePlanEntryStatus(date, 'auto-skipped'));
         const updated = getStoredRecommendation();
-        await generateRecommendation(updated.weeklyPlan);
+        await generateRecommendation(updated?.weeklyPlan);
         setSetting('gemini_last_generated', new Date().toISOString());
         return; // already regenerated
       }

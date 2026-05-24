@@ -137,13 +137,17 @@ export const upsertAnalysis = (analysis: any): void => {
 export const getStoredAnalysis = (): any | null => {
   const row = db.prepare('SELECT * FROM analysis WHERE id = 1').get() as any;
   if (!row) return null;
+  let suggestedZones = null;
+  try { suggestedZones = JSON.parse(row.suggestedZones || 'null'); } catch {
+    console.warn('[DB] getStoredAnalysis: failed to parse suggestedZones');
+  }
   return {
     totalCyclingRides: row.totalCyclingRides,
     maxRecordedHr: row.maxRecordedHr,
     estimatedMaxHr: row.estimatedMaxHr,
     estimatedLthr: row.estimatedLthr,
     averageRideDurationMinutes: row.averageRideDurationMinutes,
-    suggestedZones: JSON.parse(row.suggestedZones || 'null'),
+    suggestedZones,
     updatedAt: row.updatedAt
   };
 };
@@ -165,10 +169,14 @@ export const upsertProfileDB = (profile: any): void => {
 export const getStoredProfile = (): any | null => {
   const row = db.prepare('SELECT * FROM profile WHERE id = 1').get() as any;
   if (!row) return null;
+  let zones = null;
+  try { zones = JSON.parse(row.zones || 'null'); } catch {
+    console.warn('[DB] getStoredProfile: failed to parse zones');
+  }
   return {
     maxHr: row.maxHr,
     lthr: row.lthr,
-    zones: JSON.parse(row.zones || 'null'),
+    zones,
     hasCustomOverrides: !!row.hasCustomOverrides,
     lastUpdated: row.lastUpdated
   };
@@ -195,7 +203,9 @@ export const upsertDevices = (devices: any[]): void => {
 
 export const getStoredDevices = (): any[] => {
   const rows = db.prepare('SELECT rawData FROM devices ORDER BY displayName').all() as any[];
-  return rows.map(r => JSON.parse(r.rawData));
+  return rows
+    .map(r => { try { return JSON.parse(r.rawData); } catch { return null; } })
+    .filter(Boolean);
 };
 
 export const hasStoredDevices = (): boolean => {
@@ -260,15 +270,20 @@ export const upsertRecommendation = (rec: {
 export const getStoredRecommendation = (): any | null => {
   const row = db.prepare('SELECT * FROM recommendation WHERE id = 1').get() as any;
   if (!row) return null;
-  return {
-    workoutType:      row.workoutType,
-    reason:           row.reason,
-    priority:         row.priority,
-    weeklyPlan:       JSON.parse(row.weeklyPlan   || '[]'),
-    nextWeekOverview: JSON.parse(row.nextWeekOverview || 'null'),
-    loadAssessment:   JSON.parse(row.loadAssessment  || 'null'),
-    generatedAt:      row.generatedAt
-  };
+  try {
+    return {
+      workoutType:      row.workoutType,
+      reason:           row.reason,
+      priority:         row.priority,
+      weeklyPlan:       JSON.parse(row.weeklyPlan       || '[]'),
+      nextWeekOverview: JSON.parse(row.nextWeekOverview || 'null'),
+      loadAssessment:   JSON.parse(row.loadAssessment   || 'null'),
+      generatedAt:      row.generatedAt
+    };
+  } catch (e) {
+    console.warn('[DB] getStoredRecommendation: JSON parse failed — returning null', e);
+    return null;
+  }
 };
 
 /** Update the status of a single plan entry identified by date. Returns true if found. */
@@ -279,7 +294,13 @@ export const updatePlanEntryStatus = (
   const row = db.prepare('SELECT weeklyPlan FROM recommendation WHERE id = 1').get() as any;
   if (!row) return false;
 
-  const plan: PlanEntry[] = JSON.parse(row.weeklyPlan || '[]');
+  let plan: PlanEntry[];
+  try {
+    plan = JSON.parse(row.weeklyPlan || '[]');
+  } catch {
+    console.warn('[DB] updatePlanEntryStatus: weeklyPlan JSON parse failed');
+    return false;
+  }
   const idx = plan.findIndex(e => e.date === date);
   if (idx === -1) return false;
 
@@ -294,7 +315,13 @@ export const swapPlanEntryDates = (date1: string, date2: string): boolean => {
   const row = db.prepare('SELECT weeklyPlan FROM recommendation WHERE id = 1').get() as any;
   if (!row) return false;
 
-  const plan: PlanEntry[] = JSON.parse(row.weeklyPlan || '[]');
+  let plan: PlanEntry[];
+  try {
+    plan = JSON.parse(row.weeklyPlan || '[]');
+  } catch {
+    console.warn('[DB] swapPlanEntryDates: weeklyPlan JSON parse failed');
+    return false;
+  }
   const idx1 = plan.findIndex(e => e.date === date1);
   const idx2 = plan.findIndex(e => e.date === date2);
   if (idx1 === -1 || idx2 === -1) return false;
