@@ -93,7 +93,7 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
     return z ? new HrmTarget(z.min, z.max) : new HrmTarget(0, 220);
   };
 
-  /** Build a Garmin WorkoutDef from an AI-generated (or fallback) structure. */
+  /** Build a Garmin WorkoutDef from a structure. */
   const buildFromStructure = (
     name: string,
     description: string,
@@ -112,75 +112,94 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
     return builder.build();
   };
 
-  /**
-   * Find the AI-provided structure for a type from the plan.
-   * Returns the structure + whether it was AI-provided (for logging).
-   */
-  const resolveStructure = (type: string): { structure: WorkoutStructure; aiProvided: boolean } => {
-    const entry = planEntries?.find(e => e.type === type && e.status === 'planned' && e.structure);
-    if (entry?.structure) return { structure: entry.structure, aiProvided: true };
-    console.warn(`[Sync] No AI structure for ${type} — using fallback defaults`);
-    return { structure: FALLBACK_STRUCTURES[type]!, aiProvided: false };
-  };
-
   const dateStr = scheduleDate || new Date().toISOString().split('T')[0];
   const results: { type: string; workoutId: any; name: string }[] = [];
 
-  // ── 1. Sprint ────────────────────────────────────────────────────────────────
-  const { structure: sprintStr, aiProvided: sprintAI } = resolveStructure('Sprint');
-  const sprintTotal = Math.round(sprintStr.steps.reduce((s, st) => s + st.durationSec, 0) / 60);
-  console.log(`[Sync] Sprint: ${sprintAI ? 'AI' : 'fallback'} — ${sprintTotal} min, ${sprintStr.steps.length} steps`);
-  const sprintDef = buildFromStructure(
-    `INNERJOIN Sprint — ${profile.lthr} LTHR`,
-    'Sprint intervals targeted to heart rate zones',
-    sprintStr
-  );
+  // ── Derive which workout types to sync from the plan ──────────────────────────
+  // Only sync types that are actually planned — never upload workouts for types not in the plan.
+  const SYNCABLE_TYPES = ['Sprint', 'Threshold', 'LongRide'] as const;
+  type SyncType = typeof SYNCABLE_TYPES[number];
 
-  // ── 2. Threshold ─────────────────────────────────────────────────────────────
-  const { structure: threshStr, aiProvided: threshAI } = resolveStructure('Threshold');
-  const threshTotal = Math.round(threshStr.steps.reduce((s, st) => s + st.durationSec, 0) / 60);
-  console.log(`[Sync] Threshold: ${threshAI ? 'AI' : 'fallback'} — ${threshTotal} min, ${threshStr.steps.length} steps`);
-  const thresholdDef = buildFromStructure(
-    `INNERJOIN Threshold — ${profile.lthr} LTHR`,
-    'Threshold intervals (Z4) to increase aerobic power',
-    threshStr
-  );
+  // Build a map: type → first planned entry with that type (AI structure preferred)
+  const plannedEntryByType = new Map<string, PlanEntry>();
+  for (const entry of (planEntries || [])) {
+    if (entry.status === 'planned' && SYNCABLE_TYPES.includes(entry.type as SyncType)) {
+      if (!plannedEntryByType.has(entry.type)) {
+        plannedEntryByType.set(entry.type, entry);
+      }
+    }
+  }
 
-  // ── 3. Long Ride ─────────────────────────────────────────────────────────────
-  const { structure: longStr, aiProvided: longAI } = resolveStructure('LongRide');
-  const longTotal = Math.round(longStr.steps.reduce((s, st) => s + st.durationSec, 0) / 60);
-  console.log(`[Sync] LongRide: ${longAI ? 'AI' : 'fallback'} — ${longTotal} min, ${longStr.steps.length} steps`);
-  const longRideDef = buildFromStructure(
-    `INNERJOIN Long Ride — ${longTotal} min`,
-    'Steady endurance ride scaled to recent training volume',
-    longStr
-  );
+  // If the plan is empty or has no syncable types, fall back to all three so the button
+  // is never a no-op (e.g. first-time sync before plan is generated).
+  if (plannedEntryByType.size === 0) {
+    console.warn('[Sync] No planned syncable entries found — falling back to all three types');
+    for (const type of SYNCABLE_TYPES) {
+      plannedEntryByType.set(type, { date: dateStr, type, reason: '', status: 'planned', structure: null });
+    }
+  }
 
-  // ── Dev dump (DEV_WORKOUT_DUMP=true in .env) ──────────────────────────────────
-  devDumpWorkouts({ sprint: sprintDef, threshold: thresholdDef, longride: longRideDef }, dateStr);
+  const typesToSync = [...plannedEntryByType.keys()];
+  console.log(`[Sync] Syncing ${typesToSync.length} workout type(s) from plan: ${typesToSync.join(', ')}`);
 
-  // ── Upload to Garmin ──────────────────────────────────────────────────────────
-  console.log('[Sync] Uploading Sprint workout…');
-  const sprintWorkout = await client.createWorkout(sprintDef);
-  results.push({ type: 'Sprint', workoutId: sprintWorkout.workoutId, name: sprintWorkout.workoutName });
+  // ── Build and upload each planned type ───────────────────────────────────────
+  const devDump: Record<string, any> = {};
+  let scheduledWorkoutId: any = null;
 
-  console.log('[Sync] Uploading Threshold workout…');
-  const thresholdWorkout = await client.createWorkout(thresholdDef);
-  results.push({ type: 'Threshold', workoutId: thresholdWorkout.workoutId, name: thresholdWorkout.workoutName });
+  for (const type of typesToSync) {
+    const entry = plannedEntryByType.get(type)!;
 
-  console.log('[Sync] Uploading Long Ride workout…');
-  const longRideWorkout = await client.createWorkout(longRideDef);
-  results.push({ type: 'LongRide', workoutId: longRideWorkout.workoutId, name: longRideWorkout.workoutName });
+    // Resolve structure: use AI-provided structure if available, else fallback
+    let structure: WorkoutStructure;
+    let aiProvided: boolean;
+    if (entry.structure?.steps?.length) {
+      structure  = entry.structure;
+      aiProvided = true;
+    } else {
+      console.warn(`[Sync] No AI structure for ${type} — using fallback defaults`);
+      structure  = FALLBACK_STRUCTURES[type]!;
+      aiProvided = false;
+    }
 
-  console.log(`[Sync] Scheduling Threshold (${thresholdWorkout.workoutName}) for ${dateStr}`);
-  await client.scheduleWorkout({ workoutId: String(thresholdWorkout.workoutId) }, dateStr);
+    const totalMin = Math.round(structure.steps.reduce((s, st) => s + st.durationSec, 0) / 60);
+    console.log(`[Sync] ${type}: ${aiProvided ? 'AI' : 'fallback'} — ${totalMin} min, ${structure.steps.length} steps`);
 
-  console.log(`[Sync] Done — Sprint ${sprintTotal} min (${sprintAI ? 'AI' : 'fallback'}), Threshold ${threshTotal} min (${threshAI ? 'AI' : 'fallback'}), LongRide ${longTotal} min (${longAI ? 'AI' : 'fallback'}), scheduled for ${dateStr}`);
+    // Build workout name
+    let workoutName: string;
+    let workoutDesc: string;
+    if (type === 'Sprint') {
+      workoutName = `INNERJOIN Sprint`;
+      workoutDesc = 'Sprint intervals targeted to heart rate zones';
+    } else if (type === 'Threshold') {
+      workoutName = `INNERJOIN Threshold`;
+      workoutDesc = 'Threshold intervals (Z4) to increase aerobic power';
+    } else {
+      workoutName = `INNERJOIN Long Ride`;
+      workoutDesc = 'Steady endurance ride scaled to recent training volume';
+    }
+
+    const def = buildFromStructure(workoutName, workoutDesc, structure);
+    devDump[type.toLowerCase()] = def;
+
+    console.log(`[Sync] Uploading ${type} workout…`);
+    const uploaded = await client.createWorkout(def);
+    results.push({ type, workoutId: uploaded.workoutId, name: uploaded.workoutName });
+
+    // Schedule Threshold on the target date
+    if (type === 'Threshold') {
+      console.log(`[Sync] Scheduling Threshold (${uploaded.workoutName}) for ${dateStr}`);
+      await client.scheduleWorkout({ workoutId: String(uploaded.workoutId) }, dateStr);
+      scheduledWorkoutId = uploaded.workoutId;
+    }
+  }
+
+  devDumpWorkouts(devDump, dateStr);
+  console.log(`[Sync] Done — ${results.length} workout(s) uploaded, Threshold scheduled for ${dateStr}`);
 
   return {
-    scheduledWorkoutId: thresholdWorkout.workoutId,
-    scheduledDate:      dateStr,
-    workouts:           results,
-    profileUsed:        profile
+    scheduledWorkoutId,
+    scheduledDate: dateStr,
+    workouts:      results,
+    profileUsed:   profile
   };
 };

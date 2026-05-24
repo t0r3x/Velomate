@@ -970,7 +970,14 @@ btnSync.addEventListener('click', async () => {
     const data = await response.json();
 
     if (response.ok) {
-      document.getElementById('sync-scheduled-date').textContent = data.scheduledDate;
+      const count     = data.workouts?.length || 0;
+      const hasThresh = data.workouts?.some(w => w.type === 'Threshold');
+      let msg = `Uploaded ${count} workout${count !== 1 ? 's' : ''} to Garmin.`;
+      if (hasThresh && data.scheduledDate) {
+        msg += ` Threshold scheduled for <strong>${data.scheduledDate}</strong>.`;
+      }
+      msg += ' Sync your device to apply!';
+      document.getElementById('sync-result-msg').innerHTML = msg;
 
       syncedWorkoutsList.innerHTML = '';
       const tpl = document.getElementById('tpl-synced-workout');
