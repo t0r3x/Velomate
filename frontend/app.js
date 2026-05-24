@@ -8,7 +8,6 @@ let setupComplete         = false;   // persisted in DB settings table, not loca
 let statusLoaded          = false;   // true once checkStatus() has returned at least once
 let geminiStatusLoaded    = false;   // true once fetchGeminiKeyStatus() has returned
 let currentProfile        = null;
-let devicesLoaded         = false;
 let currentRecommendation = null;
 let psModalMode           = false;   // true when HR profile opened as overlay over dashboard
 
@@ -62,14 +61,8 @@ const aiNextWeekEmphasis  = document.getElementById('ai-next-week-emphasis');
 
 const preferredDaysGrid     = document.getElementById('preferred-days-grid');
 const geminiModelSelect     = document.getElementById('gemini-model');
-const workoutPreviewSection = document.getElementById('workout-preview-section');
-const workoutPreviewList         = document.getElementById('workout-preview-list');
-const btnTogglePreview           = document.getElementById('btn-toggle-preview');
-
 const btnAnalyze        = document.getElementById('btn-analyze');
 const activitiesList    = document.getElementById('activities-list');
-const deviceSelect      = document.getElementById('device-select');
-const btnRefreshDevices = document.getElementById('btn-refresh-devices');
 const authLoading       = document.getElementById('auth-status-loading');
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -425,64 +418,6 @@ const renderRecommendation = (rec) => {
 
 };
 
-/** Fetch workout definitions for the preview panel and render them. */
-const fetchWorkoutPreview = async () => {
-  if (!workoutPreviewSection) return;
-  try {
-    const res = await fetch(`${API_BASE_URL}/api/preview-workouts`);
-    if (!res.ok) return;
-    const data = await res.json();
-    renderWorkoutPreview(data.workouts || []);
-    workoutPreviewSection.classList.remove('hidden');
-  } catch { /* non-critical — preview is decorative */ }
-};
-
-/** Render workout preview cards inside the collapsible section. */
-const renderWorkoutPreview = (workouts) => {
-  workoutPreviewList.innerHTML = '';
-
-  workouts.forEach(w => {
-    const card = cloneTemplate('tpl-workout-card');
-    // Add type class for icon theming
-    card.classList.add(`wt-${w.type.toLowerCase()}`);
-    card.querySelector('.wc-icon').classList.add(workoutTypeIcon[w.type] || 'fa-dumbbell');
-    card.querySelector('.wc-title').textContent     = workoutTypeLabel[w.type] || w.type;
-    card.querySelector('.wc-date').textContent      = w.dateLabel || '';
-    card.querySelector('.wc-total-dur').textContent = `${w.totalMinutes} min`;
-
-    // Zone bar — each segment's flex-grow is proportional to its minutes
-    const bar = card.querySelector('.wc-zone-bar');
-    (w.steps || []).forEach(step => {
-      const seg = cloneTemplate('tpl-workout-bar-seg');
-      seg.style.flex       = String(step.minutes);
-      seg.style.background = zoneColors[step.zoneKey] || 'var(--z2-color)';
-      bar.appendChild(seg);
-    });
-
-    // Step rows
-    const stepsEl = card.querySelector('.wc-steps');
-    (w.steps || []).forEach(step => {
-      const row = cloneTemplate('tpl-workout-step');
-      // Dot color matches zone
-      const dot = row.querySelector('.wc-step-dot');
-      if (dot) dot.style.background = zoneColors[step.zoneKey] || 'var(--z2-color)';
-      row.querySelector('.wc-step-label').textContent = step.label;
-      row.querySelector('.wc-step-dur').textContent   = step.duration;
-      const zoneTag = row.querySelector('.wc-step-zone');
-      zoneTag.textContent = step.zone;
-      zoneTag.classList.add(step.zoneKey);   // .z1/.z2/… for CSS color classes
-      stepsEl.appendChild(row);
-    });
-
-    // Schedule / upload notes
-    const scheduledNote = card.querySelector('.wc-schedule-note--scheduled');
-    const uploadNote    = card.querySelector('.wc-schedule-note--upload');
-    if (scheduledNote) scheduledNote.hidden = !w.isScheduled;
-    if (uploadNote)    uploadNote.hidden    = !!w.isScheduled;
-
-    workoutPreviewList.appendChild(card);
-  });
-};
 
 /** Fetch Gemini key status + setupComplete flag from backend, update panel UI and gate state. */
 const fetchGeminiKeyStatus = async () => {
@@ -540,7 +475,6 @@ const fetchRecommendation = async (forceRefresh = false) => {
     }
     renderRecommendation(data);
     setRecState('loaded');
-    fetchWorkoutPreview();
   } catch (err) {
     document.getElementById('rec-error-msg').textContent = 'Failed to connect to backend.';
     setRecState('error');
@@ -565,7 +499,6 @@ const rescheduleToToday = async (fromDate) => {
     }
     renderRecommendation(data);
     setRecState('loaded');
-    fetchWorkoutPreview();
     toast('success', 'Workout moved to today', 'Plan updated — AI recalculated the week.');
   } catch {
     toast('error', 'Connection Error', 'Could not reach backend.');
@@ -587,7 +520,6 @@ const skipToday = async () => {
     }
     renderRecommendation(data);
     setRecState('loaded');
-    fetchWorkoutPreview();
     toast('success', 'Workout skipped', 'Plan updated by AI.');
   } catch {
     toast('error', 'Skip Failed', 'Could not reach backend.');
@@ -628,7 +560,6 @@ const updateAuthUI = (loggedIn) => {
     btnSync.disabled    = false;
     btnAnalyze.disabled = false;
     setBtn(btnAnalyze, 'connected');
-    if (!devicesLoaded) fetchDevices();
     maybeEnterDashboard();
   } else {
     statusDot.className = 'status-dot disconnected';
@@ -637,10 +568,6 @@ const updateAuthUI = (loggedIn) => {
     loggedInSection.classList.add('hidden');
     btnSync.disabled    = true;
     btnAnalyze.disabled = true;
-    deviceSelect.innerHTML    = '<option value="">Connect to Garmin first…</option>';
-    deviceSelect.disabled     = true;
-    btnRefreshDevices.disabled = true;
-    devicesLoaded             = false;
     garminBtnHrLabel.textContent = '';
     maybeEnterDashboard();   // gated — waits for both statusLoaded + geminiStatusLoaded
   }
@@ -756,79 +683,6 @@ const populateProfileUI = (profile) => {
 // Prevent Enter-key submission on the Gemini key form
 geminiKeyForm.addEventListener('submit', e => e.preventDefault());
 
-
-// ── Devices ────────────────────────────────────────────────────────────────────
-
-// Populate the device <select> from an array of device objects
-const renderDeviceOptions = (devices) => {
-  deviceSelect.innerHTML = '';
-
-  if (Array.isArray(devices) && devices.length > 0) {
-    // Sort: Edge devices first
-    const sorted = [...devices].sort((a, b) => {
-      const aEdge = (a.productDisplayName || '').toLowerCase().includes('edge');
-      const bEdge = (b.productDisplayName || '').toLowerCase().includes('edge');
-      return aEdge === bEdge ? 0 : aEdge ? -1 : 1;
-    });
-
-    sorted.forEach(d => {
-      const opt  = document.createElement('option');
-      opt.value  = d.deviceId || d.unitId || '';
-      const name = d.productDisplayName || d.deviceMetaDataDTO?.deviceProductDescription || 'Unknown device';
-      const type = d.activityTypes?.join(', ') || d.activityType || '';
-      opt.textContent = name + (type ? ` — ${type}` : '');
-      deviceSelect.appendChild(opt);
-    });
-
-    deviceSelect.disabled      = false;
-    btnRefreshDevices.disabled = false;
-
-    // Auto-select first Edge device
-    const edgeOpt = [...deviceSelect.options].find(o => o.text.toLowerCase().includes('edge'));
-    if (edgeOpt) edgeOpt.selected = true;
-  } else {
-    const opt       = document.createElement('option');
-    opt.textContent = 'No devices found';
-    opt.disabled    = true;
-    deviceSelect.appendChild(opt);
-    btnRefreshDevices.disabled = false;
-  }
-};
-
-// Fetch devices from backend (served from DB cache; fetches from Garmin only on first use)
-const fetchDevices = async () => {
-  deviceSelect.innerHTML = '<option value="">Loading devices…</option>';
-  deviceSelect.disabled  = true;
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/devices`);
-    if (!response.ok) throw new Error('Devices error');
-    renderDeviceOptions(await response.json());
-    devicesLoaded = true;
-  } catch (error) {
-    console.error('Error fetching devices:', error);
-    deviceSelect.innerHTML = '<option value="" disabled>Failed to load devices</option>';
-  }
-};
-
-// Force re-fetch from Garmin and update the DB cache (manual refresh button)
-const refreshDevices = async () => {
-  btnRefreshDevices.disabled = true;
-  btnRefreshDevices.classList.add('spinning');
-  deviceSelect.disabled = true;
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/devices/refresh`, { method: 'POST' });
-    if (!response.ok) throw new Error('Refresh error');
-    renderDeviceOptions(await response.json());
-  } catch (error) {
-    console.error('Error refreshing devices:', error);
-    deviceSelect.innerHTML     = '<option value="" disabled>Refresh failed</option>';
-    btnRefreshDevices.disabled = false;
-  } finally {
-    btnRefreshDevices.classList.remove('spinning');
-  }
-};
 
 // ── Assessment ─────────────────────────────────────────────────────────────────
 
@@ -1186,7 +1040,6 @@ btnConfirmProfile.addEventListener('click', async () => {
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 
-btnRefreshDevices.addEventListener('click', refreshDevices);
 btnRefreshRec.addEventListener('click', () => fetchRecommendation(true));
 btnSkipToday.addEventListener('click', skipToday);
 btnRetryRec.addEventListener('click', () => fetchRecommendation(false));
@@ -1195,9 +1048,6 @@ document.getElementById('btn-generate-first-plan').addEventListener('click', () 
   fetchRecommendation(true);
 });
 document.getElementById('btn-cancel-profile').addEventListener('click', closePsModal);
-btnTogglePreview.addEventListener('click', () => {
-  workoutPreviewSection.classList.toggle('is-open');
-});
 document.getElementById('btn-edit-hr-profile').addEventListener('click', () => {
   closePanel();
   // Open as modal overlay — re-fetches Garmin data for fresh suggestions

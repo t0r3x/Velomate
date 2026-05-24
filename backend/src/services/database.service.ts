@@ -220,37 +220,6 @@ export const getStoredProfile = (): any | null => {
   };
 };
 
-// ── Devices ───────────────────────────────────────────────────────────────────
-const stmtUpsertDevice = db.prepare(`
-  INSERT OR REPLACE INTO devices (deviceId, displayName, activityTypes, rawData, fetchedAt)
-  VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-`);
-
-const upsertManyDevices = db.transaction((devices: any[]) => {
-  for (const d of devices) {
-    const deviceId = String(d.deviceId || d.unitId || '');
-    const displayName = d.productDisplayName || d.deviceMetaDataDTO?.deviceProductDescription || '';
-    const activityTypes = JSON.stringify(d.activityTypes || []);
-    stmtUpsertDevice.run(deviceId, displayName, activityTypes, JSON.stringify(d));
-  }
-});
-
-export const upsertDevices = (devices: any[]): void => {
-  upsertManyDevices(devices);
-};
-
-export const getStoredDevices = (): any[] => {
-  const rows = db.prepare('SELECT rawData FROM devices ORDER BY displayName').all() as any[];
-  return rows
-    .map(r => { try { return JSON.parse(r.rawData); } catch { return null; } })
-    .filter(Boolean);
-};
-
-export const hasStoredDevices = (): boolean => {
-  const row = db.prepare('SELECT COUNT(*) as count FROM devices').get() as { count: number };
-  return row.count > 0;
-};
-
 // ── Settings ──────────────────────────────────────────────────────────────────
 export const getSetting = (key: string): string | null => {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
