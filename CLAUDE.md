@@ -126,11 +126,10 @@ These are Garmin's built-in 5 zones based on % max HR — boundaries differ slig
 ## AI / Gemini integration
 
 ### Key invariant
-The **first plan** is ONLY generated when the user explicitly acts:
-- Confirms HR profile in Step 2 setup → `fetchRecommendation(true)` called
-- OR clicks "Generate my first plan" button on `rec-state-no-plan` screen
+The **first plan** is ONLY generated when the user explicitly clicks **"Generate my first plan"** on the `rec-state-no-plan` screen.
 
-The hourly auto-check (`runGeminiAutoCheck`) **never creates the first plan** — it early-returns if `getStoredRecommendation()` is null.
+- Confirming HR profile in Step 2 calls `fetchRecommendation(false)` (read-only) → shows `rec-state-no-plan` with the button
+- The hourly auto-check (`runGeminiAutoCheck`) **never creates the first plan** — it early-returns if `getStoredRecommendation()` is null
 
 ### Auto-check logic (runs on startup + every hour)
 1. No API key → skip
