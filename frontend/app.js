@@ -354,10 +354,25 @@ const renderRecommendation = (rec) => {
       cell.querySelector('.wdc-day-label').textContent = DAY_NAMES[d.getDay()];
       cell.querySelector('.wdc-date').textContent      = d.getDate();
 
-      if (isToday)                    cell.classList.add('is-today');
-      if (entry.status === 'completed')   cell.classList.add('is-completed');
+      if (isToday)                              cell.classList.add('is-today');
+      if (entry.status === 'completed')         cell.classList.add('is-completed');
+      if (entry.status === 'completed-partial') cell.classList.add('is-completed-partial');
+      if (entry.status === 'completed-mismatch')cell.classList.add('is-mismatch');
       if (entry.status === 'skipped' || entry.status === 'auto-skipped')
-                                      cell.classList.add('is-skipped');
+                                                cell.classList.add('is-skipped');
+
+      // "Move to today" button — only on future planned workouts (not rest, not today, not past)
+      if (!isRest && !isToday && entry.status === 'planned' && entry.date > todayStr) {
+        const moveBtn = document.createElement('button');
+        moveBtn.className = 'btn-move-today';
+        moveBtn.title     = 'Move to today';
+        moveBtn.innerHTML = '<i class="fa-solid fa-calendar-day"></i>';
+        moveBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          rescheduleToToday(entry.date);
+        });
+        cell.appendChild(moveBtn);
+      }
 
       aiWeekGrid.appendChild(cell);
     });
@@ -526,6 +541,31 @@ const fetchRecommendation = async (forceRefresh = false) => {
   } catch (err) {
     document.getElementById('rec-error-msg').textContent = 'Failed to connect to backend.';
     setRecState('error');
+  }
+};
+
+/** Move a future planned workout to today by swapping it with today's plan entry. */
+const rescheduleToToday = async (fromDate) => {
+  const toDate = new Date().toLocaleDateString('sv-SE');
+  if (fromDate === toDate) return;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/recommendation/reschedule`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fromDate, toDate })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      toast('error', 'Reschedule Failed', data.error || 'Could not move workout.');
+      return;
+    }
+    renderRecommendation(data);
+    setRecState('loaded');
+    fetchWorkoutPreview();
+    toast('success', 'Workout moved to today', 'Plan updated — Gemini recalculated the week.');
+  } catch {
+    toast('error', 'Connection Error', 'Could not reach backend.');
   }
 };
 

@@ -32,18 +32,40 @@ export const fetchCyclingActivities = async (days: number = 90) => {
     return isCycling && isRecent;
   });
 
-  return cyclingActivities.map(act => ({
-    activityId: act.activityId,
-    name: act.activityName,
-    type: act.activityType?.typeKey,
-    startTime: act.startTimeLocal,
-    distanceKm: act.distance ? Math.round((act.distance / 1000) * 10) / 10 : 0,
-    durationMinutes: act.duration ? Math.round(act.duration / 60) : 0,
-    averageHr: act.averageHR || 0,
-    maxHr: act.maxHR || 0,
-    averagePower: (act.avgPower as number) || 0,
-    maxPower: (act.maxPower as number) || 0,
-  }));
+  let zonesFoundCount = 0;
+
+  const mapped = cyclingActivities.map(act => {
+    // Extract Garmin's 5-zone time distribution (seconds per zone, index 0=z1 … 4=z5).
+    // Garmin may return this as hrTimeInHrZone or timeInHrZone depending on the API version.
+    const rawZones =
+      (act as any).hrTimeInHrZone ||
+      (act as any).timeInHrZone   ||
+      null;
+
+    const timeInZones: number[] | null =
+      Array.isArray(rawZones) && rawZones.length >= 5
+        ? (rawZones as number[]).slice(0, 5).map(Number)
+        : null;
+
+    if (timeInZones) zonesFoundCount++;
+
+    return {
+      activityId:     act.activityId,
+      name:           act.activityName,
+      type:           act.activityType?.typeKey,
+      startTime:      act.startTimeLocal,
+      distanceKm:     act.distance ? Math.round((act.distance / 1000) * 10) / 10 : 0,
+      durationMinutes: act.duration ? Math.round(act.duration / 60) : 0,
+      averageHr:      act.averageHR || 0,
+      maxHr:          act.maxHR || 0,
+      averagePower:   (act.avgPower as number) || 0,
+      maxPower:       (act.maxPower as number) || 0,
+      timeInZones,    // null when Garmin doesn't include zone data in the summary
+    };
+  });
+
+  console.log(`[Activities] Zone data found for ${zonesFoundCount}/${mapped.length} cycling activities`);
+  return mapped;
 };
 
 export const assessProgression = (activities: any[]) => {
@@ -59,8 +81,8 @@ export const assessProgression = (activities: any[]) => {
     }
   });
 
-  const averageRideDuration = activities.length > 0 
-    ? Math.round(durationSumSeconds / activities.length) 
+  const averageRideDuration = activities.length > 0
+    ? Math.round(durationSumSeconds / activities.length)
     : 120 * 60;
 
   let estimatedMaxHr = maxRecordedHr > 0 ? maxRecordedHr : 190;

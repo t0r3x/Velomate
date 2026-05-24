@@ -1828,6 +1828,74 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
   text-decoration: line-through;
 }
 
+/* Partial completion — amber flag badge top-right */
+.week-day-cell.is-completed-partial {
+  opacity: 0.8;
+  position: relative;
+}
+.week-day-cell.is-completed-partial::after {
+  content: '\f024';
+  font-family: 'Font Awesome 6 Free';
+  font-weight: 900;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 0.65rem;
+  color: var(--z3-color);
+  opacity: 0.9;
+}
+
+/* Mismatch — orange warning badge top-right */
+.week-day-cell.is-mismatch {
+  opacity: 0.75;
+  position: relative;
+}
+.week-day-cell.is-mismatch::after {
+  content: '\f071';
+  font-family: 'Font Awesome 6 Free';
+  font-weight: 900;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 0.65rem;
+  color: var(--z4-color);
+  opacity: 0.9;
+}
+
+/* Ensure all cells have position:relative for absolute-positioned children */
+.week-day-cell {
+  position: relative;
+}
+
+/* Move-to-today button — hidden by default, appears on hover */
+.btn-move-today {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--primary-color);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  opacity: 0;
+  transition: opacity var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
+  padding: 0;
+  line-height: 1;
+}
+.week-day-cell:hover .btn-move-today {
+  opacity: 1;
+}
+.btn-move-today:hover {
+  background: rgba(99, 102, 241, 0.28);
+  transform: scale(1.1);
+}
+
 /* Next week overview */
 .ai-next-week {
   background: rgba(255,255,255,0.02);
