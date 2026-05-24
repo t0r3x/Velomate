@@ -331,62 +331,46 @@ app.post('/api/devices/refresh', async (req: Request, res: Response) => {
 
 // ── Workout Preview ───────────────────────────────────────────────────────────
 
-app.get('/api/preview-workouts', async (req: Request, res: Response) => {
+app.get('/api/preview-workouts', (_req: Request, res: Response) => {
   try {
-    const profile = await getActiveProfile();
+    const rec = getStoredRecommendation();
+    const plan: any[] = rec?.weeklyPlan || [];
 
-    // Estimate long ride duration from stored activities (no live Garmin call needed)
-    let longRideDurationMinutes = 120;
-    try {
-      const stored = getStoredActivities();
-      if (stored.length > 0) {
-        const recent = stored.slice(0, 20);
-        const avgMin = recent.reduce((s, a) => s + (a.durationMinutes || 0), 0) / recent.length;
-        longRideDurationMinutes = Math.min(240, Math.max(90, Math.round(avgMin * 1.2)));
+    /** Format durationSec as human-readable string */
+    const fmtDur = (sec: number): string =>
+      sec < 60 ? `${sec} sec` : sec % 60 === 0 ? `${sec / 60} min` : `${Math.round(sec / 60)} min`;
+
+    const WORKOUT_TYPES = ['Sprint', 'Threshold', 'LongRide'] as const;
+
+    const workouts = WORKOUT_TYPES.map(type => {
+      // Find the next planned occurrence of this type with an AI structure
+      const entry = plan.find((e: any) => e.type === type && e.status === 'planned' && e.structure?.steps?.length);
+
+      if (entry?.structure) {
+        const s = entry.structure;
+        const totalSec = s.steps.reduce((acc: number, st: any) => acc + (st.durationSec || 0), 0);
+        return {
+          type,
+          name: entry.type === 'LongRide'
+            ? `INNERJOIN Long Ride — ${Math.round(totalSec / 60)} min`
+            : `INNERJOIN ${type} — ${entry.date}`,
+          totalMinutes: Math.round(totalSec / 60),
+          isScheduled: type === 'Threshold',
+          steps: s.steps.map((st: any) => ({
+            label:   st.label,
+            duration: fmtDur(st.durationSec),
+            zone:    st.zone.toUpperCase(),
+            zoneKey: st.zone,
+            minutes: st.durationSec / 60,
+          }))
+        };
       }
-    } catch { /* use default */ }
 
-    const sprintTotal    = Math.round(10 + 6 * (0.5 + 4) + 10); // 47 min
-    const thresholdTotal = Math.round(10 + 3 * (8 + 4) + 10);   // 56 min
+      // No AI structure yet — return null (filtered out below)
+      return null;
+    }).filter(Boolean);
 
-    const workouts = [
-      {
-        type: 'Sprint',
-        name: `INNERJOIN Sprint — ${profile.lthr} LTHR`,
-        totalMinutes: sprintTotal,
-        weekOffset: -2,
-        steps: [
-          { label: 'Warm-up',     duration: '10 min',      zone: 'Z2', zoneKey: 'z2', minutes: 10 },
-          { label: '6× Sprint',   duration: '30 sec each', zone: 'Z5', zoneKey: 'z5', minutes: 3  },
-          { label: '6× Recovery', duration: '4 min each',  zone: 'Z1', zoneKey: 'z1', minutes: 24 },
-          { label: 'Cool-down',   duration: '10 min',      zone: 'Z1', zoneKey: 'z1', minutes: 10 },
-        ]
-      },
-      {
-        type: 'Threshold',
-        name: `INNERJOIN Threshold — ${profile.lthr} LTHR`,
-        totalMinutes: thresholdTotal,
-        weekOffset: 0,
-        isScheduled: true,
-        steps: [
-          { label: 'Warm-up',       duration: '10 min',     zone: 'Z2',    zoneKey: 'z2', minutes: 10 },
-          { label: '3× Threshold',  duration: '8 min each', zone: 'Z4',    zoneKey: 'z4', minutes: 24 },
-          { label: '3× Recovery',   duration: '4 min each', zone: 'Z1/Z2', zoneKey: 'z1', minutes: 12 },
-          { label: 'Cool-down',     duration: '10 min',     zone: 'Z1',    zoneKey: 'z1', minutes: 10 },
-        ]
-      },
-      {
-        type: 'LongRide',
-        name: `INNERJOIN Long Ride — ${longRideDurationMinutes} min`,
-        totalMinutes: longRideDurationMinutes,
-        weekOffset: 2,
-        steps: [
-          { label: 'Steady Endurance', duration: `${longRideDurationMinutes} min`, zone: 'Z2', zoneKey: 'z2', minutes: longRideDurationMinutes },
-        ]
-      }
-    ];
-
-    res.json({ workouts, profile });
+    res.json({ workouts });
   } catch (error: any) {
     res.status(500).json({ error: 'Failed to generate preview.', details: error.message });
   }
@@ -397,7 +381,8 @@ app.get('/api/preview-workouts', async (req: Request, res: Response) => {
 app.post('/api/sync-workouts', async (req: Request, res: Response) => {
   const { scheduleDate } = req.body;
   try {
-    const result = await syncAndScheduleWorkouts(scheduleDate);
+    const rec = getStoredRecommendation();
+    const result = await syncAndScheduleWorkouts(rec?.weeklyPlan, scheduleDate);
     res.json({ success: true, ...result });
   } catch (error: any) {
     res.status(error.message.includes('authenticated') ? 401 : 500).json({
@@ -466,16 +451,7 @@ app.get('/api/recommendation', (_req: Request, res: Response) => {
   const ageMs = Date.now() - new Date(rec.generatedAt).getTime();
   const stale = ageMs > 23 * 60 * 60 * 1000;
 
-  // Compute dynamic long ride duration from stored activities
-  const stored   = getStoredActivities();
-  const recent   = stored.slice(0, 20);
-  let longRideDuration = 120;
-  if (recent.length > 0) {
-    const avg = recent.reduce((s, a) => s + (a.durationMinutes || 0), 0) / recent.length;
-    longRideDuration = Math.min(240, Math.max(90, Math.round(avg * 1.2)));
-  }
-
-  res.json({ ...rec, stale, longRideDuration });
+  res.json({ ...rec, stale });
 });
 
 /** Extract the human-readable message from a Gemini API error response. */

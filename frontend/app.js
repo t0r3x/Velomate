@@ -308,8 +308,7 @@ const renderRecommendation = (rec) => {
   // Week grid
   const plan = Array.isArray(rec.weeklyPlan) ? rec.weeklyPlan : [];
   aiWeekGrid.innerHTML = '';
-  const longRideDur = rec.longRideDuration || 120;
-  const workoutDuration = { Sprint: '47 min', Threshold: '56 min', LongRide: `${longRideDur} min` };
+  // Durations come from AI-generated structures (entry.structure.totalMinutes)
 
   if (plan.length > 0) {
     // Week label: first date to last date
@@ -329,7 +328,9 @@ const renderRecommendation = (rec) => {
         cell.classList.add('has-workout', `wt-${entry.type.toLowerCase()}`);
         cell.querySelector('.wdc-workout-chip i').classList.add(workoutTypeIcon[entry.type] || 'fa-dumbbell');
         cell.querySelector('.wdc-workout-label').textContent = workoutTypeLabel[entry.type] || entry.type;
-        cell.querySelector('.wdc-duration').textContent = workoutDuration[entry.type] || '';
+        cell.querySelector('.wdc-duration').textContent = entry.structure?.totalMinutes
+          ? `${entry.structure.totalMinutes} min`
+          : '';
         cell.querySelector('.wdc-scheduled-badge').hidden = true;
         // Show a small tooltip via title
         cell.title = entry.reason || '';

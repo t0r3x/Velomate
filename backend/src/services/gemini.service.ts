@@ -111,7 +111,8 @@ const buildPrompt = (previousPlan?: PlanEntry[]): string => {
     : `- No preferred Long Ride day specified.`;
 
   return `You are a professional cycling coach AI specializing in heart-rate based training.
-Analyze the athlete's data and generate an adaptive training plan. The most important factor is training load management — never sacrifice recovery for volume.
+Analyze the athlete's data and generate an adaptive training plan with exact, personalised workout structures.
+The most important factor is training load management — never sacrifice recovery for volume.
 
 TODAY: ${today} (${dayOfWeek})
 
@@ -129,13 +130,27 @@ TRAINING ANALYSIS (last 90 days):
 - Total rides: ${analysis?.totalCyclingRides ?? 0} | Peak HR recorded: ${analysis?.maxRecordedHr ?? 0} bpm
 - Average ride duration: ${analysis?.averageRideDurationMinutes ?? 0} min
 
-AVAILABLE WORKOUT TYPES:
-- Sprint: ~47 min, 6×30s Z5 intervals + Z1 recovery. Only when fully rested (48h+ since hard effort).
-- Threshold: ~56 min, 3×8min Z4 intervals. Use when moderately fresh. Core progression workout.
-- LongRide: 90-240 min Z2 endurance. Safe when fatigued. Duration scaled to athlete history.
-- Rest: Mandatory after 2+ consecutive hard sessions or when fatigue is high.
+WORKOUT TYPE GUIDELINES — you decide the exact structure for each day based on athlete load:
 
-PROGRESSION GOAL: The plan should systematically build the athlete's threshold capacity over weeks.
+Sprint (ONLY when fully rested — 48h+ since last hard effort):
+  Warm-up [WarmUp]: 480-720 sec Z2
+  Intervals: 4-8 sets of [Sprint [Run] 20-45 sec Z5 → Recovery [Recovery] 180-300 sec Z1]
+  Cool-down [Cooldown]: 480-720 sec Z1
+  Fewer/shorter intervals when less fresh; more repeats when athlete is progressing well.
+
+Threshold (when moderately fresh — core aerobic progression):
+  Warm-up [WarmUp]: 480-720 sec Z2
+  Intervals: 2-4 sets of [Work [Run] 360-720 sec Z4 → Recovery [Recovery] 180-300 sec Z1/Z2]
+  Cool-down [Cooldown]: 480-600 sec Z1
+  Reduce interval count/duration when fatigued; increase when athlete is adapting well.
+
+LongRide (safe even when moderately fatigued):
+  Single steady block [Run]: 3600-14400 sec Z2
+  Scale to fatigue level and averageRideDurationMinutes — shorter when tired, longer when fresh.
+
+Rest: no structure needed — set structure to null.
+
+PROGRESSION GOAL: Systematically build the athlete's threshold capacity over weeks.
 Gradually increase intensity/frequency when fatigue is low and compliance is good.
 
 OUTPUT: Respond ONLY with this exact JSON schema:
@@ -146,7 +161,17 @@ OUTPUT: Respond ONLY with this exact JSON schema:
     "priority": "high|medium|low"
   },
   "weeklyPlan": [
-    { "date": "YYYY-MM-DD", "type": "Sprint|Threshold|LongRide|Rest", "reason": "brief" }
+    {
+      "date": "YYYY-MM-DD",
+      "type": "Sprint|Threshold|LongRide|Rest",
+      "reason": "1 sentence",
+      "structure": {
+        "totalMinutes": <sum of all durationSec values divided by 60, rounded to integer>,
+        "steps": [
+          { "stepType": "WarmUp|Run|Recovery|Cooldown", "durationSec": <positive integer seconds>, "zone": "z1|z2|z3|z4|z5", "label": "<short label>" }
+        ]
+      }
+    }
   ],
   "nextWeekOverview": {
     "summary": "e.g. '3 sessions: 1 Sprint, 1 Threshold, 1 Long Ride'",
@@ -162,7 +187,13 @@ OUTPUT: Respond ONLY with this exact JSON schema:
   }
 }
 
-IMPORTANT: weeklyPlan must contain exactly 7 entries starting from TODAY (${today}).`;
+STRICT RULES:
+- For Rest days: set "structure": null
+- stepType MUST be one of: WarmUp, Run, Recovery, Cooldown
+- zone MUST be one of: z1, z2, z3, z4, z5
+- durationSec MUST be a positive integer (minimum 20 for sprint intervals)
+- weeklyPlan MUST contain exactly 7 entries starting from TODAY (${today})
+- totalMinutes MUST equal Math.round(sum(durationSec) / 60)`;
 };
 
 // ── Main generation function ──────────────────────────────────────────────────
@@ -228,13 +259,23 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[]): Promis
     });
   }
 
-  // Merge statuses into the new plan
-  const weeklyPlan: PlanEntry[] = parsed.weeklyPlan.map((e: any) => ({
-    date:   e.date,
-    type:   e.type,
-    reason: e.reason,
-    status: prevStatusMap.get(e.date) ?? 'planned'
-  }));
+  // Merge statuses into the new plan (preserve structure from AI output)
+  const weeklyPlan: PlanEntry[] = parsed.weeklyPlan.map((e: any) => {
+    // Recompute totalMinutes from steps to catch any AI rounding errors
+    const structure = e.structure && Array.isArray(e.structure.steps) ? {
+      totalMinutes: Math.round(
+        e.structure.steps.reduce((s: number, st: any) => s + (st.durationSec || 0), 0) / 60
+      ),
+      steps: e.structure.steps
+    } : null;
+    return {
+      date:      e.date,
+      type:      e.type,
+      reason:    e.reason,
+      status:    prevStatusMap.get(e.date) ?? 'planned',
+      structure
+    };
+  });
 
   upsertRecommendation({
     workoutType:      parsed.today.type,
