@@ -11,7 +11,7 @@
   "dependencies": {
     "@flow-js/garmin-connect": "^1.4.1",
     "axios": "^1.16.1",
-    "axios-cookiejar-support": "^7.0.0",
+    "axios-cookiejar-support": "^6.0.5",
     "better-sqlite3": "^12.10.0",
     "cheerio": "^1.2.0",
     "cors": "^2.8.5",
