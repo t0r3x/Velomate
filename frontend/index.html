@@ -123,6 +123,23 @@
               <input type="password" id="gemini-api-key" placeholder="AIza…" autocomplete="off">
             </div>
           </div>
+          <div class="input-group" style="margin-top:0.85rem">
+            <label for="preferred-long-ride-day">Preferred Long Ride Day</label>
+            <div class="input-wrapper input-wrapper--select">
+              <i class="fa-solid fa-calendar-days input-icon"></i>
+              <select id="preferred-long-ride-day">
+                <option value="">No preference</option>
+                <option value="Monday">Monday</option>
+                <option value="Tuesday">Tuesday</option>
+                <option value="Wednesday">Wednesday</option>
+                <option value="Thursday">Thursday</option>
+                <option value="Friday">Friday</option>
+                <option value="Saturday">Saturday</option>
+                <option value="Sunday">Sunday</option>
+              </select>
+            </div>
+            <p class="helper-text" style="margin-top:0.35rem">Gemini will prefer this day for long endurance rides.</p>
+          </div>
         </form>
       </div>
 
@@ -414,6 +431,15 @@
                 </select>
                 <i class="fa-solid fa-chevron-down device-sel-chevron"></i>
               </div>
+            </div>
+
+            <!-- Workout Preview (shown when a plan is loaded) -->
+            <div id="workout-preview-section" class="workout-preview-section hidden">
+              <div class="workout-preview-header" id="btn-toggle-preview">
+                <span><i class="fa-solid fa-dumbbell"></i> Workouts to sync</span>
+                <i class="fa-solid fa-chevron-down workout-preview-chevron"></i>
+              </div>
+              <div id="workout-preview-list" class="workout-preview-list"></div>
             </div>
 
             <p class="helper-text ai-sync-note" id="ai-sync-note"></p>

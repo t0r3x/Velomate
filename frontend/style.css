@@ -1972,3 +1972,72 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
 #rec-state-no-plan .ai-rec-empty-icon {
   color: var(--primary-color);
 }
+
+/* ── Select input wrapper ────────────────────────────────────────────────── */
+.input-wrapper--select select {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem 0.75rem 2.5rem;
+  color: var(--text-primary);
+  font-family: var(--font-main);
+  font-size: 0.95rem;
+  transition: border-color var(--transition-fast);
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+.input-wrapper--select select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.25);
+}
+.input-wrapper--select select option {
+  background: #1e293b;
+  color: var(--text-primary);
+}
+
+/* ── Workout preview section ─────────────────────────────────────────────── */
+.workout-preview-section {
+  border: 1px solid var(--panel-border);
+  border-radius: 0.6rem;
+  overflow: hidden;
+  margin-bottom: 1rem;
+  background: rgba(0, 0, 0, 0.15);
+}
+.workout-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.workout-preview-header:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+}
+.workout-preview-header i.fa-dumbbell {
+  color: var(--primary-color);
+  margin-right: 0.4rem;
+}
+.workout-preview-chevron {
+  transition: transform var(--transition-fast);
+  font-size: 0.75rem;
+}
+.workout-preview-section.is-open .workout-preview-chevron {
+  transform: rotate(180deg);
+}
+.workout-preview-list {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.35s ease;
+}
+.workout-preview-section.is-open .workout-preview-list {
+  max-height: 1200px;
+}
