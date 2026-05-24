@@ -1,5 +1,7 @@
 // API Client for INNERJOIN Dashboard
-const API_BASE_URL = 'http://localhost:3001';
+// Empty string → all fetch() calls use relative URLs, so the app works regardless
+// of whether it's accessed via localhost, a Pi IP, or any other hostname.
+const API_BASE_URL = '';
 
 // State variables
 let isLoggedIn            = false;
