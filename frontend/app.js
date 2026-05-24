@@ -5,6 +5,8 @@ const API_BASE_URL = 'http://localhost:3001';
 let isLoggedIn            = false;
 let geminiConfigured      = false;
 let setupComplete         = false;   // persisted in DB settings table, not localStorage
+let statusLoaded          = false;   // true once checkStatus() has returned at least once
+let geminiStatusLoaded    = false;   // true once fetchGeminiKeyStatus() has returned
 let currentProfile        = null;
 let devicesLoaded         = false;
 let currentRecommendation = null;
@@ -207,6 +209,13 @@ const enterProfileSetup = async (fromDashboard = false) => {
  *  Routes to the HR Profile setup (Step 2) for new users, or directly
  *  to the dashboard for returning users. Never interrupts later views. */
 const maybeEnterDashboard = () => {
+  // Wait until BOTH init calls have returned before making any routing decision.
+  // Either call alone cannot determine the full state:
+  //   - checkStatus alone: knows isLoggedIn but not geminiConfigured
+  //   - fetchGeminiKeyStatus alone: knows geminiConfigured but not isLoggedIn
+  // Without this guard one of the two resolving first would briefly flash the wrong view.
+  if (!statusLoaded || !geminiStatusLoaded) return;
+
   updateSetupSteps();
   if (!isLoggedIn || !geminiConfigured) {
     // Not ready yet — if nothing is visible yet (blank page), show the setup screen.
@@ -489,8 +498,9 @@ const fetchGeminiKeyStatus = async () => {
   try {
     const res  = await fetch(`${API_BASE_URL}/api/settings/gemini-key`);
     const data = await res.json();
-    geminiConfigured = !!data.hasKey;
-    setupComplete    = !!data.setupComplete;
+    geminiConfigured   = !!data.hasKey;
+    setupComplete      = !!data.setupComplete;
+    geminiStatusLoaded = true;   // unblock maybeEnterDashboard now that we know the Gemini state
     if (data.hasKey) {
       geminiKeyStatus.classList.remove('hidden');
       geminiKeyMasked.textContent = data.maskedKey;
@@ -509,7 +519,9 @@ const fetchGeminiKeyStatus = async () => {
     updateSetupSteps();
     maybeEnterDashboard();   // fire gate now that both flags are known
   } catch {
-    // non-critical
+    // Fetch failed (backend offline?) — unblock routing so the page doesn't stay blank
+    geminiStatusLoaded = true;
+    maybeEnterDashboard();
   }
 };
 
@@ -602,6 +614,7 @@ const checkStatus = async () => {
     const response = await fetch(`${API_BASE_URL}/api/status`);
     const data = await response.json();
     isLoggedIn = data.loggedIn;
+    statusLoaded = true;
     updateAuthUI(data.loggedIn);
   } catch (error) {
     console.error('Failed to connect to backend service:', error);
@@ -627,9 +640,6 @@ const updateAuthUI = (loggedIn) => {
     if (!devicesLoaded) fetchDevices();
     maybeEnterDashboard();
   } else {
-    setView('setup');
-    updateSetupSteps();
-
     statusDot.className = 'status-dot disconnected';
     statusText.textContent = 'Not connected';
     loggedOutSection.classList.remove('hidden');
@@ -641,6 +651,7 @@ const updateAuthUI = (loggedIn) => {
     btnRefreshDevices.disabled = true;
     devicesLoaded             = false;
     garminBtnHrLabel.textContent = '';
+    maybeEnterDashboard();   // gated — waits for both statusLoaded + geminiStatusLoaded
   }
 };
 
