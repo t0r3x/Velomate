@@ -230,7 +230,28 @@
 
       <!-- Form state (shown after loading) -->
       <div id="ps-form" class="ps-state hidden">
-        <div id="ps-notice" class="ps-notice ps-notice-info"></div>
+
+        <!-- Suggestion area — always the same height to prevent layout shift.
+             Shows a spinner while fetching, then swaps to the suggestion row. -->
+        <div class="ps-suggestion-area">
+          <div id="ps-suggestion-loading" class="ps-suggestion-loading">
+            <i class="fa-solid fa-spinner fa-spin"></i>
+            <span>Fetching suggestion from Garmin…</span>
+          </div>
+          <div id="ps-suggestion-row" class="ps-suggestion-row hidden">
+            <div class="ps-suggestion-label">
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+              <span>Suggestion based on <span id="ps-suggestion-rides"></span> rides: Max HR <strong id="ps-sug-maxhr"></strong> bpm, LTHR <strong id="ps-sug-lthr"></strong> bpm</span>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-use-suggestion">
+              <span>Use suggestion</span>
+              <i class="fa-solid fa-arrow-up-to-line"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Error notice — only shown when Garmin is unreachable -->
+        <div id="ps-notice" class="ps-notice ps-notice-info hidden"></div>
 
         <div class="hr-stats-row">
           <div class="hr-stat-box">

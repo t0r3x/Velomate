@@ -151,7 +151,6 @@ const closePsModal = () => {
 const enterProfileSetup = async (fromDashboard = false) => {
   psModalMode = fromDashboard;
   if (fromDashboard) {
-    // Modal mode: overlay over the current dashboard — don't change main view
     viewProfileSetup.classList.remove('hidden');
     viewProfileSetup.classList.add('ps-modal');
     closePanel();
@@ -160,38 +159,91 @@ const enterProfileSetup = async (fromDashboard = false) => {
     closePanel();
   }
 
-  const loadingEl = document.getElementById('ps-loading');
-  const formEl    = document.getElementById('ps-form');
-  const noticeEl  = document.getElementById('ps-notice');
-  loadingEl.classList.remove('hidden');
-  formEl.classList.add('hidden');
+  const loadingEl         = document.getElementById('ps-loading');
+  const formEl            = document.getElementById('ps-form');
+  const noticeEl          = document.getElementById('ps-notice');
+  const suggestionRow     = document.getElementById('ps-suggestion-row');
+  const suggestionLoading = document.getElementById('ps-suggestion-loading');
+  const sugMaxHrEl        = document.getElementById('ps-sug-maxhr');
+  const sugLthrEl         = document.getElementById('ps-sug-lthr');
+  const sugRidesEl        = document.getElementById('ps-suggestion-rides');
 
-  let maxHr = currentProfile?.maxHr || 190;
-  let lthr  = currentProfile?.lthr  || 165;
+  const hasCustom  = currentProfile?.hasCustomOverrides;
+  const inputMaxHr = currentProfile?.maxHr || 190;
+  const inputLthr  = currentProfile?.lthr  || 165;
+
+  // Populate inputs immediately — no waiting for the Garmin fetch
+  document.getElementById('ps-max-hr').value = inputMaxHr;
+  document.getElementById('ps-lthr').value   = inputLthr;
+  updatePsZonesBar(inputMaxHr, inputLthr);
+
+  // Suggestion area always starts in loading state (spinner reserves the space)
+  suggestionLoading.classList.remove('hidden');
+  suggestionRow.classList.add('hidden');
+  noticeEl.classList.add('hidden');
+
+  // Show form straight away; full-screen loader only for first-time users who need
+  // the suggestion in order to have meaningful default values in the inputs.
+  if (hasCustom) {
+    loadingEl.classList.add('hidden');
+    formEl.classList.remove('hidden');
+  } else {
+    loadingEl.classList.remove('hidden');
+    formEl.classList.add('hidden');
+  }
 
   try {
     const res  = await fetch(`${API_BASE_URL}/api/activities/refresh`, { method: 'POST' });
     const data = await res.json();
+
     if (res.ok && data.analysis?.estimatedMaxHr) {
-      maxHr = data.analysis.estimatedMaxHr;
-      lthr  = data.analysis.estimatedLthr || lthr;
-      const rides = data.analysis.totalCyclingRides || 0;
-      noticeEl.textContent = `Suggested from ${rides} ride${rides !== 1 ? 's' : ''} — adjust if needed.`;
-      noticeEl.className   = 'ps-notice ps-notice-success';
-      // Propagate fresh profile + analysis to dashboard state
+      const sugMaxHr = data.analysis.estimatedMaxHr;
+      const sugLthr  = data.analysis.estimatedLthr || inputLthr;
+      const sugRides = data.analysis.totalCyclingRides || 0;
       if (data.currentProfile) currentProfile = data.currentProfile;
+
+      suggestionLoading.classList.add('hidden');
+
+      if (hasCustom) {
+        // Show suggestion row only when it differs from the user's saved values
+        if (sugMaxHr !== inputMaxHr || sugLthr !== inputLthr) {
+          sugMaxHrEl.textContent         = sugMaxHr;
+          sugLthrEl.textContent          = sugLthr;
+          sugRidesEl.textContent         = `${sugRides} ride${sugRides !== 1 ? 's' : ''}`;
+          suggestionRow.dataset.sugMaxHr = sugMaxHr;
+          suggestionRow.dataset.sugLthr  = sugLthr;
+          suggestionRow.classList.remove('hidden');
+        }
+        // Values identical → both spinner and row hidden; area collapses cleanly
+      } else {
+        // First-time: fill inputs with suggestion, then reveal form
+        document.getElementById('ps-max-hr').value = sugMaxHr;
+        document.getElementById('ps-lthr').value   = sugLthr;
+        updatePsZonesBar(sugMaxHr, sugLthr);
+        sugMaxHrEl.textContent         = sugMaxHr;
+        sugLthrEl.textContent          = sugLthr;
+        sugRidesEl.textContent         = `${sugRides} ride${sugRides !== 1 ? 's' : ''}`;
+        suggestionRow.dataset.sugMaxHr = sugMaxHr;
+        suggestionRow.dataset.sugLthr  = sugLthr;
+        suggestionRow.classList.remove('hidden');
+      }
     } else {
-      noticeEl.textContent = 'No Garmin rides yet — using defaults. Adjust to match your fitness level.';
-      noticeEl.className   = 'ps-notice ps-notice-info';
+      // No Garmin data — hide spinner, show a brief notice only if no custom values
+      suggestionLoading.classList.add('hidden');
+      if (!hasCustom) {
+        noticeEl.textContent = 'No Garmin rides yet — using defaults. Adjust to match your fitness level.';
+        noticeEl.className   = 'ps-notice ps-notice-info';
+        noticeEl.classList.remove('hidden');
+      }
     }
   } catch {
-    noticeEl.textContent = 'Garmin data unavailable — using defaults. You can update at any time.';
-    noticeEl.className   = 'ps-notice ps-notice-info';
+    suggestionLoading.classList.add('hidden');
+    if (!hasCustom) {
+      noticeEl.textContent = 'Garmin data unavailable — using defaults. You can update at any time.';
+      noticeEl.className   = 'ps-notice ps-notice-info';
+      noticeEl.classList.remove('hidden');
+    }
   }
-
-  document.getElementById('ps-max-hr').value = maxHr;
-  document.getElementById('ps-lthr').value   = lthr;
-  updatePsZonesBar(maxHr, lthr);
 
   loadingEl.classList.add('hidden');
   formEl.classList.remove('hidden');
@@ -1012,6 +1064,17 @@ const onPsInputChange = () => {
 };
 psMaxHrInput.addEventListener('input', onPsInputChange);
 psLthrInput.addEventListener('input', onPsInputChange);
+
+document.getElementById('btn-use-suggestion').addEventListener('click', () => {
+  const row  = document.getElementById('ps-suggestion-row');
+  const maxHr = parseInt(row.dataset.sugMaxHr) || 190;
+  const lthr  = parseInt(row.dataset.sugLthr)  || 165;
+  psMaxHrInput.value = maxHr;
+  psLthrInput.value  = lthr;
+  updatePsZonesBar(maxHr, lthr);
+  // Hide the row — suggestion is now in the inputs
+  row.classList.add('hidden');
+});
 
 btnConfirmProfile.addEventListener('click', async () => {
   const maxHr  = parseInt(psMaxHrInput.value) || 190;
