@@ -1690,6 +1690,55 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
   margin-top: 0.5rem;
 }
 
+/* Wrapper — always rendered, always the same height so the inputs never jump */
+.ps-suggestion-area {
+  min-height: 2.75rem;   /* matches suggestion-row height (padding + single text line) */
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  width: 100%;
+}
+
+/* Spinner shown while fetching — occupies the same space as the suggestion row */
+.ps-suggestion-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  width: 100%;
+}
+.ps-suggestion-loading i { color: var(--primary-color); }
+
+/* Suggestion row — shown when a Garmin suggestion is available */
+.ps-suggestion-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  background: rgba(99, 102, 241, 0.07);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 0.5rem;
+  width: 100%;
+  flex-wrap: wrap;
+}
+.ps-suggestion-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  flex: 1;
+}
+.ps-suggestion-label i {
+  color: var(--primary-color);
+  flex-shrink: 0;
+}
+.ps-suggestion-label strong {
+  color: var(--text-primary);
+}
+
 /* ── AI Recommendation Card ──────────────────────────────────────────────── */
 
 /* State panels */
