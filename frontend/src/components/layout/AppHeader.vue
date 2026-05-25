@@ -1,7 +1,7 @@
 <template>
   <header class="main-header">
     <div class="logo-section">
-      <i class="fa-solid logo-icon" :class="logoIcon"></i>
+      <i class="logo-icon fa-solid" :class="logoIcon"></i>
       <h1>UN<span>BOUND</span></h1>
     </div>
 
@@ -40,5 +40,5 @@ const statusText = computed(() => {
 // Shablagoo easter egg — toggled by AppFooter via a shared ref
 import { useShablagoo } from '@/composables/useShablagoo'
 const { active } = useShablagoo()
-const logoIcon = computed(() => active.value ? 'fa-ice-cream' : 'fa-route')
+const logoIcon = computed(() => active.value ? 'fa-bowl-food' : 'fa-route')
 </script>

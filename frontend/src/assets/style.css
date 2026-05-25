@@ -4,15 +4,21 @@
   --bg-color: #080b14;
   --panel-bg: rgba(14, 18, 32, 0.55);
   --panel-border: rgba(255, 255, 255, 0.07);
-  --panel-hover-border: rgba(59, 130, 246, 0.3);
 
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
 
-  --primary-glow: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+  /* Primary theme color — change these three to recolour the entire UI */
+  --primary-rgb: 59, 130, 246;
   --primary-color: #3b82f6;
   --primary-hover: #2563eb;
+  --primary-glow: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+
+  /* Derived variables that use --primary-rgb */
+  --panel-hover-border: rgba(var(--primary-rgb), 0.3);
+  --shadow-glow: 0 0 20px rgba(var(--primary-rgb), 0.25);
+
   --secondary-color: #1e293b;
   --secondary-hover: #334155;
 
@@ -25,7 +31,6 @@
 
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.15);
   --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.3);
-  --shadow-glow: 0 0 20px rgba(59, 130, 246, 0.25);
 
   --font-main: 'Outfit', sans-serif;
   --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -55,7 +60,7 @@ body {
   width: 50%;
   height: 50%;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(59, 130, 246, 0.10) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(var(--primary-rgb), 0.10) 0%, transparent 70%);
   filter: blur(80px);
   z-index: -1;
   pointer-events: none;
@@ -119,7 +124,7 @@ body {
   background: var(--primary-glow);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.4));
+  filter: drop-shadow(0 0 10px rgba(var(--primary-rgb), 0.4));
 }
 
 .logo-section h1 {
@@ -152,8 +157,8 @@ body {
 }
 .garmin-status-btn:hover {
   background: rgba(255,255,255,0.08);
-  border-color: rgba(59, 130, 246,0.4);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246,0.12);
+  border-color: rgba(var(--primary-rgb),0.4);
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb),0.12);
 }
 .garmin-btn-sep {
   width: 1px;
@@ -221,7 +226,7 @@ body {
   width: min(760px, 94vw);
   max-height: 88vh;
   background: rgba(14, 17, 32, 0.98);
-  border: 1px solid rgba(59, 130, 246, 0.18);
+  border: 1px solid rgba(var(--primary-rgb), 0.18);
   border-radius: 20px;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255,255,255,0.04);
   z-index: 910;
@@ -337,16 +342,16 @@ body {
 
 /* ── Device Selector Block ── */
 .device-selector-block {
-  background: rgba(59, 130, 246,0.06);
-  border: 1px solid rgba(59, 130, 246,0.2);
+  background: rgba(var(--primary-rgb),0.06);
+  border: 1px solid rgba(var(--primary-rgb),0.2);
   border-radius: 14px;
   padding: 14px 16px;
   margin-bottom: 4px;
   transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 .device-selector-block:has(select:not(:disabled)) {
-  background: rgba(59, 130, 246,0.08);
-  border-color: rgba(59, 130, 246,0.35);
+  background: rgba(var(--primary-rgb),0.08);
+  border-color: rgba(var(--primary-rgb),0.35);
 }
 .device-selector-top {
   display: flex;
@@ -359,7 +364,7 @@ body {
   color: var(--primary-color);
   width: 36px; height: 36px;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(59, 130, 246,0.12);
+  background: rgba(var(--primary-rgb),0.12);
   border-radius: 10px;
   flex-shrink: 0;
 }
@@ -395,7 +400,7 @@ body {
   transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 .device-sel-select-wrap select:hover:not(:disabled) {
-  border-color: rgba(59, 130, 246,0.4);
+  border-color: rgba(var(--primary-rgb),0.4);
   background: rgba(255,255,255,0.08);
 }
 .device-sel-select-wrap select:focus {
@@ -424,8 +429,8 @@ body {
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  border: 1px solid rgba(59, 130, 246,0.25);
-  background: rgba(59, 130, 246,0.08);
+  border: 1px solid rgba(var(--primary-rgb),0.25);
+  background: rgba(var(--primary-rgb),0.08);
   color: var(--primary-color);
   font-size: 0.75rem;
   cursor: pointer;
@@ -435,8 +440,8 @@ body {
   transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
 }
 .btn-device-refresh:hover:not(:disabled) {
-  background: rgba(59, 130, 246,0.18);
-  border-color: rgba(59, 130, 246,0.5);
+  background: rgba(var(--primary-rgb),0.18);
+  border-color: rgba(var(--primary-rgb),0.5);
 }
 .btn-device-refresh:disabled {
   opacity: 0.3;
@@ -462,7 +467,7 @@ body {
 
 .glass-panel:hover {
   border-color: var(--panel-hover-border);
-  box-shadow: 0 12px 40px rgba(59, 130, 246, 0.08);
+  box-shadow: 0 12px 40px rgba(var(--primary-rgb), 0.08);
 }
 
 .dashboard-card {
@@ -492,7 +497,7 @@ body {
 
 @keyframes pulse-hr {
   0% { transform: scale(1); opacity: 0.8; }
-  50% { transform: scale(1.12); opacity: 1; filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.6)); }
+  50% { transform: scale(1.12); opacity: 1; filter: drop-shadow(0 0 6px rgba(var(--primary-rgb), 0.6)); }
   100% { transform: scale(1); opacity: 0.8; }
 }
 
@@ -566,7 +571,7 @@ body {
 .input-wrapper input:focus {
   outline: none;
   border-color: var(--primary-color);
-  box-shadow: 0 0 8px rgba(59, 130, 246, 0.25);
+  box-shadow: 0 0 8px rgba(var(--primary-rgb), 0.25);
 }
 
 .input-icon {
@@ -639,12 +644,12 @@ body {
 
 .btn-glow:not(:disabled):hover {
   animation-play-state: paused;
-  box-shadow: 0 0 18px rgba(59, 130, 246, 0.5);
+  box-shadow: 0 0 18px rgba(var(--primary-rgb), 0.5);
 }
 
 @keyframes glow-pulse {
-  0% { box-shadow: 0 0 8px rgba(59, 130, 246, 0.25); }
-  100% { box-shadow: 0 0 22px rgba(59, 130, 246, 0.55); }
+  0% { box-shadow: 0 0 8px rgba(var(--primary-rgb), 0.25); }
+  100% { box-shadow: 0 0 22px rgba(var(--primary-rgb), 0.55); }
 }
 
 /* Success Indicator */
@@ -680,8 +685,8 @@ body {
 .notification-card {
   padding: 1rem;
   border-radius: 0.5rem;
-  background: rgba(59, 130, 246, 0.05);
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  background: rgba(var(--primary-rgb), 0.05);
+  border: 1px solid rgba(var(--primary-rgb), 0.2);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -934,8 +939,8 @@ body {
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  background: rgba(var(--primary-rgb), 0.1);
+  border: 1px solid rgba(var(--primary-rgb), 0.2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1021,7 +1026,7 @@ body {
 .act-feeling-badge.feeling-2 { background: rgba(249,115,22,0.12);  color: #f97316; border-color: rgba(249,115,22,0.25); }
 .act-feeling-badge.feeling-3 { background: rgba(100,116,139,0.12); color: #94a3b8; border-color: rgba(100,116,139,0.2); }
 .act-feeling-badge.feeling-4 { background: rgba(16,185,129,0.12);  color: #10b981; border-color: rgba(16,185,129,0.25); }
-.act-feeling-badge.feeling-5 { background: rgba(59, 130, 246,0.12);  color: #818cf8; border-color: rgba(59, 130, 246,0.25); }
+.act-feeling-badge.feeling-5 { background: rgba(var(--primary-rgb),0.12);  color: #818cf8; border-color: rgba(var(--primary-rgb),0.25); }
 
 /* AI execution score badge */
 .act-score-badge.score-great { background: rgba(16,185,129,0.12); color: #10b981; border-color: rgba(16,185,129,0.25); }
@@ -1033,8 +1038,8 @@ body {
 .recommendation-box {
   margin-top: 1rem;
   padding: 1rem;
-  background: rgba(59, 130, 246, 0.04);
-  border: 1px solid rgba(59, 130, 246, 0.15);
+  background: rgba(var(--primary-rgb), 0.04);
+  border: 1px solid rgba(var(--primary-rgb), 0.15);
   border-radius: 0.5rem;
   display: flex;
   flex-direction: column;
@@ -1111,8 +1116,8 @@ body {
 }
 
 @keyframes pulse-glow {
-  0% { filter: drop-shadow(0 0 2px rgba(59, 130, 246, 0.2)); }
-  100% { filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.7)); }
+  0% { filter: drop-shadow(0 0 2px rgba(var(--primary-rgb), 0.2)); }
+  100% { filter: drop-shadow(0 0 8px rgba(var(--primary-rgb), 0.7)); }
 }
 
 .device-details {
@@ -1221,7 +1226,7 @@ body {
   transition: background var(--transition-fast);
 }
 
-.week-day-cell.is-today { background: rgba(59, 130, 246,0.08); }
+.week-day-cell.is-today { background: rgba(var(--primary-rgb),0.08); }
 
 .wdc-day {
   font-size: 0.7rem;
@@ -1503,6 +1508,9 @@ body:has(#shablagoo-toggle:checked) .shablagoo-label {
 /* 🍦 Mintberry Crunch easter egg — logo transforms when shablagoo is active */
 body:has(#shablagoo-toggle:checked) .logo-icon {
   background: linear-gradient(135deg, #34d399 0%, #f472b6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-block; /* Cruciaal om background-clip te laten werken op een <i> of SVG */
   filter: drop-shadow(0 0 12px rgba(244, 114, 182, 0.6));
   transition: all 0.4s ease;
 }
@@ -1518,6 +1526,24 @@ body:has(#shablagoo-toggle:checked) .setup-logo h1 span {
   background: none;
   -webkit-text-fill-color: #f472b6;
   color: #f472b6;
+}
+
+/* 🍦 Shablagoo full theme — primary → pink, secondary → green */
+body:has(#shablagoo-toggle:checked) {
+  --primary-rgb: 244, 114, 182;
+  --primary-color: #f472b6;
+  --primary-hover: #db2777;
+  --primary-glow: linear-gradient(135deg, #34d399 0%, #f472b6 100%);
+  --secondary-color: #0d2318;
+  --secondary-hover: #163324;
+}
+
+body:has(#shablagoo-toggle:checked) .bg-glow-1 {
+  background: radial-gradient(circle, rgba(244, 114, 182, 0.10) 0%, transparent 70%);
+}
+
+body:has(#shablagoo-toggle:checked) .bg-glow-2 {
+  background: radial-gradient(circle, rgba(52, 211, 153, 0.10) 0%, transparent 70%);
 }
 
 
@@ -1598,7 +1624,7 @@ body:has(#shablagoo-toggle:checked) .setup-logo h1 span {
 }
 
 .setup-steps li:hover {
-  border-color: rgba(59, 130, 246, 0.2);
+  border-color: rgba(var(--primary-rgb), 0.2);
 }
 
 .setup-steps li > i {
@@ -1734,8 +1760,8 @@ body:has(#shablagoo-toggle:checked) .setup-logo h1 span {
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.6rem 0.85rem;
-  background: rgba(59, 130, 246, 0.07);
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  background: rgba(var(--primary-rgb), 0.07);
+  border: 1px solid rgba(var(--primary-rgb), 0.2);
   border-radius: 0.5rem;
   width: 100%;
   flex-wrap: wrap;
@@ -1796,8 +1822,8 @@ body:has(#shablagoo-toggle:checked) .setup-logo h1 span {
 
 /* Today block */
 .ai-today-block {
-  background: rgba(59, 130, 246, 0.06);
-  border: 1px solid rgba(59, 130, 246, 0.15);
+  background: rgba(var(--primary-rgb), 0.06);
+  border: 1px solid rgba(var(--primary-rgb), 0.15);
   border-radius: 12px;
   padding: 1rem;
   margin-bottom: 1rem;
@@ -1994,8 +2020,8 @@ body:has(#shablagoo-toggle:checked) .setup-logo h1 span {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  border: 1px solid rgba(59, 130, 246, 0.35);
-  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(var(--primary-rgb), 0.35);
+  background: rgba(var(--primary-rgb), 0.12);
   color: var(--primary-color);
   cursor: pointer;
   display: flex;
@@ -2011,7 +2037,7 @@ body:has(#shablagoo-toggle:checked) .setup-logo h1 span {
   opacity: 1;
 }
 .btn-move-today:hover {
-  background: rgba(59, 130, 246, 0.28);
+  background: rgba(var(--primary-rgb), 0.28);
   transform: scale(1.1);
 }
 
@@ -2162,7 +2188,7 @@ body:has(#shablagoo-toggle:checked) .setup-logo h1 span {
 #view-profile-setup.ps-modal .ps-card {
   max-width: 520px;
   width: 100%;
-  box-shadow: 0 0 0 1px rgba(59, 130, 246,0.25), 0 24px 60px rgba(0,0,0,0.6);
+  box-shadow: 0 0 0 1px rgba(var(--primary-rgb),0.25), 0 24px 60px rgba(0,0,0,0.6);
 }
 
 /* Show cancel button when in modal mode */
@@ -2260,15 +2286,15 @@ body:has(#shablagoo-toggle:checked) .setup-logo h1 span {
   transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
 }
 .day-chip span:hover {
-  border-color: rgba(59, 130, 246, 0.45);
+  border-color: rgba(var(--primary-rgb), 0.45);
   color: var(--text-secondary);
-  background: rgba(59, 130, 246, 0.06);
+  background: rgba(var(--primary-rgb), 0.06);
 }
 .day-chip input[type="checkbox"]:checked + span {
-  background: rgba(59, 130, 246, 0.18);
+  background: rgba(var(--primary-rgb), 0.18);
   border-color: var(--primary-color);
   color: var(--text-primary);
-  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.25);
+  box-shadow: 0 0 0 1px rgba(var(--primary-rgb), 0.25);
 }
 
 /* ── Select input wrapper ────────────────────────────────────────────────── */
@@ -2289,7 +2315,7 @@ body:has(#shablagoo-toggle:checked) .setup-logo h1 span {
 .input-wrapper--select select:focus {
   outline: none;
   border-color: var(--primary-color);
-  box-shadow: 0 0 8px rgba(59, 130, 246, 0.25);
+  box-shadow: 0 0 8px rgba(var(--primary-rgb), 0.25);
 }
 .input-wrapper--select select option {
   background: #1e293b;
