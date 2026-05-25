@@ -1,0 +1,11 @@
+services:
+  unbound:
+    build: .
+    ports:
+      - "3001:3001"
+    volumes:
+      - unbound-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  unbound-data:
