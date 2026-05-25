@@ -77,9 +77,34 @@ const classifyExecution = (
       if (avgHr >= Math.round(lthr * 0.80) + 1) return 'completed-partial';
       return 'completed-mismatch';
 
+    case 'VO2Max':
+      // Sustained Z5 intervals — need meaningful time at maximal aerobic intensity
+      if (hasZones) {
+        if (z5Sec >= 720)  return 'completed';         // ≥ 12 min in Z5 (≥3 full intervals)
+        if (z5Sec >= 240)  return 'completed-partial'; // ≥ 4 min — at least 1 interval done
+        return 'completed-mismatch';
+      }
+      if (avgHr >= z5min)  return 'completed';
+      if (avgHr >= z4min)  return 'completed-partial';
+      return 'completed-mismatch';
+
+    case 'Tempo': {
+      // Z3 / sweet-spot — sustained effort below threshold
+      const z3lower = Math.round(lthr * 0.80) + 1;
+      if (hasZones) {
+        const z3Sec = zones![2] || 0;
+        if (durationMin >= 40 && z3Sec >= 1800) return 'completed';         // 30+ min Z3
+        if (durationMin >= 20 && z3Sec >= 600)  return 'completed-partial'; // 10+ min Z3
+        return 'completed-mismatch';
+      }
+      if (durationMin >= 40 && avgHr >= z3lower && avgHr < z4min) return 'completed';
+      if (durationMin >= 20 && avgHr >= z3lower)                   return 'completed-partial';
+      return 'completed-mismatch';
+    }
+
     case 'LongRide':
       if (durationMin >= 75 && avgHr < z4min) return 'completed';
-      if (durationMin >= 45)                   return 'completed-partial'; // shorter than intended
+      if (durationMin >= 45)                   return 'completed-partial';
       return 'completed-mismatch';
 
     default:
@@ -301,11 +326,18 @@ TRAINING ANALYSIS (last 90 days):
 
 WORKOUT TYPE GUIDELINES — you decide the exact structure for each day based on athlete load:
 
-Sprint (ONLY when fully rested — 48h+ since last hard effort):
+Sprint (ONLY when fully rested — 48h+ since last hard effort, low fatigue):
   Warm-up [WarmUp]: 480-720 sec Z2
   Intervals: 4-8 sets of [Sprint [Run] 20-45 sec Z5 → Recovery [Recovery] 180-300 sec Z1]
   Cool-down [Cooldown]: 480-720 sec Z1
-  Fewer/shorter intervals when less fresh; more repeats when athlete is progressing well.
+  Short maximal bursts — trains neuromuscular power. Fewer/shorter when less fresh.
+
+VO2Max (only when well-rested — 48h+ since last hard effort, low-to-moderate fatigue):
+  Warm-up [WarmUp]: 480-720 sec Z2
+  Intervals: 4-5 sets of [Work [Run] 180-300 sec Z5 → Recovery [Recovery] 180-240 sec Z1]
+  Cool-down [Cooldown]: 480-600 sec Z1
+  Sustained Z5 blocks raise the aerobic ceiling. More demanding than Sprint — do NOT schedule after consecutive hard days.
+  Fewer sets when less fresh; 5 sets only when athlete is progressing well and compliance is high.
 
 Threshold (when moderately fresh — core aerobic progression):
   Warm-up [WarmUp]: 480-720 sec Z2
@@ -314,27 +346,35 @@ Threshold (when moderately fresh — core aerobic progression):
   Reduce interval count/duration when fatigued; increase when athlete is adapting well.
   Pay attention to COMPLETED-PARTIAL history — if athlete keeps cutting threshold short, reduce interval duration.
 
+Tempo (ideal for moderate fatigue — sweet spot, Z3):
+  Warm-up [WarmUp]: 480-600 sec Z2
+  Intervals: 2-3 sets of [Work [Run] 900-1800 sec Z3 → Recovery [Recovery] 300-480 sec Z1/Z2]
+  Cool-down [Cooldown]: 480 sec Z1
+  Long Z3 blocks build fatigue resistance and muscular endurance. Perfect when athlete is too tired for Z4 Threshold but too fresh for Z2 only.
+
 LongRide (safe even when moderately fatigued):
   Single steady block [Run]: 3600-14400 sec Z2
   Scale to fatigue level and averageRideDurationMinutes — shorter when tired, longer when fresh.
 
 Rest: no structure needed — set structure to null.
 
-PROGRESSION GOAL: Systematically build the athlete's threshold capacity over weeks.
+PROGRESSION GOAL: Develop all energy systems using the full training pyramid:
+  Rest → LongRide (Z2 base) → Tempo (Z3 fatigue resistance) → Threshold (Z4 aerobic power) → VO2Max (Z5 aerobic ceiling) → Sprint (Z5+ neuromuscular)
+Higher-intensity sessions require more recovery. Build from the base — do not stack VO2Max + Threshold + Sprint in the same week unless fatigue is consistently low and compliance is excellent.
 Gradually increase intensity/frequency when fatigue is low and compliance is good.
 If COMPLETED-PARTIAL or COMPLETED-MISMATCH patterns appear, prioritise consolidation over progression.
 
 OUTPUT: Respond ONLY with this exact JSON schema:
 {
   "today": {
-    "type": "Sprint|Threshold|LongRide|Rest",
+    "type": "Sprint|VO2Max|Threshold|Tempo|LongRide|Rest",
     "reason": "2-3 sentences referencing specific data (last activity date, HR trend, etc.)",
     "priority": "high|medium|low"
   },
   "weeklyPlan": [
     {
       "date": "YYYY-MM-DD",
-      "type": "Sprint|Threshold|LongRide|Rest",
+      "type": "Sprint|VO2Max|Threshold|Tempo|LongRide|Rest",
       "reason": "1 sentence",
       "structure": {
         "totalMinutes": <sum of all durationSec values divided by 60, rounded to integer>,
@@ -422,7 +462,7 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[]): Promis
   }
 
   // Validate required fields
-  const validTypes = ['Sprint', 'Threshold', 'LongRide', 'Rest'];
+  const validTypes = ['Sprint', 'VO2Max', 'Threshold', 'Tempo', 'LongRide', 'Rest'];
   if (!validTypes.includes(parsed?.today?.type)) {
     throw new Error(`Invalid today.type: ${parsed?.today?.type}`);
   }
