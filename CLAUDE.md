@@ -1,4 +1,4 @@
-# INNERJOIN — Project Reference
+# Unbound — Project Reference
 
 > Cycling dashboard with Garmin Connect integration and AI-driven adaptive training plans.  
 > Backend: Express/TypeScript + better-sqlite3 · Frontend: Vanilla JS + Font Awesome · DB: SQLite
@@ -25,7 +25,7 @@ Open http://localhost:3001 — no separate frontend server needed.
 ## Directory layout
 
 ```
-INNERJOIN/
+unbound/
 ├── backend/
 │   ├── src/
 │   │   ├── server.ts                  ← Express app + all API routes
@@ -39,7 +39,7 @@ INNERJOIN/
 │   │       ├── profile.service.ts     ← HR profile calc + config.json fallback
 │   │       └── workout.service.ts     ← Garmin workout upload + schedule
 │   ├── data/
-│   │   └── innerjoin.db               ← SQLite DB (git-ignored)
+│   │   └── unbound.db                 ← SQLite DB (git-ignored)
 │   └── config.json                    ← HR profile fallback (legacy, migrated to DB)
 └── frontend/
     ├── index.html

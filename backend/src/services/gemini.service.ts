@@ -8,7 +8,7 @@ import {
   getStoredAnalysis,
   PlanEntry
 } from './database.service';
-import { localDate, toRpe, toFeeling } from '../utils';
+import { localDate, toRpe, toFeeling, USER_TZ } from '../utils';
 
 // ── Key helpers ───────────────────────────────────────────────────────────────
 
@@ -107,7 +107,7 @@ export const detectAutoSkippedEntries = (plan: PlanEntry[]): string[] => {
 
 const buildPrompt = (previousPlan?: PlanEntry[]): string => {
   const today     = localDate();
-  const dayOfWeek = new Date().toLocaleDateString('en-GB', { weekday: 'long' });
+  const dayOfWeek = new Date().toLocaleDateString('en-GB', { weekday: 'long', timeZone: USER_TZ });
 
   // Recent 21 days of activities — include zone distribution when available
   const allActivities = getStoredActivities();

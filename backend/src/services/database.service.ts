@@ -6,7 +6,7 @@ import fs from 'fs';
 const dataDir = path.join(__dirname, '../../data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
-const db = new Database(path.join(dataDir, 'innerjoin.db'));
+const db = new Database(path.join(dataDir, 'unbound.db'));
 
 // WAL mode — better concurrent read performance
 db.pragma('journal_mode = WAL');
@@ -91,7 +91,7 @@ const stmtUpsertActivity = db.prepare(`
     (activityId, name, type, startTime, distanceKm, durationMinutes,
      averageHr, maxHr, averagePower, maxPower, timeInZones,
      perceivedExertion, feelingAfterExercise, fetchedAt)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, CURRENT_TIMESTAMP)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
   ON CONFLICT(activityId) DO UPDATE SET
     name                = excluded.name,
     type                = excluded.type,
@@ -103,12 +103,16 @@ const stmtUpsertActivity = db.prepare(`
     averagePower        = excluded.averagePower,
     maxPower            = excluded.maxPower,
     timeInZones         = excluded.timeInZones,
-    fetchedAt           = CURRENT_TIMESTAMP
+    fetchedAt           = excluded.fetchedAt
     -- perceivedExertion and feelingAfterExercise intentionally NOT updated here;
     -- they are set exclusively by updateActivityFeedback() after a detail fetch.
 `);
 
 const upsertManyActivities = db.transaction((activities: any[]) => {
+  // Use a single timestamp for the entire batch — avoids per-row Date() calls and
+  // stores a proper ISO 8601 string with Z suffix (SQLite CURRENT_TIMESTAMP omits the Z,
+  // causing JavaScript to misparse it as local time instead of UTC).
+  const now = new Date().toISOString();
   for (const a of activities) {
     stmtUpsertActivity.run(
       String(a.activityId),
@@ -121,7 +125,8 @@ const upsertManyActivities = db.transaction((activities: any[]) => {
       a.maxHr,
       a.averagePower || 0,
       a.maxPower || 0,
-      a.timeInZones != null ? JSON.stringify(a.timeInZones) : null
+      a.timeInZones != null ? JSON.stringify(a.timeInZones) : null,
+      now
     );
   }
 });
@@ -161,14 +166,15 @@ export const upsertAnalysis = (analysis: any): void => {
     INSERT OR REPLACE INTO analysis
       (id, totalCyclingRides, maxRecordedHr, estimatedMaxHr, estimatedLthr,
        averageRideDurationMinutes, suggestedZones, updatedAt)
-    VALUES (1, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    VALUES (1, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     analysis.totalCyclingRides,
     analysis.maxRecordedHr,
     analysis.estimatedMaxHr,
     analysis.estimatedLthr,
     analysis.averageRideDurationMinutes,
-    JSON.stringify(analysis.suggestedZones)
+    JSON.stringify(analysis.suggestedZones),
+    new Date().toISOString()
   );
 };
 
@@ -195,12 +201,13 @@ export const upsertProfileDB = (profile: any): void => {
   db.prepare(`
     INSERT OR REPLACE INTO profile
       (id, maxHr, lthr, zones, hasCustomOverrides, lastUpdated)
-    VALUES (1, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    VALUES (1, ?, ?, ?, ?, ?)
   `).run(
     profile.maxHr,
     profile.lthr,
     JSON.stringify(profile.zones),
-    profile.hasCustomOverrides ? 1 : 0
+    profile.hasCustomOverrides ? 1 : 0,
+    new Date().toISOString()
   );
 };
 
