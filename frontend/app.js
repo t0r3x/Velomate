@@ -3,6 +3,28 @@
 // of whether it's accessed via localhost, a Pi IP, or any other hostname.
 const API_BASE_URL = '';
 
+// ── Shared utility helpers ─────────────────────────────────────────────────────
+
+/**
+ * Returns today's date as YYYY-MM-DD using the browser's local timezone.
+ * 'sv-SE' (Swedish) locale is a standard JS idiom for ISO date format.
+ * Pass a Date object to format a specific date.
+ */
+const isoDate = (d = new Date()) => d.toLocaleDateString('sv-SE');
+
+/**
+ * Convert raw Garmin perceived exertion (0–100) to Borg 1–10 RPE.
+ * Mirrors the backend toRpe() in src/utils.ts.
+ */
+const toRpe = (raw) => Math.max(1, Math.min(10, Math.round(raw / 10)));
+
+/**
+ * Convert raw Garmin post-ride feeling (0–100) to 1–5 feeling scale.
+ * Mirrors the backend toFeeling() in src/utils.ts.
+ * 1 = Exhausted · 2 = Tired · 3 = Normal · 4 = Good · 5 = Strong.
+ */
+const toFeeling = (raw) => Math.max(1, Math.min(5, Math.round(raw / 25) + 1));
+
 // State variables
 let isLoggedIn            = false;
 let geminiConfigured      = false;
@@ -383,13 +405,17 @@ const renderRecommendation = (rec) => {
   aiWeekGrid.innerHTML = '';
   // Durations come from AI-generated structures (entry.structure.totalMinutes)
 
-  if (plan.length > 0) {
-    // Week label: first date to last date
-    const fmt = d => new Date(d + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-    aiWeekLabel.textContent = `${fmt(plan[0].date)} – ${fmt(plan[plan.length - 1].date)}`;
+  // The stored plan may include scored history (past completed entries) prepended before
+  // the new 7-day window. For display, show only the 7 entries from today onwards.
+  const todayStr = isoDate();
+  const displayPlan = plan.filter(e => e.date >= todayStr).slice(0, 7);
 
-    const todayStr = new Date().toLocaleDateString('sv-SE');
-    plan.forEach(entry => {
+  if (displayPlan.length > 0) {
+    // Week label: first date to last date in the displayed window
+    const fmt = d => new Date(d + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    aiWeekLabel.textContent = `${fmt(displayPlan[0].date)} – ${fmt(displayPlan[displayPlan.length - 1].date)}`;
+
+    displayPlan.forEach(entry => {
       const isToday = entry.date === todayStr;
       const isRest  = entry.type === 'Rest';
 
@@ -404,22 +430,32 @@ const renderRecommendation = (rec) => {
         cell.querySelector('.wdc-duration').textContent = entry.structure?.totalMinutes
           ? `${entry.structure.totalMinutes} min`
           : '';
-        // Status badge — repurpose wdc-scheduled-badge based on completion state
+        // Status badge — show AI execution score for completed entries, label for others
         const badge = cell.querySelector('.wdc-scheduled-badge');
-        const STATUS_BADGE = {
-          'completed':          { icon: 'fa-circle-check',      label: 'Done',     cls: 'wdc-badge-done'     },
-          'completed-partial':  { icon: 'fa-circle-half-stroke', label: 'Partial',  cls: 'wdc-badge-partial'  },
-          'completed-mismatch': { icon: 'fa-circle-exclamation', label: 'Mismatch', cls: 'wdc-badge-mismatch' },
-          'skipped':            { icon: 'fa-forward-step',       label: 'Skipped',  cls: 'wdc-badge-skipped'  },
-          'auto-skipped':       { icon: 'fa-forward-step',       label: 'Skipped',  cls: 'wdc-badge-skipped'  },
-        };
-        const badgeDef = STATUS_BADGE[entry.status];
-        if (badge && badgeDef) {
-          badge.innerHTML = `<i class="fa-solid ${badgeDef.icon}"></i> ${badgeDef.label}`;
-          badge.className = `wdc-scheduled-badge ${badgeDef.cls}`;
-          badge.hidden = false;
-        } else if (badge) {
-          badge.hidden = true;
+        if (badge) {
+          if (entry.status === 'completed') {
+            const score = entry.executionScore;
+            if (score != null) {
+              const scoreCls = score >= 80 ? 'wdc-badge-score-great'
+                             : score >= 60 ? 'wdc-badge-score-ok'
+                             :               'wdc-badge-score-poor';
+              badge.innerHTML = `<i class="fa-solid fa-circle-check"></i> ${score}`;
+              badge.className = `wdc-scheduled-badge wdc-badge-score ${scoreCls}`;
+              badge.title     = entry.executionNote || '';
+            } else {
+              badge.innerHTML = `<i class="fa-solid fa-circle-check"></i> Done`;
+              badge.className = `wdc-scheduled-badge wdc-badge-done`;
+              badge.title     = '';
+            }
+            badge.hidden = false;
+          } else if (entry.status === 'skipped' || entry.status === 'auto-skipped') {
+            badge.innerHTML = `<i class="fa-solid fa-forward-step"></i> Skipped`;
+            badge.className = `wdc-scheduled-badge wdc-badge-skipped`;
+            badge.title     = '';
+            badge.hidden    = false;
+          } else {
+            badge.hidden = true;
+          }
         }
 
         // Show a small tooltip via title
@@ -432,8 +468,6 @@ const renderRecommendation = (rec) => {
 
       if (isToday)                              cell.classList.add('is-today');
       if (entry.status === 'completed')         cell.classList.add('is-completed');
-      if (entry.status === 'completed-partial') cell.classList.add('is-completed-partial');
-      if (entry.status === 'completed-mismatch')cell.classList.add('is-mismatch');
       if (entry.status === 'skipped' || entry.status === 'auto-skipped')
                                                 cell.classList.add('is-skipped');
 
@@ -561,7 +595,7 @@ const fetchRecommendation = async (forceRefresh = false) => {
 
 /** Move a future planned workout to today by swapping it with today's plan entry. */
 const rescheduleToToday = async (fromDate) => {
-  const toDate = new Date().toLocaleDateString('sv-SE');
+  const toDate = isoDate();
   if (fromDate === toDate) return;
 
   try {
@@ -887,10 +921,9 @@ const renderActivities = (activities) => {
     const feelingBadge = li.querySelector('.act-feeling-badge');
     const feedbackRow  = li.querySelector('.act-feedback');
 
-    // Garmin stores directWorkoutRpe and directWorkoutFeel on a 0–100 internal scale.
-    // Convert: rpe / 10 → 1–10 Borg scale; feel / 25 + 1 → 1–5 feeling level.
+    // Garmin stores raw 0–100 values; toRpe / toFeeling convert to display scale.
     if (act.perceivedExertion != null) {
-      const rpe = Math.max(1, Math.min(10, Math.round(act.perceivedExertion / 10)));
+      const rpe = toRpe(act.perceivedExertion);
       // Color: 1-3 green, 4-5 yellow, 6-7 orange, 8-10 red
       const rpeClass = rpe <= 3 ? 'rpe-easy' : rpe <= 5 ? 'rpe-moderate' : rpe <= 7 ? 'rpe-hard' : 'rpe-max';
       rpeBadge.textContent = `RPE ${rpe}`;
@@ -899,7 +932,7 @@ const renderActivities = (activities) => {
     }
 
     if (act.feelingAfterExercise != null) {
-      const f = Math.max(1, Math.min(5, Math.round(act.feelingAfterExercise / 25) + 1));
+      const f = toFeeling(act.feelingAfterExercise);
       // 1=exhausted, 2=tired, 3=normal, 4=good, 5=strong
       const feelingMap = {
         1: { label: 'Exhausted', icon: 'fa-face-dizzy',        cls: 'feeling-1' },
@@ -935,7 +968,7 @@ btnSync.addEventListener('click', async () => {
   const threshold = parsed.find(e => e.type === 'Threshold' && e.status === 'planned');
   const scheduleDate = threshold?.date || (() => {
     const t = new Date(); t.setDate(t.getDate() + 1);
-    return t.toLocaleDateString('sv-SE');
+    return isoDate(t);
   })();
 
   try {

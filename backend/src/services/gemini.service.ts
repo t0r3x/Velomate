@@ -8,6 +8,7 @@ import {
   getStoredAnalysis,
   PlanEntry
 } from './database.service';
+import { localDate, toRpe, toFeeling } from '../utils';
 
 // ── Key helpers ───────────────────────────────────────────────────────────────
 
@@ -32,85 +33,6 @@ const parseZones = (raw: any): number[] | null => {
 const fmtZones = (zones: number[]): string =>
   zones.map((s, i) => `z${i + 1}=${Math.round(s / 60)}m`).join(' ');
 
-// ── Execution quality classifier ──────────────────────────────────────────────
-
-/**
- * Given a Garmin activity and a planned workout type, return how well it was executed.
- *
- * Garmin's 5 HR zones (indices 0–4) roughly correspond to z1–z5.
- * They use % of max HR rather than LTHR, so zone boundaries differ slightly from
- * our custom zones — but the classification is accurate enough for AI context.
- */
-const classifyExecution = (
-  act: any,
-  planType: string,
-  lthr: number,
-  z4min: number,
-  z5min: number
-): 'completed' | 'completed-partial' | 'completed-mismatch' => {
-  const durationMin = act.durationMinutes || 0;
-  const avgHr       = act.averageHr || 0;
-  const zones       = parseZones(act.timeInZones);
-  const hasZones    = zones !== null;
-  const z4Sec       = hasZones ? (zones![3] || 0) : 0;
-  const z5Sec       = hasZones ? (zones![4] || 0) : 0;
-
-  switch (planType) {
-    case 'Sprint':
-      if (hasZones) {
-        if (z5Sec >= 60)  return 'completed';        // ≥ 1 min in Z5
-        if (z5Sec > 0)    return 'completed-partial'; // some Z5 but below threshold
-        return 'completed-mismatch';                   // no Z5 time at all
-      }
-      // Fallback: avgHr-based
-      if (avgHr >= z5min)  return 'completed';
-      if (avgHr >= z4min)  return 'completed-partial';
-      return 'completed-mismatch';
-
-    case 'Threshold':
-      if (hasZones) {
-        if (z4Sec >= 720)  return 'completed';        // ≥ 12 min in Z4
-        if (z4Sec >= 240)  return 'completed-partial'; // ≥ 4 min — started but cut short
-        return 'completed-mismatch';                   // barely any Z4 work
-      }
-      if (avgHr >= z4min && avgHr < z5min) return 'completed';
-      if (avgHr >= Math.round(lthr * 0.80) + 1) return 'completed-partial';
-      return 'completed-mismatch';
-
-    case 'VO2Max':
-      // Sustained Z5 intervals — need meaningful time at maximal aerobic intensity
-      if (hasZones) {
-        if (z5Sec >= 720)  return 'completed';         // ≥ 12 min in Z5 (≥3 full intervals)
-        if (z5Sec >= 240)  return 'completed-partial'; // ≥ 4 min — at least 1 interval done
-        return 'completed-mismatch';
-      }
-      if (avgHr >= z5min)  return 'completed';
-      if (avgHr >= z4min)  return 'completed-partial';
-      return 'completed-mismatch';
-
-    case 'Tempo': {
-      // Z3 / sweet-spot — sustained effort below threshold
-      const z3lower = Math.round(lthr * 0.80) + 1;
-      if (hasZones) {
-        const z3Sec = zones![2] || 0;
-        if (durationMin >= 40 && z3Sec >= 1800) return 'completed';         // 30+ min Z3
-        if (durationMin >= 20 && z3Sec >= 600)  return 'completed-partial'; // 10+ min Z3
-        return 'completed-mismatch';
-      }
-      if (durationMin >= 40 && avgHr >= z3lower && avgHr < z4min) return 'completed';
-      if (durationMin >= 20 && avgHr >= z3lower)                   return 'completed-partial';
-      return 'completed-mismatch';
-    }
-
-    case 'LongRide':
-      if (durationMin >= 75 && avgHr < z4min) return 'completed';
-      if (durationMin >= 45)                   return 'completed-partial';
-      return 'completed-mismatch';
-
-    default:
-      return 'completed';
-  }
-};
 
 // ── Completion / skip detection ───────────────────────────────────────────────
 
@@ -123,57 +45,46 @@ const isUnboundActivity = (name: string): boolean =>
   (name || '').toLowerCase().includes('unbound');
 
 /**
- * Classify plan entries that are 'planned', on or before today, and matched by a
- * Garmin activity.  Returns enriched status based on execution quality.
+ * Binary activity match: marks any planned entry as 'completed' if a Garmin activity
+ * exists on that date. Quality scoring is delegated entirely to the AI in
+ * generateRecommendation() — executionScore (0-100) and executionNote come back in the
+ * same Gemini call that regenerates the weekly plan.
  *
  * Activity selection per date (priority order):
- *   1. Activity whose name contains "Unbound" (Garmin appends workout name)
+ *   1. Activity whose name contains "Unbound" (Garmin appended workout name on record)
  *   2. Longest activity on that date (fallback)
  *
- * Including today (<=) means a workout synced the same day it is completed is
- * immediately classified without waiting until tomorrow's auto-check.
+ * Including today (<=) means a same-day sync immediately marks the workout as done.
  */
 export const classifyCompletedEntries = (
   plan: PlanEntry[]
-): Array<{ date: string; status: 'completed' | 'completed-partial' | 'completed-mismatch' }> => {
+): Array<{ date: string; status: 'completed' }> => {
   const activities = getStoredActivities();
-  const profile    = getStoredProfile();
-  const lthr       = profile?.lthr  || 165;
-  const maxHr      = profile?.maxHr || 190;
-  const z4min      = Math.round(lthr * 0.89) + 1;
-  const z5min      = lthr + 1;
 
-  // Best activity per date:
-  //   – prefer Unbound-named activities (strong signal it was the structured workout)
-  //   – within same priority tier, prefer the longer activity
+  // Best activity per date: prefer Unbound-named, then longest
   const actMap = new Map<string, any>();
   activities
     .filter(a => a.startTime)
     .forEach(a => {
       const date     = a.startTime.slice(0, 10);
       const existing = actMap.get(date);
-      const aIsIJ    = isUnboundActivity(a.name);
-      const exIsIJ   = existing ? isUnboundActivity(existing.name) : false;
+      const aIsUB    = isUnboundActivity(a.name);
+      const exIsUB   = existing ? isUnboundActivity(existing.name) : false;
 
       if (!existing) {
         actMap.set(date, a);
-      } else if (aIsIJ && !exIsIJ) {
-        // Unbound activity beats any non-Unbound activity on same day
+      } else if (aIsUB && !exIsUB) {
         actMap.set(date, a);
-      } else if (aIsIJ === exIsIJ && a.durationMinutes > existing.durationMinutes) {
-        // Same tier → prefer the longer ride
+      } else if (aIsUB === exIsUB && a.durationMinutes > existing.durationMinutes) {
         actMap.set(date, a);
       }
     });
 
-  const today = new Date().toLocaleDateString('sv-SE');
+  const today = localDate();
 
   return plan
     .filter(e => e.status === 'planned' && e.date <= today && actMap.has(e.date))
-    .map(e => ({
-      date:   e.date,
-      status: classifyExecution(actMap.get(e.date)!, e.type, lthr, z4min, z5min)
-    }));
+    .map(e => ({ date: e.date, status: 'completed' as const }));
 };
 
 /** Returns dates of plan entries that are 'planned', in the past, and NOT matched by any Garmin activity. */
@@ -185,7 +96,7 @@ export const detectAutoSkippedEntries = (plan: PlanEntry[]): string[] => {
       .map(a => a.startTime.slice(0, 10))
   );
 
-  const today = new Date().toLocaleDateString('sv-SE');
+  const today = localDate();
 
   return plan
     .filter(e => e.status === 'planned' && e.date < today && !activityDates.has(e.date))
@@ -195,7 +106,7 @@ export const detectAutoSkippedEntries = (plan: PlanEntry[]): string[] => {
 // ── Prompt builder ────────────────────────────────────────────────────────────
 
 const buildPrompt = (previousPlan?: PlanEntry[]): string => {
-  const today     = new Date().toLocaleDateString('sv-SE');
+  const today     = localDate();
   const dayOfWeek = new Date().toLocaleDateString('en-GB', { weekday: 'long' });
 
   // Recent 21 days of activities — include zone distribution when available
@@ -224,13 +135,9 @@ const buildPrompt = (previousPlan?: PlanEntry[]): string => {
       }
       // Include perceived exertion and post-ride feeling when available — these are
       // subjective athlete signals that are strong indicators of recovery state.
-      // DB stores raw Garmin 0–100 values; convert here to human-readable scale.
-      if (a.perceivedExertion != null) {
-        base.rpe = Math.max(1, Math.min(10, Math.round(a.perceivedExertion / 10)));   // 1–10 Borg
-      }
-      if (a.feelingAfterExercise != null) {
-        base.feeling = Math.max(1, Math.min(5, Math.round(a.feelingAfterExercise / 25) + 1)); // 1–5
-      }
+      // DB stores raw Garmin 0–100 values; toRpe/toFeeling convert to human-readable scale.
+      if (a.perceivedExertion != null)    base.rpe     = toRpe(a.perceivedExertion);
+      if (a.feelingAfterExercise != null) base.feeling = toFeeling(a.feelingAfterExercise);
       return base;
     });
 
@@ -259,36 +166,46 @@ const buildPrompt = (previousPlan?: PlanEntry[]): string => {
         }
       });
 
-    const lines = previousPlan.map(e => {
+    // Only include non-'planned' entries — future planned entries (tomorrow onwards)
+    // are being regenerated and add no compliance signal.
+    // This also prevents 14-day history pollution when the stored plan has scored history prepended.
+    const complianceEntries = previousPlan.filter(e => e.status !== 'planned');
+    if (complianceEntries.length === 0) {
+      // No completed/skipped entries yet — omit the block entirely
+      prevBlock = '';
+    } else {
+    const lines = complianceEntries.map(e => {
       const dow = new Date(e.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short' });
 
-      if (e.status === 'completed' || e.status === 'completed-partial' || e.status === 'completed-mismatch') {
+      if (e.status === 'completed') {
         const act = actMap.get(e.date);
-        let detail = '';
+        let actDetail = '';
         if (act) {
-          detail = ` (${act.durationMinutes} min, avg ${act.averageHr} bpm`;
+          actDetail = `${act.durationMinutes} min, avg ${act.averageHr} bpm`;
           const zones = parseZones(act.timeInZones);
-          if (zones) detail += `, zones: ${fmtZones(zones)}`;
-          detail += ')';
+          if (zones) actDetail += `, zones: ${fmtZones(zones)}`;
+          if (act.perceivedExertion != null)    actDetail += `, rpe=${toRpe(act.perceivedExertion)}`;
+          if (act.feelingAfterExercise != null) actDetail += `, feeling=${toFeeling(act.feelingAfterExercise)}`;
         }
-        if (e.status === 'completed') {
-          return `- ${e.date} (${dow}): ${e.type} → COMPLETED${detail}`;
+
+        if (e.executionScore != null) {
+          // Already scored — show existing score, do NOT re-score
+          return `- ${e.date} (${dow}): ${e.type} → SCORED ${e.executionScore}/100${actDetail ? ` — ${actDetail}` : ''}${e.executionNote ? ` — "${e.executionNote}"` : ''}`;
+        } else {
+          // Needs AI scoring — include full activity data
+          return `- ${e.date} (${dow}): ${e.type} → NEEDS SCORING${actDetail ? ` — activity: ${actDetail}` : ' — no activity data'}`;
         }
-        if (e.status === 'completed-partial') {
-          return `- ${e.date} (${dow}): ${e.type} → COMPLETED-PARTIAL — workout started but not fully executed${detail}`;
-        }
-        // completed-mismatch
-        return `- ${e.date} (${dow}): ${e.type} → COMPLETED-MISMATCH — activity recorded but intensity profile did not match planned type${detail}`;
       }
 
       if (e.status === 'skipped')      return `- ${e.date} (${dow}): ${e.type} → SKIPPED (explicit)`;
-      if (e.status === 'auto-skipped') return `- ${e.date} (${dow}): ${e.type} → AUTO-SKIPPED (no activity recorded)`;
+      if (e.status === 'auto-skipped') return `- ${e.date} (${dow}): ${e.type} → AUTO-SKIPPED`;
 
-      const isToday = e.date === today;
-      return `- ${e.date} (${dow}): ${e.type} → ${isToday ? '[today, planned]' : e.status}`;
+      // Unreachable: complianceEntries filters out 'planned' entries
+      return `- ${e.date} (${dow}): ${e.type} → ${e.status}`;
     });
 
-    prevBlock = `PREVIOUS PLAN COMPLIANCE:\n${lines.join('\n')}\n\nNote on compliance labels:\n- COMPLETED: activity matched planned type (correct zone profile)\n- COMPLETED-PARTIAL: activity done but execution quality below target (cut short or wrong intensity)\n- COMPLETED-MISMATCH: activity recorded on that day but did not match expected workout type\n- AUTO-SKIPPED: no activity at all\n\n`;
+    prevBlock = `PREVIOUS PLAN COMPLIANCE:\n${lines.join('\n')}\n\n`;
+    } // end else (complianceEntries.length > 0)
   }
 
   // Support multiple preferred days (new plural key) with fallback to old singular key
@@ -344,7 +261,7 @@ Threshold (when moderately fresh — core aerobic progression):
   Intervals: 2-4 sets of [Work [Run] 360-720 sec Z4 → Recovery [Recovery] 180-300 sec Z1/Z2]
   Cool-down [Cooldown]: 480-600 sec Z1
   Reduce interval count/duration when fatigued; increase when athlete is adapting well.
-  Pay attention to COMPLETED-PARTIAL history — if athlete keeps cutting threshold short, reduce interval duration.
+  If execution scores for Threshold sessions are consistently < 60, the athlete is cutting intervals short — reduce duration.
 
 Tempo (ideal for moderate fatigue — sweet spot, Z3):
   Warm-up [WarmUp]: 480-600 sec Z2
@@ -362,7 +279,23 @@ PROGRESSION GOAL: Develop all energy systems using the full training pyramid:
   Rest → LongRide (Z2 base) → Tempo (Z3 fatigue resistance) → Threshold (Z4 aerobic power) → VO2Max (Z5 aerobic ceiling) → Sprint (Z5+ neuromuscular)
 Higher-intensity sessions require more recovery. Build from the base — do not stack VO2Max + Threshold + Sprint in the same week unless fatigue is consistently low and compliance is excellent.
 Gradually increase intensity/frequency when fatigue is low and compliance is good.
-If COMPLETED-PARTIAL or COMPLETED-MISMATCH patterns appear, prioritise consolidation over progression.
+If execution scores are consistently below 60, prioritise consolidation over progression — the athlete is not absorbing the current load.
+
+EXECUTION SCORING — for ALL entries marked "NEEDS SCORING" above:
+Score on a 0-100 scale based on zone distribution, duration, rpe, and feeling:
+  90-100 : Textbook — target zone time met or exceeded, full duration, correct intensity
+  75-89  : Good — mostly on target, minor deviations (slightly short, small zone drift)
+  60-74  : Partial — significant reduction (e.g. 1-2 fewer intervals, ~30% short)
+  40-59  : Poor — major deviations, wrong intensity, substantial shortfall
+  0-39   : Mismatch — activity bears little resemblance to the planned workout
+Be honest — do not inflate scores. Reference specific data in the note (1 sentence, e.g. "12 min in Z4 vs target 24 min — significant shortfall").
+Use your scoring assessment DIRECTLY when deciding load, recovery, and session types for the new plan.
+
+Where to put scores:
+- NEEDS SCORING entries where date < TODAY: add to executionScores[] with date, score, note.
+- Today's entry (weeklyPlan[0]) if its status was 'completed' (shown as NEEDS SCORING): set executionScore + executionNote inside weeklyPlan[0], NOT in executionScores[].
+- Already SCORED entries: output their existing score in executionScores[] unchanged.
+- Planned / skipped / Rest entries: executionScore = null, executionNote = null.
 
 OUTPUT: Respond ONLY with this exact JSON schema:
 {
@@ -371,11 +304,20 @@ OUTPUT: Respond ONLY with this exact JSON schema:
     "reason": "2-3 sentences referencing specific data (last activity date, HR trend, etc.)",
     "priority": "high|medium|low"
   },
+  "executionScores": [
+    {
+      "date": "YYYY-MM-DD",
+      "score": <integer 0-100>,
+      "note": "<1-sentence rationale>"
+    }
+  ],
   "weeklyPlan": [
     {
       "date": "YYYY-MM-DD",
       "type": "Sprint|VO2Max|Threshold|Tempo|LongRide|Rest",
       "reason": "1 sentence",
+      "executionScore": <integer 0-100 or null>,
+      "executionNote": "<1-sentence scoring rationale or null>",
       "structure": {
         "totalMinutes": <sum of all durationSec values divided by 60, rounded to integer>,
         "steps": [
@@ -400,7 +342,10 @@ OUTPUT: Respond ONLY with this exact JSON schema:
 
 STRICT RULES:
 - For Rest days: set "structure": null
-- For entries whose status is already completed, completed-partial, completed-mismatch, skipped, or auto-skipped: set "structure": null (they are done, no workout to sync)
+- For entries whose status is completed, skipped, or auto-skipped: set "structure": null (done — no workout to sync)
+- executionScores[]: include ALL past (date < TODAY) NEEDS SCORING entries + already-SCORED entries. Empty array if none.
+- weeklyPlan[0].executionScore: integer 0-100 ONLY if today's entry is completed and needs scoring. All others: null.
+- weeklyPlan[0].executionNote: matching 1-sentence string if scored. All others: null.
 - stepType MUST be one of: WarmUp, Run, Recovery, Cooldown
 - zone MUST be one of: z1, z2, z3, z4, z5
 - durationSec MUST be a positive integer (minimum 20 for sprint intervals)
@@ -470,37 +415,96 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[]): Promis
     throw new Error(`weeklyPlan must be an array of 7 entries, got ${parsed?.weeklyPlan?.length}`);
   }
 
-  // Preserve existing statuses from previousPlan (completed/skipped/auto-skipped entries)
-  const prevStatusMap = new Map<string, PlanEntry['status']>();
+  // Build a lookup of the previous plan for status + score preservation
+  const prevEntryMap = new Map<string, PlanEntry>();
   if (previousPlan) {
-    previousPlan.forEach(e => {
-      if (e.status !== 'planned') prevStatusMap.set(e.date, e.status);
-    });
+    previousPlan.forEach(e => prevEntryMap.set(e.date, e));
   }
 
-  // Merge statuses into the new plan (preserve structure from AI output)
+  // Merge into the new 7-day plan:
+  //  - Preserve non-planned statuses (completed/skipped/auto-skipped)
+  //  - Preserve existing executionScores (never re-score an already-scored entry)
+  //  - Apply new AI-generated scores for entries that just became completed (today's dates in new plan)
   const weeklyPlan: PlanEntry[] = parsed.weeklyPlan.map((e: any) => {
-    // Recompute totalMinutes from steps to catch any AI rounding errors
+    const prev          = prevEntryMap.get(e.date);
+    const status        = prev?.status !== 'planned' ? prev!.status : 'planned';
+    const alreadyScored = prev?.executionScore != null;
+
     const structure = e.structure && Array.isArray(e.structure.steps) ? {
       totalMinutes: Math.round(
         e.structure.steps.reduce((s: number, st: any) => s + (st.durationSec || 0), 0) / 60
       ),
       steps: e.structure.steps
     } : null;
+
     return {
-      date:      e.date,
-      type:      e.type,
-      reason:    e.reason,
-      status:    prevStatusMap.get(e.date) ?? 'planned',
+      date:           e.date,
+      type:           e.type,
+      reason:         e.reason,
+      status,
+      executionScore: alreadyScored
+                        ? prev!.executionScore!
+                        : (typeof e.executionScore === 'number' ? e.executionScore : null),
+      executionNote:  alreadyScored
+                        ? (prev!.executionNote ?? null)
+                        : (typeof e.executionNote === 'string' ? e.executionNote : null),
       structure
     };
   });
+
+  // ── Merge AI execution scores with past entries (scored history) ───────────
+  // The AI returns executionScores[] for entries marked "NEEDS SCORING" in the compliance block.
+  // Those dates are BEFORE today and NOT in the new 7-day weeklyPlan — we keep them as
+  // scored history prepended to the plan so that future AI calls have full execution context.
+  const newPlanDates = new Set(weeklyPlan.map(e => e.date));
+  const scoredMap    = new Map<string, { score: number; note: string }>();
+  if (Array.isArray(parsed.executionScores)) {
+    for (const s of parsed.executionScores) {
+      if (s.date && typeof s.score === 'number') {
+        scoredMap.set(s.date, { score: s.score, note: typeof s.note === 'string' ? s.note : '' });
+      }
+    }
+  }
+  if (scoredMap.size > 0) {
+    console.log(`[Gemini] executionScores received for: ${[...scoredMap.keys()].join(', ')}`);
+  }
+
+  // Keep past completed entries from the last 14 days, with AI scores applied
+  const histCutoff = new Date();
+  histCutoff.setDate(histCutoff.getDate() - 14);
+  const histCutoffStr = localDate(histCutoff);
+
+  const scoredHistory: PlanEntry[] = (previousPlan || [])
+    .filter(e => !newPlanDates.has(e.date) && e.date >= histCutoffStr && e.status === 'completed')
+    .map(e => {
+      const s = scoredMap.get(e.date);
+      return {
+        ...e,
+        executionScore: e.executionScore != null ? e.executionScore : (s ? s.score : null),
+        executionNote:  e.executionNote  != null ? e.executionNote  : (s ? s.note  : null),
+        structure:      null   // past entries: no workout structure needed
+      };
+    });
+
+  // Fallback: if the AI put today's score in executionScores[] instead of weeklyPlan[0],
+  // apply it here. This handles AI non-compliance with the schema instruction.
+  if (weeklyPlan.length > 0 && weeklyPlan[0].status === 'completed' && weeklyPlan[0].executionScore == null) {
+    const todayScore = scoredMap.get(weeklyPlan[0].date);
+    if (todayScore) {
+      weeklyPlan[0].executionScore = todayScore.score;
+      weeklyPlan[0].executionNote  = todayScore.note || null;
+      console.log(`[Gemini] executionScores[] fallback applied for today (${weeklyPlan[0].date}): score=${todayScore.score}`);
+    }
+  }
+
+  // Full plan = scored history (past completed) + new 7-day window (today onwards)
+  const fullPlan = [...scoredHistory, ...weeklyPlan];
 
   upsertRecommendation({
     workoutType:      parsed.today.type,
     reason:           parsed.today.reason,
     priority:         parsed.today.priority,
-    weeklyPlan,
+    weeklyPlan:       fullPlan,
     nextWeekOverview: parsed.nextWeekOverview,
     loadAssessment:   parsed.loadAssessment
   });
@@ -511,7 +515,13 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[]): Promis
   console.log(`  Reason:   ${parsed.today.reason}`);
   console.log(`  Fatigue:  ${parsed.loadAssessment?.fatigue}  |  Trend: ${parsed.loadAssessment?.weeklyLoadTrend}`);
   console.log(`  Insight:  ${parsed.loadAssessment?.insight}`);
-  console.log('  Weekly plan:');
+  if (scoredHistory.length > 0) {
+    console.log(`  Scored history (${scoredHistory.length} past entries):`);
+    scoredHistory.forEach(e =>
+      console.log(`    ${e.date}  ${e.type.padEnd(10)}  [${e.status}]  score=${e.executionScore ?? 'null'}  ${e.executionNote ?? ''}`)
+    );
+  }
+  console.log(`  New 7-day plan (${weeklyPlan.length} entries):`);
   weeklyPlan.forEach(e =>
     console.log(`    ${e.date}  ${e.type.padEnd(10)}  [${e.status}]  ${e.reason}`)
   );

@@ -1283,10 +1283,14 @@ body {
   margin-top: 2px;
 }
 /* Status variants */
-.wdc-badge-done     { color: #10b981; }   /* green  — completed      */
-.wdc-badge-partial  { color: #f59e0b; }   /* amber  — partial        */
-.wdc-badge-mismatch { color: #f97316; }   /* orange — mismatch       */
-.wdc-badge-skipped  { color: var(--text-muted); }
+.wdc-badge-done        { color: #10b981; }
+.wdc-badge-skipped     { color: var(--text-muted); }
+
+/* AI execution score badge */
+.wdc-badge-score         { font-weight: 600; letter-spacing: 0.02em; }
+.wdc-badge-score-great   { color: #10b981; }   /* ≥ 80 — green  */
+.wdc-badge-score-ok      { color: #f59e0b; }   /* 60-79 — amber */
+.wdc-badge-score-poor    { color: #ef4444; }   /* < 60  — red   */
 
 /* Workout detail cards below the grid */
 .workout-detail-cards {

@@ -247,8 +247,10 @@ export interface PlanEntry {
   date: string;
   type: string;
   reason: string;
-  status: 'planned' | 'completed' | 'completed-partial' | 'completed-mismatch' | 'skipped' | 'auto-skipped';
+  status: 'planned' | 'completed' | 'skipped' | 'auto-skipped';
   structure?: WorkoutStructure | null;
+  executionScore?: number | null;   // 0-100, AI-generated quality score
+  executionNote?: string | null;    // 1-sentence AI explanation of the score
 }
 
 export const upsertRecommendation = (rec: {
@@ -296,7 +298,7 @@ export const getStoredRecommendation = (): any | null => {
 /** Update the status of a single plan entry identified by date. Returns true if found. */
 export const updatePlanEntryStatus = (
   date: string,
-  status: 'completed' | 'completed-partial' | 'completed-mismatch' | 'skipped' | 'auto-skipped'
+  status: 'completed' | 'skipped' | 'auto-skipped'
 ): boolean => {
   const row = db.prepare('SELECT weeklyPlan FROM recommendation WHERE id = 1').get() as any;
   if (!row) return false;

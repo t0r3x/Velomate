@@ -30,6 +30,7 @@ import {
   detectAutoSkippedEntries
 } from './services/gemini.service';
 import { UserHRProfile } from './types';
+import { localDate } from './utils';
 
 dotenv.config();
 
@@ -289,14 +290,25 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Not authenticated with Garmin Connect.' });
     }
 
+    // Capture which dates were 'planned' BEFORE syncing — syncActivitiesFromGarmin()
+    // calls classifyCompletedEntries() internally and flips their status to 'completed',
+    // so a second call after sync would always return empty (they're no longer 'planned').
+    const preSyncPlan    = getStoredRecommendation()?.weeklyPlan || [];
+    const prePlannedDates = new Set(
+      preSyncPlan.filter((e: any) => e.status === 'planned').map((e: any) => e.date)
+    );
+
     // syncActivitiesFromGarmin handles fetch → upsert → analysis → classify
     await syncActivitiesFromGarmin();
 
-    // Non-blocking: if plan entries were just classified, regenerate the AI plan
+    // Non-blocking: trigger AI regen if any previously-planned dates are now 'completed'
     const stored = getStoredRecommendation();
-    if (stored?.weeklyPlan) {
-      const classified = classifyCompletedEntries(stored.weeklyPlan);
-      if (classified.length > 0) {
+    if (stored?.weeklyPlan && prePlannedDates.size > 0) {
+      const newlyCompleted = stored.weeklyPlan.filter(
+        (e: any) => e.status === 'completed' && prePlannedDates.has(e.date)
+      );
+      if (newlyCompleted.length > 0) {
+        console.log(`[Gemini] ${newlyCompleted.length} newly completed workout(s) (${newlyCompleted.map((e: any) => e.date).join(', ')}) — triggering AI re-evaluation`);
         generateRecommendation(stored.weeklyPlan).catch((err: any) =>
           console.warn('[Gemini] Auto-regen after activity sync failed:', err.message)
         );
@@ -463,7 +475,7 @@ app.post('/api/recommendation/skip-today', async (req: Request, res: Response) =
     // Sync first so the AI sees the latest rides before re-planning
     await syncActivitiesFromGarmin();
 
-    const today = new Date().toLocaleDateString('sv-SE');
+    const today = localDate();
     const stored = getStoredRecommendation();
     const todayEntry = stored?.weeklyPlan?.find((e: any) => e.date === today);
     console.log(`[Gemini] Skip-today: marking ${today} as skipped (was: ${todayEntry?.type ?? 'unknown'} [${todayEntry?.status ?? 'unknown'}])`);
