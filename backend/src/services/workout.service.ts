@@ -12,6 +12,7 @@ import {
 import { getGarminClient, trySessionAuth } from './garmin.service';
 import { loadProfile } from './profile.service';
 import { getStoredProfile, PlanEntry, WorkoutStep, WorkoutStructure } from './database.service';
+import { localDate } from '../utils';
 
 /** Write workout definitions to ./tmp/garmin-workouts/{timestamp}/ for dev inspection. */
 const devDumpWorkouts = (workoutDefs: Record<string, any>, dateStr: string): void => {
@@ -151,7 +152,7 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
     return builder.build();
   };
 
-  const dateStr = scheduleDate || new Date().toISOString().split('T')[0];
+  const dateStr = scheduleDate || localDate();
   const results: { type: string; workoutId: any; name: string; scheduledDate: string; scheduleError: string }[] = [];
   const usingFallback: string[] = [];   // tracks which types had no AI structure
 
