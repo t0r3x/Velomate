@@ -1,4 +1,4 @@
-// API Client for INNERJOIN Dashboard
+// API Client for Unbound Dashboard
 // Empty string → all fetch() calls use relative URLs, so the app works regardless
 // of whether it's accessed via localhost, a Pi IP, or any other hostname.
 const API_BASE_URL = '';
@@ -1153,3 +1153,18 @@ checkStatus();                // parallel: check session and enable live feature
 fetchGeminiKeyStatus();       // fetch geminiConfigured + setupComplete → routes to correct view
 fetchRecommendation();        // load recommendation from DB cache immediately
 setInterval(checkStatus, 30000);
+
+// 🍦 Mintberry Crunch easter egg — swap logo icon when shablagoo is toggled
+const shablagooToggle = document.getElementById('shablagoo-toggle');
+if (shablagooToggle) {
+  const logoIcons = document.querySelectorAll('.logo-icon');
+  shablagooToggle.addEventListener('change', () => {
+    logoIcons.forEach(icon => {
+      if (shablagooToggle.checked) {
+        icon.classList.replace('fa-route', 'fa-ice-cream');
+      } else {
+        icon.classList.replace('fa-ice-cream', 'fa-route');
+      }
+    });
+  });
+}

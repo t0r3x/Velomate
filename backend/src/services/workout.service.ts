@@ -187,13 +187,13 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
     let workoutName: string;
     let workoutDesc: string;
     if (type === 'Sprint') {
-      workoutName = `INNERJOIN Sprint`;
+      workoutName = `Unbound Sprint`;
       workoutDesc = 'Sprint intervals targeted to heart rate zones';
     } else if (type === 'Threshold') {
-      workoutName = `INNERJOIN Threshold`;
+      workoutName = `Unbound Threshold`;
       workoutDesc = 'Threshold intervals (Z4) to increase aerobic power';
     } else {
-      workoutName = `INNERJOIN Long Ride`;
+      workoutName = `Unbound Long Ride`;
       workoutDesc = 'Steady Z2 endurance ride — press Lap when done';
     }
 
