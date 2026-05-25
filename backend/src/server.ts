@@ -40,8 +40,8 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Serve static files from the frontend directory
-const frontendPath = path.join(__dirname, '../../frontend');
+// Serve static files from the Vue build output
+const frontendPath = path.join(__dirname, '../../frontend/dist');
 app.use(express.static(frontendPath));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -658,6 +658,11 @@ runGeminiAutoCheck();
 setInterval(runGeminiAutoCheck, 60 * 60 * 1000);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
+
+// SPA catch-all: serve index.html for any non-API route (Vue Router history mode)
+app.get('*', (_req: Request, res: Response) => {
+  res.sendFile(path.join(frontendPath, 'index.html'));
+});
 
 app.listen(PORT, () => {
   const line = '─'.repeat(52);
