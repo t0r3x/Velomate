@@ -427,7 +427,7 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[]): Promis
   //  - Apply new AI-generated scores for entries that just became completed (today's dates in new plan)
   const weeklyPlan: PlanEntry[] = parsed.weeklyPlan.map((e: any) => {
     const prev          = prevEntryMap.get(e.date);
-    const status        = prev?.status !== 'planned' ? prev!.status : 'planned';
+    const status        = (prev && prev.status !== 'planned') ? prev.status : 'planned';
     const alreadyScored = prev?.executionScore != null;
 
     const structure = e.structure && Array.isArray(e.structure.steps) ? {
