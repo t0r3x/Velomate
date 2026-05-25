@@ -881,6 +881,15 @@ const renderActivities = (activities) => {
     return;
   }
 
+  // Build date → plan entry lookup for AI execution scores.
+  // currentRecommendation is set by renderRecommendation(); may be null on first load.
+  const scoreByDate = new Map();
+  if (currentRecommendation?.weeklyPlan) {
+    for (const e of currentRecommendation.weeklyPlan) {
+      if (e.executionScore != null) scoreByDate.set(e.date, e);
+    }
+  }
+
   const tpl = document.getElementById('tpl-activity-item');
   activities.forEach(act => {
     const li = tpl.content.cloneNode(true).firstElementChild;
@@ -916,9 +925,10 @@ const renderActivities = (activities) => {
       hrStat.hidden = true;
     }
 
-    // ── Perceived exertion + feeling badges ───────────────────────────────────
+    // ── Feedback badges: RPE, Feeling, AI execution score ────────────────────
     const rpeBadge     = li.querySelector('.act-rpe-badge');
     const feelingBadge = li.querySelector('.act-feeling-badge');
+    const scoreBadge   = li.querySelector('.act-score-badge');
     const feedbackRow  = li.querySelector('.act-feedback');
 
     // Garmin stores raw 0–100 values; toRpe / toFeeling convert to display scale.
@@ -947,7 +957,20 @@ const renderActivities = (activities) => {
       feelingBadge.classList.remove('hidden');
     }
 
-    if (act.perceivedExertion != null || act.feelingAfterExercise != null) {
+    // AI execution score — looked up from the current recommendation plan by date.
+    const actDate  = act.startTime?.slice(0, 10);
+    const planEntry = actDate ? scoreByDate.get(actDate) : null;
+    if (planEntry) {
+      const score     = planEntry.executionScore;
+      const scoreCls  = score >= 80 ? 'score-great' : score >= 60 ? 'score-ok' : 'score-poor';
+      const typeLabel = workoutTypeLabel[planEntry.type] || planEntry.type;
+      scoreBadge.innerHTML = `<i class="fa-solid fa-brain"></i> ${score} <span class="act-score-type">${typeLabel}</span>`;
+      scoreBadge.className = `act-score-badge ${scoreCls}`;
+      scoreBadge.title     = planEntry.executionNote || '';
+      scoreBadge.classList.remove('hidden');
+    }
+
+    if (act.perceivedExertion != null || act.feelingAfterExercise != null || planEntry) {
       feedbackRow.classList.remove('hidden');
     }
 
