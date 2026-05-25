@@ -90,19 +90,19 @@ const classifyExecution = (
 // ── Completion / skip detection ───────────────────────────────────────────────
 
 /**
- * Returns true when an activity name looks like an INNERJOIN structured workout.
+ * Returns true when an activity name looks like an Unbound structured workout.
  * Garmin prefixes the location when recording a scheduled workout, e.g.
- * "Tilburg - INNERJOIN Long Ride" → contains "INNERJOIN".
+ * "Tilburg - Unbound Long Ride" → contains "unbound".
  */
-const isInnerjoinActivity = (name: string): boolean =>
-  (name || '').toLowerCase().includes('innerjoin');
+const isUnboundActivity = (name: string): boolean =>
+  (name || '').toLowerCase().includes('unbound');
 
 /**
  * Classify plan entries that are 'planned', on or before today, and matched by a
  * Garmin activity.  Returns enriched status based on execution quality.
  *
  * Activity selection per date (priority order):
- *   1. Activity whose name contains "INNERJOIN" (Garmin appends workout name)
+ *   1. Activity whose name contains "Unbound" (Garmin appends workout name)
  *   2. Longest activity on that date (fallback)
  *
  * Including today (<=) means a workout synced the same day it is completed is
@@ -119,7 +119,7 @@ export const classifyCompletedEntries = (
   const z5min      = lthr + 1;
 
   // Best activity per date:
-  //   – prefer INNERJOIN-named activities (strong signal it was the structured workout)
+  //   – prefer Unbound-named activities (strong signal it was the structured workout)
   //   – within same priority tier, prefer the longer activity
   const actMap = new Map<string, any>();
   activities
@@ -127,13 +127,13 @@ export const classifyCompletedEntries = (
     .forEach(a => {
       const date     = a.startTime.slice(0, 10);
       const existing = actMap.get(date);
-      const aIsIJ    = isInnerjoinActivity(a.name);
-      const exIsIJ   = existing ? isInnerjoinActivity(existing.name) : false;
+      const aIsIJ    = isUnboundActivity(a.name);
+      const exIsIJ   = existing ? isUnboundActivity(existing.name) : false;
 
       if (!existing) {
         actMap.set(date, a);
       } else if (aIsIJ && !exIsIJ) {
-        // INNERJOIN activity beats any non-INNERJOIN activity on same day
+        // Unbound activity beats any non-Unbound activity on same day
         actMap.set(date, a);
       } else if (aIsIJ === exIsIJ && a.durationMinutes > existing.durationMinutes) {
         // Same tier → prefer the longer ride

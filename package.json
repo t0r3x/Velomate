@@ -1,7 +1,7 @@
-{
-  "name": "innerjoin-root",
+﻿{
+  "name": "unbound-root",
   "version": "1.0.0",
-  "description": "InnerJoin Garmin Training Root",
+  "description": "Unbound Garmin Training Root",
   "scripts": {
     "install-all": "cd backend && npm install",
     "dev": "cd backend && npm run dev",

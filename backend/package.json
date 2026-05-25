@@ -1,5 +1,5 @@
 {
-  "name": "innerjoin-backend",
+  "name": "unbound-backend",
   "version": "1.0.0",
   "description": "Garmin Connect and HR Training API Service",
   "main": "dist/server.js",
