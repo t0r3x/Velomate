@@ -590,25 +590,22 @@ body {
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast), opacity var(--transition-fast);
   border: none;
 }
 
 .btn-primary {
   background: var(--primary-color);
   color: #fff;
-  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.2);
 }
 
 .btn-primary:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.35);
+  background: var(--primary-hover);
 }
 
 .btn-primary:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-  box-shadow: none;
 }
 
 .btn-secondary {
@@ -638,8 +635,8 @@ body {
 }
 
 @keyframes glow-pulse {
-  0% { box-shadow: 0 0 10px rgba(59, 130, 246, 0.2); }
-  100% { box-shadow: 0 0 20px rgba(234, 88, 12, 0.4); }
+  0% { box-shadow: 0 0 8px rgba(59, 130, 246, 0.25); }
+  100% { box-shadow: 0 0 22px rgba(59, 130, 246, 0.55); }
 }
 
 /* Success Indicator */
