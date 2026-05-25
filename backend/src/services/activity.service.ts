@@ -1,6 +1,7 @@
 import { getGarminClient, trySessionAuth } from './garmin.service';
 import { calculateDefaultZones, loadProfile } from './profile.service';
 import { updateActivityFeedback } from './database.service';
+import { toRpe, toFeeling } from '../utils';
 
 export const fetchCyclingActivities = async (days: number = 90) => {
   const isAuthenticated = await trySessionAuth();
@@ -164,9 +165,9 @@ export const fetchAndStoreRecentFeedback = async (storedActivities: any[]): Prom
 
       if (rawRpe == null && rawFeel == null) continue;
 
-      // Convert Garmin's 0–100 internal scale to human-readable units
-      const rpe     = rawRpe  != null ? Math.max(1, Math.min(10, Math.round(rawRpe  / 10)))        : null;
-      const feeling = rawFeel != null ? Math.max(1, Math.min(5,  Math.round(rawFeel / 25) + 1))    : null;
+      // Convert Garmin's 0–100 internal scale to human-readable units (for logging only)
+      const rpe     = rawRpe  != null ? toRpe(rawRpe)     : null;
+      const feeling = rawFeel != null ? toFeeling(rawFeel) : null;
 
       // Store the raw Garmin values — display layer converts them
       updateActivityFeedback(String(act.activityId), rawRpe ?? null, rawFeel ?? null);
