@@ -1253,13 +1253,19 @@ body {
 }
 .wt-sprint    .wdc-workout-chip i,
 .wt-sprint    .wdc-workout-chip   { color: var(--z5-color); }
+.wt-vo2max    .wdc-workout-chip i,
+.wt-vo2max    .wdc-workout-chip   { color: #a855f7; }
 .wt-threshold .wdc-workout-chip i,
 .wt-threshold .wdc-workout-chip   { color: var(--z4-color); }
+.wt-tempo     .wdc-workout-chip i,
+.wt-tempo     .wdc-workout-chip   { color: var(--z3-color); }
 .wt-longride  .wdc-workout-chip i,
 .wt-longride  .wdc-workout-chip   { color: var(--z2-color); }
 
 .week-day-cell.wt-sprint    { border-top: 2px solid var(--z5-color); }
+.week-day-cell.wt-vo2max    { border-top: 2px solid #a855f7; }
 .week-day-cell.wt-threshold { border-top: 2px solid var(--z4-color); }
+.week-day-cell.wt-tempo     { border-top: 2px solid var(--z3-color); }
 .week-day-cell.wt-longride  { border-top: 2px solid var(--z2-color); }
 .week-day-cell.is-threshold { background: rgba(245,158,11,0.07); }
 
@@ -1312,7 +1318,9 @@ body {
   flex-shrink: 0;
 }
 .wt-sprint    .wc-icon { color: var(--z5-color); background: rgba(239,68,68,0.12); }
+.wt-vo2max    .wc-icon { color: #a855f7;         background: rgba(168,85,247,0.12); }
 .wt-threshold .wc-icon { color: var(--z4-color); background: rgba(245,158,11,0.12); }
+.wt-tempo     .wc-icon { color: var(--z3-color); background: rgba(6,182,212,0.12); }
 .wt-longride  .wc-icon { color: var(--z2-color); background: rgba(16,185,129,0.12); }
 
 .wc-title-block { flex: 1; }
@@ -1843,10 +1851,20 @@ body:has(#shablagoo-toggle:checked) .setup-logo h1 span {
   border-color: rgba(239,68,68,0.3);
   color: #ef4444;
 }
+.ai-workout-chip.wt-vo2max {
+  background: rgba(168,85,247,0.15);
+  border-color: rgba(168,85,247,0.3);
+  color: #a855f7;
+}
 .ai-workout-chip.wt-threshold {
   background: rgba(245,158,11,0.15);
   border-color: rgba(245,158,11,0.3);
   color: #f59e0b;
+}
+.ai-workout-chip.wt-tempo {
+  background: rgba(6,182,212,0.15);
+  border-color: rgba(6,182,212,0.3);
+  color: #06b6d4;
 }
 .ai-workout-chip.wt-longride {
   background: rgba(16,185,129,0.15);

@@ -338,8 +338,8 @@ const zoneColors = {
   z5: 'var(--z5-color, #e66e6e)'
 };
 
-const workoutTypeIcon  = { Sprint: 'fa-bolt', Threshold: 'fa-fire-flame-curved', LongRide: 'fa-road', Rest: 'fa-bed' };
-const workoutTypeLabel = { Sprint: 'Sprint',  Threshold: 'Threshold',            LongRide: 'Long Ride', Rest: 'Rest' };
+const workoutTypeIcon  = { Sprint: 'fa-bolt', VO2Max: 'fa-lungs', Threshold: 'fa-fire-flame-curved', Tempo: 'fa-gauge-high', LongRide: 'fa-road', Rest: 'fa-bed' };
+const workoutTypeLabel = { Sprint: 'Sprint',  VO2Max: 'VO2 Max', Threshold: 'Threshold',            Tempo: 'Tempo',         LongRide: 'Long Ride', Rest: 'Rest' };
 
 // ── AI Recommendation ──────────────────────────────────────────────────────────
 

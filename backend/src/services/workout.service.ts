@@ -73,6 +73,31 @@ const FALLBACK_STRUCTURES: Record<string, WorkoutStructure> = {
       { stepType: 'Cooldown', durationSec: 600, zone: 'z1', label: 'Cool-down Z1' },
     ]
   },
+  VO2Max: {
+    totalMinutes: 46,
+    steps: [
+      { stepType: 'WarmUp',   durationSec: 600, zone: 'z2', label: 'Warm-up Z2' },
+      { stepType: 'Run',      durationSec: 240, zone: 'z5', label: 'VO2 Max 1/4 — Z5' },
+      { stepType: 'Recovery', durationSec: 180, zone: 'z1', label: 'Recovery 1/4 — Z1' },
+      { stepType: 'Run',      durationSec: 240, zone: 'z5', label: 'VO2 Max 2/4 — Z5' },
+      { stepType: 'Recovery', durationSec: 180, zone: 'z1', label: 'Recovery 2/4 — Z1' },
+      { stepType: 'Run',      durationSec: 240, zone: 'z5', label: 'VO2 Max 3/4 — Z5' },
+      { stepType: 'Recovery', durationSec: 180, zone: 'z1', label: 'Recovery 3/4 — Z1' },
+      { stepType: 'Run',      durationSec: 240, zone: 'z5', label: 'VO2 Max 4/4 — Z5' },
+      { stepType: 'Recovery', durationSec: 180, zone: 'z1', label: 'Recovery 4/4 — Z1' },
+      { stepType: 'Cooldown', durationSec: 480, zone: 'z1', label: 'Cool-down Z1' },
+    ]
+  },
+  Tempo: {
+    totalMinutes: 63,
+    steps: [
+      { stepType: 'WarmUp',   durationSec: 600,  zone: 'z2', label: 'Warm-up Z2' },
+      { stepType: 'Run',      durationSec: 1200, zone: 'z3', label: 'Tempo 1/2 — Z3' },
+      { stepType: 'Recovery', durationSec: 300,  zone: 'z1', label: 'Recovery 1/2 — Z1' },
+      { stepType: 'Run',      durationSec: 1200, zone: 'z3', label: 'Tempo 2/2 — Z3' },
+      { stepType: 'Cooldown', durationSec: 480,  zone: 'z1', label: 'Cool-down Z1' },
+    ]
+  },
   LongRide: {
     totalMinutes: 120,
     steps: [
@@ -132,7 +157,7 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
 
   // ── Derive which workout types to sync from the plan ──────────────────────────
   // Only sync types that are actually planned — never upload workouts for types not in the plan.
-  const SYNCABLE_TYPES = ['Sprint', 'Threshold', 'LongRide'] as const;
+  const SYNCABLE_TYPES = ['Sprint', 'VO2Max', 'Threshold', 'Tempo', 'LongRide'] as const;
   type SyncType = typeof SYNCABLE_TYPES[number];
 
   // Build a map: type → first planned entry with that type (AI structure preferred)
@@ -189,9 +214,15 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
     if (type === 'Sprint') {
       workoutName = `Unbound Sprint`;
       workoutDesc = 'Sprint intervals targeted to heart rate zones';
+    } else if (type === 'VO2Max') {
+      workoutName = `Unbound VO2 Max`;
+      workoutDesc = 'VO2 Max intervals (Z5, 4 min) to raise aerobic ceiling';
     } else if (type === 'Threshold') {
       workoutName = `Unbound Threshold`;
       workoutDesc = 'Threshold intervals (Z4) to increase aerobic power';
+    } else if (type === 'Tempo') {
+      workoutName = `Unbound Tempo`;
+      workoutDesc = 'Tempo / sweet spot blocks (Z3) to build fatigue resistance';
     } else {
       workoutName = `Unbound Long Ride`;
       workoutDesc = 'Steady Z2 endurance ride — press Lap when done';
