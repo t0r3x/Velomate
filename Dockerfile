@@ -27,8 +27,8 @@ COPY --from=backend-builder /build/node_modules ./backend/node_modules
 # Frontend: compiled static files served by Express
 COPY --from=frontend-builder /build/dist        ./frontend/dist
 
-# SQLite data directory — mount a named volume here for persistence
-RUN mkdir -p ./data
+# SQLite data directory — matches database.service.ts: __dirname/../../data = /app/backend/data
+RUN mkdir -p ./backend/data
 
 EXPOSE 3001
 CMD ["node", "backend/dist/server.js"]
