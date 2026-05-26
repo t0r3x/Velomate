@@ -7,15 +7,18 @@ git pull
 echo "📁 Ensuring data directory exists..."
 mkdir -p data
 
-# Safety check: if the bind-mount db is missing but the old named volume exists, migrate it
+# Safety check: if the bind-mount db is missing but the old named volume exists, try to migrate it
 if [ ! -f data/unbound.db ]; then
   if docker volume ls -q | grep -q "unbound_unbound-data"; then
-    echo "⚠️  No data/unbound.db found — migrating from old named volume..."
-    docker run --rm \
+    echo "⚠️  No data/unbound.db found — attempting migration from old named volume..."
+    if docker run --rm \
       -v unbound_unbound-data:/source \
       -v "$(pwd)/data":/dest \
-      alpine cp /source/unbound.db /dest/unbound.db
-    echo "✅ Migration done — data/unbound.db restored"
+      alpine sh -c "[ -f /source/unbound.db ] && cp /source/unbound.db /dest/unbound.db"; then
+      echo "✅ Migration done — data/unbound.db restored"
+    else
+      echo "ℹ️  Old volume exists but contained no database — starting fresh"
+    fi
   fi
 fi
 
