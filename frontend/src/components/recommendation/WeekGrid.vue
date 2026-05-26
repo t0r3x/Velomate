@@ -5,6 +5,7 @@
       <span>This Week</span>
       <span class="week-label">{{ weekLabel }}</span>
     </div>
+    <div class="week-grid-scroll">
     <div class="week-grid" id="ai-week-grid">
       <WeekDayCell
         v-for="entry in displayPlan"
@@ -13,6 +14,7 @@
         :isToday="entry.date === todayStr"
         @reschedule="emit('reschedule', $event)"
       />
+    </div>
     </div>
   </div>
 </template>
