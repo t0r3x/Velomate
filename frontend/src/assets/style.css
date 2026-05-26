@@ -43,6 +43,10 @@
   padding: 0;
 }
 
+html {
+  overflow-x: hidden; /* iOS Safari ignores overflow-x on body */
+}
+
 body {
   background-color: var(--bg-color);
   color: var(--text-primary);
@@ -123,6 +127,7 @@ body {
   font-size: 2rem;
   background: var(--primary-glow);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   filter: drop-shadow(0 0 10px rgba(var(--primary-rgb), 0.4));
 }
@@ -136,6 +141,7 @@ body {
 .logo-section h1 span {
   background: var(--primary-glow);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
@@ -332,6 +338,43 @@ body {
 
 @media (max-width: 1024px) {
   .dashboard-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .app-container {
+    padding: 1rem 0.85rem;
+  }
+
+  /* Zone input row: stack label + inputs vertically */
+  .zone-input-row {
+    grid-template-columns: 60px 1fr;
+    grid-template-rows: auto auto;
+  }
+  .zone-range-inputs {
+    grid-column: 1 / -1;
+  }
+
+  /* Week grid: fixed min cell size + horizontal scroll within the card */
+  .week-grid-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .week-grid {
+    grid-template-columns: repeat(7, minmax(44px, 1fr));
+    min-width: 308px; /* 7 × 44px */
+  }
+
+  /* Header: tighter on small screens */
+  .main-header {
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-bottom: 1rem;
+  }
+
+  /* Activity stats: 2 columns instead of 3 */
+  .activity-stats-summary {
+    flex-wrap: wrap;
+  }
 }
 
 .col-assessment, .col-schedule {
@@ -725,6 +768,33 @@ body {
 .workout-bullets li {
   font-size: 0.8rem;
   color: var(--text-primary);
+}
+
+.sync-tip {
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  display: flex;
+  gap: 0.5rem;
+}
+.sync-tip i {
+  color: var(--primary-color);
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+}
+.sync-tip a {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+.sync-tip a:hover {
+  text-decoration: underline;
+}
+.sync-tip--muted {
+  color: var(--text-muted);
+}
+.sync-tip--muted i {
+  color: var(--text-muted);
 }
 
 /* Heart Rate Dashboard specifics */
@@ -1509,6 +1579,7 @@ body:has(#shablagoo-toggle:checked) .shablagoo-label {
 body:has(#shablagoo-toggle:checked) .logo-icon {
   background: linear-gradient(135deg, #34d399 0%, #f472b6 100%);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   display: inline-block; /* Cruciaal om background-clip te laten werken op een <i> of SVG */
   filter: drop-shadow(0 0 12px rgba(244, 114, 182, 0.6));
@@ -1593,6 +1664,7 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
 .setup-logo h1 span {
   background: var(--primary-glow);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 

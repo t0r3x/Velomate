@@ -12,6 +12,17 @@
           <span :style="{ color: statusColor(w) }">{{ statusText(w) }}</span>
         </li>
       </ul>
+      <p class="sync-tip">
+        <i class="fa-solid fa-calendar-days"></i>
+        Your AI training plan is now visible in the <strong>Garmin Connect</strong> calendar — check it in the app or on the web at
+        <a href="https://connect.garmin.com" target="_blank" rel="noopener">connect.garmin.com</a>.
+        After syncing your device, workouts also appear under <strong>Training Plans</strong> on your Garmin device.
+      </p>
+      <p class="sync-tip sync-tip--muted">
+        <i class="fa-solid fa-share-nodes"></i>
+        Want it in Google Calendar or another app? On Garmin Connect web go to
+        <strong>Calendar → ⋯ → Publish Calendar</strong> to get a shareable iCal link that you can add to other calendar apps. 
+      </p>
     </div>
   </div>
 </template>
