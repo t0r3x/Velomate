@@ -8,7 +8,7 @@ import {
   getStoredAnalysis,
   PlanEntry
 } from './database.service';
-import { localDate, toRpe, toFeeling, USER_TZ } from '../utils';
+import { localDate, toRpe, toFeeling, USER_TZ, APP_NAME } from '../utils';
 
 // ── Key helpers ───────────────────────────────────────────────────────────────
 
@@ -42,7 +42,7 @@ const fmtZones = (zones: number[]): string =>
  * "Tilburg - Unbound Long Ride" → contains "unbound".
  */
 const isUnboundActivity = (name: string): boolean =>
-  (name || '').toLowerCase().includes('unbound');
+  (name || '').toLowerCase().includes(APP_NAME.toLowerCase());
 
 /**
  * Binary activity match: marks any planned entry as 'completed' if a Garmin activity

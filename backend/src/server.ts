@@ -30,7 +30,7 @@ import {
   detectAutoSkippedEntries
 } from './services/gemini.service';
 import { UserHRProfile } from './types';
-import { localDate } from './utils';
+import { localDate, APP_NAME } from './utils';
 
 dotenv.config();
 
@@ -674,7 +674,7 @@ app.listen(PORT, () => {
   const lastGen   = getSetting('gemini_last_generated');
 
   console.log(`\n┌${line}┐`);
-  console.log(`│  Unbound backend    ·  http://localhost:${PORT}${' '.repeat(8)}│`);
+  console.log(`│  ${APP_NAME} backend    ·  http://localhost:${PORT}${' '.repeat(8)}│`);
   console.log(`├${line}┤`);
   console.log(`│  Garmin profile : maxHR ${profile?.maxHr ?? '?'} bpm, LTHR ${profile?.lthr ?? '?'} bpm${' '.repeat(Math.max(0, 11 - String(profile?.maxHr ?? '?').length - String(profile?.lthr ?? '?').length))}│`);
   console.log(`│  Activities     : ${acts.length} stored${' '.repeat(Math.max(0, 33 - String(acts.length).length))}│`);
