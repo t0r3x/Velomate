@@ -12,7 +12,7 @@ import {
 import { getGarminClient, trySessionAuth } from './garmin.service';
 import { loadProfile } from './profile.service';
 import { getStoredProfile, PlanEntry, WorkoutStep, WorkoutStructure } from './database.service';
-import { localDate } from '../utils';
+import { localDate, APP_NAME } from '../utils';
 
 /** Write workout definitions to ./tmp/garmin-workouts/{timestamp}/ for dev inspection. */
 const devDumpWorkouts = (workoutDefs: Record<string, any>, dateStr: string): void => {
@@ -183,6 +183,31 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
   const typesToSync = [...plannedEntryByType.keys()];
   console.log(`[Sync] Syncing ${typesToSync.length} workout type(s) from plan: ${typesToSync.join(', ')}`);
 
+  // ── Remove existing Unbound workouts before re-uploading ─────────────────────
+  // Prevents duplicates in the Garmin library and calendar when syncing multiple times.
+  // deleteWorkout removes the workout from the library AND all scheduled calendar entries.
+  const UNBOUND_PREFIX = `${APP_NAME} `;
+  try {
+    const existingWorkouts = await client.getWorkouts(0, 100) as any[];
+    const toDelete = existingWorkouts.filter(
+      (w: any) => typeof w.workoutName === 'string' && w.workoutName.startsWith(UNBOUND_PREFIX)
+    );
+    if (toDelete.length > 0) {
+      console.log(`[Sync] Removing ${toDelete.length} existing Unbound workout(s) before re-upload…`);
+      await Promise.all(
+        toDelete.map((w: any) => {
+          console.log(`[Sync]   Deleting: ${w.workoutName} (id ${w.workoutId})`);
+          return client.deleteWorkout({ workoutId: String(w.workoutId) });
+        })
+      );
+    } else {
+      console.log('[Sync] No existing Unbound workouts found — clean upload');
+    }
+  } catch (err: any) {
+    // Non-fatal: log and continue. Upload will still succeed; worst case is a duplicate.
+    console.warn(`[Sync] Could not clean up existing workouts (continuing anyway): ${err.message}`);
+  }
+
   // ── Build and upload each planned type ───────────────────────────────────────
   const devDump: Record<string, any> = {};
   let scheduledWorkoutId: any = null;
@@ -213,19 +238,19 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
     let workoutName: string;
     let workoutDesc: string;
     if (type === 'Sprint') {
-      workoutName = `Unbound Sprint`;
+      workoutName = `${APP_NAME} Sprint`;
       workoutDesc = 'Sprint intervals targeted to heart rate zones';
     } else if (type === 'VO2Max') {
-      workoutName = `Unbound VO2 Max`;
+      workoutName = `${APP_NAME} VO2 Max`;
       workoutDesc = 'VO2 Max intervals (Z5, 4 min) to raise aerobic ceiling';
     } else if (type === 'Threshold') {
-      workoutName = `Unbound Threshold`;
+      workoutName = `${APP_NAME} Threshold`;
       workoutDesc = 'Threshold intervals (Z4) to increase aerobic power';
     } else if (type === 'Tempo') {
-      workoutName = `Unbound Tempo`;
+      workoutName = `${APP_NAME} Tempo`;
       workoutDesc = 'Tempo / sweet spot blocks (Z3) to build fatigue resistance';
     } else {
-      workoutName = `Unbound Long Ride`;
+      workoutName = `${APP_NAME} Long Ride`;
       workoutDesc = 'Steady Z2 endurance ride — press Lap when done';
     }
 

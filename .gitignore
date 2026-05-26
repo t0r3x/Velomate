@@ -15,6 +15,7 @@ session.json
 config.json
 backend/session/
 backend/data/
+data/
 
 # IDE / System files
 .vscode/

@@ -4,8 +4,5 @@ services:
     ports:
       - "3001:3001"
     volumes:
-      - unbound-data:/app/data
+      - ./data:/app/data   # bind mount — data survives image rebuilds
     restart: unless-stopped
-
-volumes:
-  unbound-data:
