@@ -115,6 +115,7 @@
 import { computed, ref } from 'vue'
 import { useRecommendationStore } from '@/stores/recommendation.store'
 import { useToast }               from '@/composables/useToast'
+import { useConfirm }             from '@/composables/useConfirm'
 import { workoutTypeIcon, workoutTypeLabel } from '@/utils'
 import type { SyncResult as SyncResultType } from '@/types'
 
@@ -125,8 +126,9 @@ import SyncResult       from './SyncResult.vue'
 
 const emit = defineEmits<{ 'open-settings': [] }>()
 
-const recStore = useRecommendationStore()
-const { show } = useToast()
+const recStore  = useRecommendationStore()
+const { show }  = useToast()
+const { confirm } = useConfirm()
 
 const rec = computed(() => recStore.recommendation)
 
@@ -157,6 +159,14 @@ async function handleRefresh() {
 }
 
 async function handleSkip() {
+  const confirmed = await confirm({
+    title:        'Skip today\'s workout?',
+    message:      'This will mark today as skipped and ask AI to recalculate the rest of your week.',
+    confirmLabel: 'Skip workout',
+    danger:       true,
+  })
+  if (!confirmed) return
+
   skipping.value = true
   const ok = await recStore.skipToday()
   skipping.value = false
@@ -168,6 +178,14 @@ async function handleSkip() {
 }
 
 async function handleReschedule(fromDate: string) {
+  const confirmed = await confirm({
+    title:        'Move workout to today?',
+    message:      'This will reschedule the selected workout to today and ask AI to recalculate your week.',
+    confirmLabel: 'Move to today',
+    danger:       false,
+  })
+  if (!confirmed) return
+
   const ok = await recStore.reschedule(fromDate)
   if (ok) {
     show('success', 'Workout moved to today', 'Plan updated — AI recalculated the week.')
