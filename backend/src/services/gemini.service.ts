@@ -208,6 +208,19 @@ const buildPrompt = (previousPlan?: PlanEntry[]): string => {
     } // end else (complianceEntries.length > 0)
   }
 
+  // Future planned workouts — shown to the AI so it keeps them stable
+  let plannedBlock = '';
+  if (previousPlan && previousPlan.length > 0) {
+    const futurePlanned = previousPlan.filter(e => e.status === 'planned' && e.date > today);
+    if (futurePlanned.length > 0) {
+      const lines = futurePlanned.map(e => {
+        const dow = new Date(e.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short' });
+        return `- ${e.date} (${dow}): ${e.type}`;
+      });
+      plannedBlock = `EXISTING SCHEDULED WORKOUTS (keep unless explicitly justified — see rules below):\n${lines.join('\n')}\n\n`;
+    }
+  }
+
   // Support multiple preferred days (new plural key) with fallback to old singular key
   const rawDays = getSetting('preferred_long_ride_days') || getSetting('preferred_long_ride_day') || '';
   const preferredDays = rawDays ? rawDays.split(',').map(d => d.trim()).filter(Boolean) : [];
@@ -224,7 +237,7 @@ TODAY: ${today} (${dayOfWeek})
 ATHLETE PREFERENCES:
 ${prefLine}
 
-${prevBlock}RECENT ACTIVITIES (last 21 days):
+${prevBlock}${plannedBlock}RECENT ACTIVITIES (last 21 days):
 ${JSON.stringify(recentActivities, null, 2)}
 
 Note: zonesMin shows minutes spent in each Garmin HR zone (z1=lowest, z5=highest intensity).
@@ -341,6 +354,12 @@ OUTPUT: Respond ONLY with this exact JSON schema:
 }
 
 STRICT RULES:
+- PLAN STABILITY: If EXISTING SCHEDULED WORKOUTS are listed above, you MUST keep the same workout type for each date UNLESS at least one of these conditions applies:
+    (a) A new execution score below 60 reveals the athlete cannot absorb that intensity
+    (b) A skip or auto-skip has disrupted the recovery balance for that day
+    (c) A recent feeling ≤2 or rpe ≥8 directly contradicts the planned intensity
+    (d) The athlete's fatigue assessment has changed from the previous plan
+  If none of these apply, output the same type. You may still adjust the workout structure (interval count, duration) based on new data.
 - For Rest days: set "structure": null
 - For entries whose status is completed, skipped, or auto-skipped: set "structure": null (done — no workout to sync)
 - executionScores[]: include ALL past (date < TODAY) NEEDS SCORING entries + already-SCORED entries. Empty array if none.
