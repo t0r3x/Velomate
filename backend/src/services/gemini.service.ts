@@ -105,7 +105,13 @@ export const detectAutoSkippedEntries = (plan: PlanEntry[]): string[] => {
 
 // ── Prompt builder ────────────────────────────────────────────────────────────
 
-const buildPrompt = (previousPlan?: PlanEntry[]): string => {
+interface PauseContext {
+  pausedSince: string
+  pauseReason?: string
+  activitiesCount: number
+}
+
+const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext): string => {
   const today     = localDate();
   const dayOfWeek = new Date().toLocaleDateString('en-GB', { weekday: 'long', timeZone: USER_TZ });
 
@@ -228,6 +234,10 @@ const buildPrompt = (previousPlan?: PlanEntry[]): string => {
     ? `- Preferred Long Ride day(s): ${preferredDays.join(', ')} — schedule the LongRide on one of these days when load allows.`
     : `- No preferred Long Ride days specified.`;
 
+  const pauseBlock = pauseContext
+    ? `TRAINING PAUSE:\nThe athlete paused training from ${pauseContext.pausedSince} to ${today}${pauseContext.pauseReason ? ` (reason: ${pauseContext.pauseReason})` : ''}.\n${pauseContext.activitiesCount > 0 ? `They recorded ${pauseContext.activitiesCount} ride(s) during the pause period.` : 'No rides were recorded during the pause period — treat this as a full rest break.'}\nStart the new plan conservatively: reduce intensity and volume for at least the first 2-3 days to allow for re-adaptation.\n\n`
+    : '';
+
   return `You are a professional cycling coach AI specializing in heart-rate based training.
 Analyze the athlete's data and generate an adaptive training plan with exact, personalised workout structures.
 The most important factor is training load management — never sacrifice recovery for volume.
@@ -237,7 +247,7 @@ TODAY: ${today} (${dayOfWeek})
 ATHLETE PREFERENCES:
 ${prefLine}
 
-${prevBlock}${plannedBlock}RECENT ACTIVITIES (last 21 days):
+${pauseBlock}${prevBlock}${plannedBlock}RECENT ACTIVITIES (last 21 days):
 ${JSON.stringify(recentActivities, null, 2)}
 
 Note: zonesMin shows minutes spent in each Garmin HR zone (z1=lowest, z5=highest intensity).
@@ -374,11 +384,11 @@ STRICT RULES:
 
 // ── Main generation function ──────────────────────────────────────────────────
 
-export const generateRecommendation = async (previousPlan?: PlanEntry[]): Promise<any> => {
+export const generateRecommendation = async (previousPlan?: PlanEntry[], pauseContext?: PauseContext): Promise<any> => {
   const key = getGeminiKey();
   if (!key) throw new Error('GEMINI_KEY_NOT_CONFIGURED');
 
-  const prompt = buildPrompt(previousPlan);
+  const prompt = buildPrompt(previousPlan, pauseContext);
 
   // ── Log outgoing prompt ───────────────────────────────────────────────────────
   console.log('\n' + '═'.repeat(72));

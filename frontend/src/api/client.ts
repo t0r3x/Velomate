@@ -8,7 +8,8 @@ import type {
   GeminiKeyStatus,
   DashboardResponse,
   ActivitiesRefreshResponse,
-  SyncResult
+  SyncResult,
+  PausedResponse
 } from '@/types'
 
 class ApiError extends Error {
@@ -111,7 +112,7 @@ export const postSetupComplete = () =>
 // ── Recommendation ────────────────────────────────────────────────────────────
 
 export const getRecommendation = () =>
-  request<Recommendation | { notConfigured: true } | { noData: true }>('/api/recommendation')
+  request<Recommendation | { notConfigured: true } | { noData: true } | PausedResponse>('/api/recommendation')
 
 export const postRefreshRecommendation = () =>
   request<Recommendation>('/api/recommendation/refresh', { method: 'POST' })
@@ -124,6 +125,17 @@ export const postReschedule = (fromDate: string, toDate: string) =>
     method: 'POST',
     body: JSON.stringify({ fromDate, toDate })
   })
+
+// ── Training pause ────────────────────────────────────────────────────────────
+
+export const postPauseTraining = (reason?: string) =>
+  request<PausedResponse>('/api/training/pause', {
+    method: 'POST',
+    body: JSON.stringify({ reason: reason || '' })
+  })
+
+export const postResumeTraining = () =>
+  request<{ resumed: true }>('/api/training/resume', { method: 'POST' })
 
 // ── Sync ──────────────────────────────────────────────────────────────────────
 

@@ -5,7 +5,9 @@ import {
   postRefreshRecommendation,
   postSkipToday,
   postReschedule,
-  postSyncWorkouts
+  postSyncWorkouts,
+  postPauseTraining,
+  postResumeTraining
 } from '@/api/client'
 import { useAuthStore } from '@/stores/auth.store'
 import { isoDate } from '@/utils'
@@ -15,6 +17,8 @@ export const useRecommendationStore = defineStore('recommendation', () => {
   const state          = ref<RecState>('loading')
   const recommendation = ref<Recommendation | null>(null)
   const errorMessage   = ref('')
+  const pausedSince    = ref<string | null>(null)
+  const pauseReason    = ref<string | null>(null)
 
   const hasSyncableWorkout = computed(() =>
     recommendation.value?.weeklyPlan?.some(e => e.status === 'planned') ?? false
@@ -31,6 +35,13 @@ export const useRecommendationStore = defineStore('recommendation', () => {
       const data = await getRecommendation()
       if ('notConfigured' in data) { state.value = 'not-configured'; return }
       if ('noData' in data)        { state.value = 'no-plan';        return }
+      if ('paused' in data) {
+        pausedSince.value    = data.pausedSince
+        pauseReason.value    = data.pauseReason ?? null
+        recommendation.value = null
+        state.value          = 'paused'
+        return
+      }
       recommendation.value = data as Recommendation
       state.value = 'loaded'
     } catch (err) {
@@ -95,6 +106,33 @@ export const useRecommendationStore = defineStore('recommendation', () => {
     }
   }
 
+  async function pauseTraining(reason?: string): Promise<boolean> {
+    try {
+      const result = await postPauseTraining(reason)
+      pausedSince.value    = result.pausedSince
+      pauseReason.value    = result.pauseReason ?? null
+      recommendation.value = null
+      state.value          = 'paused'
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  async function resumeTraining(): Promise<boolean> {
+    state.value = 'loading'
+    try {
+      await postResumeTraining()
+      pausedSince.value = null
+      pauseReason.value = null
+      await fetchCached()
+      return true
+    } catch {
+      state.value = 'error'
+      return false
+    }
+  }
+
   async function syncWorkouts(): Promise<SyncResult | null> {
     const plan = recommendation.value?.weeklyPlan || []
     const threshold = plan.find(e => e.type === 'Threshold' && e.status === 'planned')
@@ -112,6 +150,8 @@ export const useRecommendationStore = defineStore('recommendation', () => {
     state,
     recommendation,
     errorMessage,
+    pausedSince,
+    pauseReason,
     hasSyncableWorkout,
     canSync,
     fetchCached,
@@ -119,6 +159,8 @@ export const useRecommendationStore = defineStore('recommendation', () => {
     refresh,
     skipToday,
     reschedule,
+    pauseTraining,
+    resumeTraining,
     syncWorkouts
   }
 })

@@ -128,7 +128,13 @@ export interface SyncResult {
 
 // ── API response variants ─────────────────────────────────────────────────────
 
-export type RecState = 'not-configured' | 'no-plan' | 'loading' | 'loaded' | 'error'
+export type RecState = 'not-configured' | 'no-plan' | 'loading' | 'loaded' | 'error' | 'paused'
+
+export interface PausedResponse {
+  paused: true
+  pausedSince: string
+  pauseReason?: string
+}
 
 export interface GeminiKeyStatus {
   hasKey: boolean

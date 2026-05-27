@@ -3,10 +3,12 @@
   <div class="bg-glow-2"></div>
   <ToastContainer />
   <ConfirmDialog />
+  <PauseDialog />
   <router-view />
 </template>
 
 <script setup lang="ts">
 import ToastContainer from '@/components/ui/ToastContainer.vue'
 import ConfirmDialog  from '@/components/ui/ConfirmDialog.vue'
+import PauseDialog    from '@/components/ui/PauseDialog.vue'
 </script>
