@@ -302,6 +302,7 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
     await syncActivitiesFromGarmin();
 
     // Non-blocking: trigger AI regen if any previously-planned dates are now 'completed'
+    let planRegenTriggered = false;
     const stored = getStoredRecommendation();
     if (stored?.weeklyPlan && prePlannedDates.size > 0) {
       const newlyCompleted = stored.weeklyPlan.filter(
@@ -312,6 +313,7 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
         generateRecommendation(stored.weeklyPlan).catch((err: any) =>
           console.warn('[Gemini] Auto-regen after activity sync failed:', err.message)
         );
+        planRegenTriggered = true;
       } else {
         console.log('[Gemini] Activity sync: no newly completed workouts detected in current plan');
       }
@@ -319,9 +321,10 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
 
     const profile = await getActiveProfile();
     res.json({
-      activities:     getStoredActivities(),
-      analysis:       getStoredAnalysis(),
-      currentProfile: profile,
+      activities:        getStoredActivities(),
+      analysis:          getStoredAnalysis(),
+      currentProfile:    profile,
+      planRegenTriggered,
     });
   } catch (error: any) {
     console.error('[Refresh] Error:', error);

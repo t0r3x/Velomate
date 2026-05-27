@@ -74,6 +74,27 @@ export const useRecommendationStore = defineStore('recommendation', () => {
     }
   }
 
+  /**
+   * Poll GET /api/recommendation silently in the background until `generatedAt`
+   * changes. Called after an activity sync triggers a non-blocking AI regen so
+   * execution scores appear automatically once the AI response arrives.
+   */
+  async function pollForUpdate(knownGeneratedAt: string | undefined, maxAttempts = 10) {
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise<void>(r => setTimeout(r, 4000))
+      try {
+        const data = await getRecommendation()
+        if ('notConfigured' in data || 'noData' in data) return
+        const rec = data as Recommendation
+        if (rec.generatedAt !== knownGeneratedAt) {
+          recommendation.value = rec
+          state.value = 'loaded'
+          return
+        }
+      } catch { /* ignore poll errors */ }
+    }
+  }
+
   async function syncWorkouts(): Promise<SyncResult | null> {
     const plan = recommendation.value?.weeklyPlan || []
     const threshold = plan.find(e => e.type === 'Threshold' && e.status === 'planned')
@@ -94,6 +115,7 @@ export const useRecommendationStore = defineStore('recommendation', () => {
     hasSyncableWorkout,
     canSync,
     fetchCached,
+    pollForUpdate,
     refresh,
     skipToday,
     reschedule,

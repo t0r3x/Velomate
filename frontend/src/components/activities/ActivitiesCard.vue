@@ -68,9 +68,13 @@ const scoreByDate = computed(() => {
 async function handleSync() {
   syncing.value = true
   try {
-    const { newCount } = await activitiesStore.syncFromGarmin()
-    // Reload plan — backend may have classified workouts as completed
-    recommendationStore.fetchCached()
+    const { newCount, planRegenTriggered } = await activitiesStore.syncFromGarmin()
+    // Reload plan to reflect newly classified statuses (e.g. Done badge)
+    await recommendationStore.fetchCached()
+    if (planRegenTriggered) {
+      // AI regen was triggered non-blocking — poll silently until scores arrive
+      recommendationStore.pollForUpdate(recommendationStore.recommendation?.generatedAt)
+    }
     const total = activitiesStore.activities.length
     show('success', 'Synced from Garmin',
       `${newCount} new ${newCount === 1 ? 'ride' : 'rides'} added — ${total} total stored.`)
