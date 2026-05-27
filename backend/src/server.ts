@@ -416,11 +416,70 @@ app.post('/api/settings/setup-complete', (_req: Request, res: Response) => {
   res.json({ saved: true });
 });
 
+// ── Training pause ────────────────────────────────────────────────────────────
+
+app.post('/api/training/pause', (req: Request, res: Response) => {
+  const { reason } = req.body;
+  const pausedSince = new Date().toISOString();
+  setSetting('training_paused', '1');
+  setSetting('paused_since', pausedSince);
+  setSetting('pause_reason', reason || '');
+  console.log(`[Training] Paused — since ${pausedSince}${reason ? `, reason: ${reason}` : ''}`);
+  res.json({ paused: true, pausedSince, pauseReason: reason || '' });
+});
+
+app.post('/api/training/resume', async (req: Request, res: Response) => {
+  const pausedSince = getSetting('paused_since') || '';
+  const pauseReason = getSetting('pause_reason') || '';
+
+  // Count rides during the pause period to pass context to AI
+  let activitiesCount = 0;
+  if (pausedSince) {
+    const allActs = getStoredActivities();
+    activitiesCount = allActs.filter(a =>
+      a.startTime && a.startTime >= pausedSince
+    ).length;
+  }
+
+  // Clear pause flags first so AI generation can proceed
+  setSetting('training_paused', '');
+  setSetting('paused_since', '');
+  setSetting('pause_reason', '');
+  console.log(`[Training] Resumed — was paused since ${pausedSince || 'unknown'}, ${activitiesCount} ride(s) during pause`);
+
+  // Sync fresh activities, then regenerate plan with pause context
+  try {
+    const key = getGeminiKey();
+    if (key) {
+      await syncActivitiesFromGarmin();
+      const current = getStoredRecommendation();
+      const pauseCtx = pausedSince
+        ? { pausedSince: pausedSince.slice(0, 10), pauseReason: pauseReason || undefined, activitiesCount }
+        : undefined;
+      await generateRecommendation(current?.weeklyPlan, pauseCtx);
+      setSetting('gemini_last_generated', new Date().toISOString());
+    }
+  } catch (err: any) {
+    console.warn('[Training] Resume: plan regen failed:', err.message);
+  }
+
+  res.json({ resumed: true });
+});
+
 // ── Recommendation ────────────────────────────────────────────────────────────
 
 app.get('/api/recommendation', (_req: Request, res: Response) => {
   const key = getGeminiKey();
   if (!key) return res.json({ notConfigured: true });
+
+  // Training paused — return paused state
+  if (getSetting('training_paused') === '1') {
+    return res.json({
+      paused:      true,
+      pausedSince: getSetting('paused_since') || '',
+      pauseReason: getSetting('pause_reason') || ''
+    });
+  }
 
   const rec = getStoredRecommendation();
   if (!rec) return res.json({ noData: true });
@@ -611,6 +670,12 @@ const runGeminiAutoCheck = async () => {
       return;
     }
 
+    // Skip everything when training is paused
+    if (getSetting('training_paused') === '1') {
+      console.log('[Gemini] Auto-check: training paused — skipping auto-check');
+      return;
+    }
+
     // Sync activities first — auto-skip detection depends on having current ride data
     console.log('[Gemini] Auto-check: syncing activities from Garmin before evaluation…');
     await syncActivitiesFromGarmin();
@@ -618,7 +683,10 @@ const runGeminiAutoCheck = async () => {
     // Detect auto-skips (planned days that passed with no activity)
     const stored = getStoredRecommendation();
     if (stored?.weeklyPlan) {
-      const autoSkips = detectAutoSkippedEntries(stored.weeklyPlan);
+      // Don't auto-skip dates that fall within a completed pause period
+      const pausedSince = getSetting('paused_since') || '';
+      const autoSkips = detectAutoSkippedEntries(stored.weeklyPlan)
+        .filter(date => !pausedSince || date < pausedSince.slice(0, 10));
       if (autoSkips.length > 0) {
         console.log(`[Gemini] Auto-check: ${autoSkips.length} auto-skip(s) detected (${autoSkips.join(', ')}) — marking and regenerating`);
         autoSkips.forEach(date => updatePlanEntryStatus(date, 'auto-skipped'));

@@ -41,6 +41,20 @@
         </div>
       </div>
 
+      <!-- State: paused -->
+      <div v-show="recStore.state === 'paused'" class="ai-rec-state">
+        <div class="ai-rec-paused">
+          <i class="fa-solid fa-circle-pause ai-rec-paused-icon"></i>
+          <p class="ai-rec-paused-title">Training paused</p>
+          <p v-if="recStore.pauseReason" class="ai-rec-paused-reason">{{ recStore.pauseReason }}</p>
+          <p class="ai-rec-paused-since">Paused since {{ formatPausedDate(recStore.pausedSince) }}</p>
+          <button class="btn btn-primary btn-sm" :disabled="resuming" @click="handleResume">
+            <span>{{ resuming ? 'Resuming…' : 'Resume training' }}</span>
+            <i class="fa-solid" :class="resuming ? 'fa-spinner fa-spin' : 'fa-play'"></i>
+          </button>
+        </div>
+      </div>
+
       <!-- State: loaded -->
       <div v-show="recStore.state === 'loaded'" class="ai-rec-state">
         <template v-if="rec">
@@ -49,6 +63,9 @@
             <div class="ai-today-header">
               <span class="ai-today-label">Today's Recommendation</span>
               <div class="ai-today-actions">
+                <button class="btn-icon-sm btn-icon-pause" title="Pause training — use for injury, illness or travel" :disabled="pausing" @click="handlePause">
+                  <i class="fa-solid" :class="pausing ? 'fa-spinner fa-spin' : 'fa-circle-pause'"></i>
+                </button>
                 <button class="btn-icon-sm" title="Skip today's workout" :disabled="skipping" @click="handleSkip">
                   <i class="fa-solid" :class="skipping ? 'fa-spinner fa-spin' : 'fa-forward-step'"></i>
                 </button>
@@ -116,6 +133,7 @@ import { computed, ref } from 'vue'
 import { useRecommendationStore } from '@/stores/recommendation.store'
 import { useToast }               from '@/composables/useToast'
 import { useConfirm }             from '@/composables/useConfirm'
+import { usePauseDialog }         from '@/composables/usePauseDialog'
 import { workoutTypeIcon, workoutTypeLabel } from '@/utils'
 import type { SyncResult as SyncResultType } from '@/types'
 
@@ -129,13 +147,22 @@ const emit = defineEmits<{ 'open-settings': [] }>()
 const recStore  = useRecommendationStore()
 const { show }  = useToast()
 const { confirm } = useConfirm()
+const { promptForReason } = usePauseDialog()
 
 const rec = computed(() => recStore.recommendation)
 
 const generating = ref(false)
 const skipping   = ref(false)
+const pausing    = ref(false)
+const resuming   = ref(false)
 const syncing    = ref(false)
 const syncResult = ref<SyncResultType | null>(null)
+
+function formatPausedDate(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+}
 
 const typeIcon  = (t: string) => workoutTypeIcon[t]  ?? 'fa-dumbbell'
 const typeLabel = (t: string) => workoutTypeLabel[t] ?? t
@@ -155,6 +182,31 @@ async function handleRefresh() {
   await recStore.refresh()
   if (recStore.state === 'error') {
     show('error', 'Refresh Failed', recStore.errorMessage)
+  }
+}
+
+async function handlePause() {
+  const reason = await promptForReason()
+  if (reason === null) return  // cancelled
+
+  pausing.value = true
+  const ok = await recStore.pauseTraining(reason || undefined)
+  pausing.value = false
+  if (ok) {
+    show('info', 'Training paused', 'AI suggestions are suspended. Resume when you\'re ready.')
+  } else {
+    show('error', 'Pause Failed', 'Could not pause training.')
+  }
+}
+
+async function handleResume() {
+  resuming.value = true
+  const ok = await recStore.resumeTraining()
+  resuming.value = false
+  if (ok) {
+    show('success', 'Training resumed', 'AI is generating a fresh plan for your return.')
+  } else {
+    show('error', 'Resume Failed', 'Could not resume training.')
   }
 }
 
