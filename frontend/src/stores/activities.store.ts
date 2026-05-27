@@ -22,7 +22,7 @@ export const useActivitiesStore = defineStore('activities', () => {
   }
 
   /** Full Garmin sync: fetches new rides, updates DB, re-runs analysis. */
-  async function syncFromGarmin(): Promise<{ newCount: number }> {
+  async function syncFromGarmin(): Promise<{ newCount: number; planRegenTriggered: boolean }> {
     loading.value = true
     try {
       const data = await postActivitiesRefresh()
@@ -31,7 +31,7 @@ export const useActivitiesStore = defineStore('activities', () => {
       if (data.currentProfile) {
         useProfileStore().setFromDashboard(data.currentProfile)
       }
-      return { newCount: data.newCount || 0 }
+      return { newCount: data.newCount || 0, planRegenTriggered: data.planRegenTriggered ?? false }
     } finally {
       loading.value = false
     }

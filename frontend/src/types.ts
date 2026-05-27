@@ -149,4 +149,5 @@ export interface ActivitiesRefreshResponse {
   analysis: Analysis | null
   currentProfile: UserHRProfile | null
   newCount: number
+  planRegenTriggered?: boolean
 }
