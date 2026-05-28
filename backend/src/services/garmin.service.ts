@@ -41,6 +41,53 @@ const hasStoredTokens = (): boolean => {
 
 export const hasCachedSession = (): boolean => hasStoredTokens();
 
+const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> =>
+  Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    )
+  ]);
+
+// Client IDs to try when exchanging/refreshing tokens (most recent first)
+const DI_CLIENT_IDS = [
+  'GARMIN_CONNECT_MOBILE_ANDROID_DI_2025Q2',
+  'GARMIN_CONNECT_MOBILE_ANDROID_DI_2024Q4',
+  'GARMIN_CONNECT_MOBILE_ANDROID_DI',
+];
+
+const DI_HEADERS = {
+  'Content-Type': 'application/x-www-form-urlencoded',
+  'User-Agent': 'GCM-Android-5.23',
+  'X-Garmin-User-Agent': 'com.garmin.android.apps.connectmobile/5.23; ; Google/sdk_gphone64_arm64/google; Android/33; Dalvik/2.1.0',
+};
+
+/**
+ * Attempts to obtain a new access token using the stored refresh token.
+ * Returns the raw token response on success, null on failure.
+ */
+const refreshAccessToken = async (refreshToken: string): Promise<any | null> => {
+  const body = new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken }).toString();
+
+  for (const clientId of DI_CLIENT_IDS) {
+    try {
+      const credentials = Buffer.from(`${clientId}:`).toString('base64');
+      const response = await withTimeout(
+        axios.post('https://diauth.garmin.com/di-oauth2-service/oauth/token', body, {
+          headers: { ...DI_HEADERS, Authorization: `Basic ${credentials}` }
+        }),
+        8000,
+        'Garmin token refresh'
+      );
+      console.log(`[Garmin] Access token refreshed (client: ${clientId})`);
+      return response.data;
+    } catch (err: any) {
+      console.warn(`[Garmin] Refresh failed for ${clientId}: ${err.message}`);
+    }
+  }
+  return null;
+};
+
 export const trySessionAuth = async (): Promise<boolean> => {
   // Return cached result while still fresh — avoids live Garmin call every 30 s
   if (authCache && Date.now() < authCache.expiresAt) {
@@ -50,17 +97,45 @@ export const trySessionAuth = async (): Promise<boolean> => {
   const client = getGarminClient();
   try {
     if (hasStoredTokens()) {
-      const oauth1Str = getSetting(OAUTH1_KEY)!;
-      const oauth2Str = getSetting(OAUTH2_KEY)!;
-      (client.client as any).oauth1Token = JSON.parse(oauth1Str);
-      (client.client as any).oauth2Token = JSON.parse(oauth2Str);
-      await client.getUserSettings();
+      const oauth1Token = JSON.parse(getSetting(OAUTH1_KEY)!);
+      let oauth2Token   = JSON.parse(getSetting(OAUTH2_KEY)!);
+
+      // Refresh proactively when access token is expired or expires within 5 minutes
+      const expiresAt      = (oauth2Token.expires_at ?? 0) * 1000;  // convert to ms
+      const refreshToken   = oauth2Token.refresh_token as string | undefined;
+      const almostExpired  = Date.now() >= expiresAt - 5 * 60 * 1000;
+
+      if (almostExpired && refreshToken) {
+        console.log('[Garmin] Access token expired/expiring — refreshing…');
+        const refreshed = await refreshAccessToken(refreshToken);
+        if (refreshed?.access_token) {
+          const now = Math.floor(Date.now() / 1000);
+          const expiresIn = refreshed.expires_in || 3600;
+          oauth2Token = {
+            ...oauth2Token,
+            access_token:    refreshed.access_token,
+            refresh_token:   refreshed.refresh_token || refreshToken,
+            expires_in:      expiresIn,
+            expires_at:      now + expiresIn,
+            expires_date:    new Date((now + expiresIn) * 1000).toISOString(),
+            last_update_date: new Date().toISOString(),
+          };
+          setSetting(OAUTH2_KEY, JSON.stringify(oauth2Token));
+          console.log('[Garmin] New access token saved to DB.');
+        } else {
+          console.warn('[Garmin] Token refresh failed — will try existing token.');
+        }
+      }
+
+      (client.client as any).oauth1Token = oauth1Token;
+      (client.client as any).oauth2Token = oauth2Token;
+      await withTimeout(client.getUserSettings(), 8000, 'Garmin getUserSettings');
       console.log('Successfully authenticated using DB-stored tokens.');
       authCache = { valid: true, expiresAt: Date.now() + AUTH_TTL_SUCCESS };
       return true;
     }
-  } catch (error) {
-    console.warn('Stored session is invalid or expired.');
+  } catch (error: any) {
+    console.warn('Stored session is invalid or expired:', error.message);
   }
   authCache = { valid: false, expiresAt: Date.now() + AUTH_TTL_FAILURE };
   return false;
@@ -84,17 +159,7 @@ export const loginGarmin = async (username?: string, password?: string): Promise
  * which is compatible with tickets from both the portal and mobile JSON APIs.
  */
 async function exchangeTicketForDIToken(ticket: string, serviceUrl: string): Promise<any> {
-  const clientIds = [
-    'GARMIN_CONNECT_MOBILE_ANDROID_DI_2025Q2',
-    'GARMIN_CONNECT_MOBILE_ANDROID_DI_2024Q4',
-    'GARMIN_CONNECT_MOBILE_ANDROID_DI',
-    'GARMIN_CONNECT_MOBILE_IOS_DI'
-  ];
-
-  const headers = {
-    'Content-Type': 'application/x-www-form-urlencoded',
-    'User-Agent': 'GCM-Android-5.23',
-    'X-Garmin-User-Agent': 'com.garmin.android.apps.connectmobile/5.23; ; Google/sdk_gphone64_arm64/google; Android/33; Dalvik/2.1.0',
+  const extraHeaders = {
     'X-Garmin-Paired-App-Version': '10861',
     'X-Garmin-Client-Platform': 'Android',
     'X-App-Ver': '10861',
@@ -102,7 +167,9 @@ async function exchangeTicketForDIToken(ticket: string, serviceUrl: string): Pro
     'Accept-Language': 'en-US,en;q=0.9'
   };
 
-  for (const clientId of clientIds) {
+  const clientIdsWithIos = [...DI_CLIENT_IDS, 'GARMIN_CONNECT_MOBILE_IOS_DI'];
+
+  for (const clientId of clientIdsWithIos) {
     try {
       const credentials = Buffer.from(`${clientId}:`).toString('base64');
       const body = new URLSearchParams({
@@ -112,10 +179,12 @@ async function exchangeTicketForDIToken(ticket: string, serviceUrl: string): Pro
         service_url: serviceUrl
       }).toString();
 
-      const response = await axios.post(
-        'https://diauth.garmin.com/di-oauth2-service/oauth/token',
-        body,
-        { headers: { ...headers, Authorization: `Basic ${credentials}` } }
+      const response = await withTimeout(
+        axios.post('https://diauth.garmin.com/di-oauth2-service/oauth/token', body, {
+          headers: { ...DI_HEADERS, ...extraHeaders, Authorization: `Basic ${credentials}` }
+        }),
+        8000,
+        'Garmin ticket exchange'
       );
 
       console.log(`[Garmin] DI Bearer token obtained with client ID: ${clientId}`);
