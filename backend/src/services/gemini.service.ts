@@ -529,9 +529,12 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[], pauseCo
   // Full plan = scored history (past completed) + new 7-day window (today onwards)
   const fullPlan = [...scoredHistory, ...weeklyPlan];
 
+  // weeklyPlan[0] is the authoritative source for today — always sync root fields to it
+  // so the "Today's Recommendation" chip never diverges from the week grid.
+  const todayEntry = weeklyPlan[0];
   upsertRecommendation({
-    workoutType:      parsed.today.type,
-    reason:           parsed.today.reason,
+    workoutType:      todayEntry?.type    ?? parsed.today.type,
+    reason:           todayEntry?.reason  ?? parsed.today.reason,
     priority:         parsed.today.priority,
     weeklyPlan:       fullPlan,
     nextWeekOverview: parsed.nextWeekOverview,
