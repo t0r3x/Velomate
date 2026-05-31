@@ -347,26 +347,16 @@ body {
   grid-template-columns: 1fr 2fr;
   gap: 1.5rem;
   flex-grow: 1;
-  align-items: stretch;
-  align-content: start;
-}
-
-.col-assessment {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden; /* grid spec: overflow!=visible suppresses content-based min-size contribution */
+  align-items: start;
 }
 
 .col-assessment .dashboard-card {
-  flex: 1;
-  min-height: 0; /* override min-height: fit-content so card can shrink to row height */
+  overflow: hidden; /* allows card-body scroll-panel to actually scroll */
 }
 
 @media (max-width: 1024px) {
   .dashboard-grid { grid-template-columns: 1fr; }
-  .col-assessment { min-height: unset; }
-  .col-assessment .dashboard-card { flex: none; min-height: fit-content; }
+  .col-assessment .dashboard-card { overflow: visible; min-height: fit-content !important; max-height: none !important; }
 }
 
 @media (max-width: 640px) {
