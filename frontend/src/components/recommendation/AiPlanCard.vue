@@ -59,6 +59,9 @@
       <!-- State: loaded -->
       <div v-show="recStore.state === 'loaded'" class="ai-rec-state">
         <template v-if="rec">
+          <!-- Goals & preferences -->
+          <GoalsInput />
+
           <!-- Today block -->
           <div class="ai-today-block">
             <div class="ai-today-header">
@@ -97,9 +100,6 @@
 
           <!-- Load assessment -->
           <LoadAssessment v-if="rec.loadAssessment" :assessment="rec.loadAssessment" :generatedAt="rec.generatedAt" />
-
-          <!-- Goals input -->
-          <GoalsInput />
         </template>
       </div>
 

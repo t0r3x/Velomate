@@ -145,6 +145,20 @@ body {
   -webkit-text-fill-color: transparent;
 }
 
+.logo-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+
+.logo-tagline {
+  font-size: 0.68rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+}
+
 /* ── Garmin Status Button (header) ── */
 .garmin-status-btn {
   display: flex;

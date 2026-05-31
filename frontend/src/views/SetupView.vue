@@ -3,7 +3,7 @@
     <div class="setup-card glass-panel">
       <div class="setup-logo">
         <i class="fa-solid fa-route logo-icon"></i>
-        <h1>UN<span>BOUND</span></h1>
+        <h1>Velo<span>mate</span></h1>
       </div>
       <p class="setup-tagline">AI-powered training for cyclists.</p>
 
