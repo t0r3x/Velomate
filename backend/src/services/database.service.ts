@@ -6,7 +6,13 @@ import fs from 'fs';
 const dataDir = path.join(__dirname, '../../data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
-const db = new Database(path.join(dataDir, 'unbound.db'));
+// Use velomate.db; fall back to unbound.db for existing installs that haven't renamed yet.
+const newDbPath    = path.join(dataDir, 'velomate.db');
+const legacyDbPath = path.join(dataDir, 'unbound.db');
+const resolvedDbPath = fs.existsSync(newDbPath) || !fs.existsSync(legacyDbPath)
+  ? newDbPath
+  : legacyDbPath;
+const db = new Database(resolvedDbPath);
 
 // WAL mode — better concurrent read performance
 db.pragma('journal_mode = WAL');

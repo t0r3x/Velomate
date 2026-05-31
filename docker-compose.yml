@@ -1,5 +1,5 @@
 services:
-  unbound:
+  velomate:
     build: .
     ports:
       - "3001:3001"

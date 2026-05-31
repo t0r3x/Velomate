@@ -37,12 +37,15 @@ const fmtZones = (zones: number[]): string =>
 // ── Completion / skip detection ───────────────────────────────────────────────
 
 /**
- * Returns true when an activity name looks like an Unbound structured workout.
+ * Returns true when an activity name looks like a Velomate structured workout.
  * Garmin prefixes the location when recording a scheduled workout, e.g.
- * "Tilburg - Unbound Long Ride" → contains "unbound".
+ * "Tilburg - Velomate Long Ride" → contains "velomate".
+ * Also matches legacy "unbound" names from before the rename.
  */
-const isUnboundActivity = (name: string): boolean =>
-  (name || '').toLowerCase().includes(APP_NAME.toLowerCase());
+const isAppActivity = (name: string): boolean => {
+  const lower = (name || '').toLowerCase();
+  return lower.includes(APP_NAME.toLowerCase()) || lower.includes('unbound');
+};
 
 /**
  * Binary activity match: marks any planned entry as 'completed' if a Garmin activity
@@ -51,7 +54,7 @@ const isUnboundActivity = (name: string): boolean =>
  * same Gemini call that regenerates the weekly plan.
  *
  * Activity selection per date (priority order):
- *   1. Activity whose name contains "Unbound" (Garmin appended workout name on record)
+ *   1. Activity whose name contains "Velomate" (Garmin appended workout name on record)
  *   2. Longest activity on that date (fallback)
  *
  * Including today (<=) means a same-day sync immediately marks the workout as done.
@@ -61,15 +64,15 @@ export const classifyCompletedEntries = (
 ): Array<{ date: string; status: 'completed' }> => {
   const activities = getStoredActivities();
 
-  // Best activity per date: prefer Unbound-named, then longest
+  // Best activity per date: prefer Velomate-named, then longest
   const actMap = new Map<string, any>();
   activities
     .filter(a => a.startTime)
     .forEach(a => {
       const date     = a.startTime.slice(0, 10);
       const existing = actMap.get(date);
-      const aIsUB    = isUnboundActivity(a.name);
-      const exIsUB   = existing ? isUnboundActivity(existing.name) : false;
+      const aIsUB    = isAppActivity(a.name);
+      const exIsUB   = existing ? isAppActivity(existing.name) : false;
 
       if (!existing) {
         actMap.set(date, a);
