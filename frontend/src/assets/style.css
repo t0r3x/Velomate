@@ -348,20 +348,22 @@ body {
   gap: 1.5rem;
   flex-grow: 1;
   align-items: stretch;
+  align-content: start;
 }
 
 .col-assessment {
-  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .col-assessment .dashboard-card {
   flex: 1;
+  min-height: 0;
 }
 
 @media (max-width: 1024px) {
   .dashboard-grid { grid-template-columns: 1fr; }
-  .col-assessment { height: auto; }
-  .col-assessment .dashboard-card { flex: none; }
+  .col-assessment .dashboard-card { flex: none; min-height: fit-content; }
 }
 
 @media (max-width: 640px) {
