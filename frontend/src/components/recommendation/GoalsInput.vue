@@ -5,12 +5,12 @@
       <span class="goals-title">Goals &amp; preferences</span>
     </div>
     <p class="goals-hint">
-      Share your goals, events, or constraints — e.g. "Gran fondo in 6 weeks, prefer not to ride on Sundays, keep long rides under 2.5 h." The AI uses this as secondary input alongside your actual training data.
+      Share your goals, events, or constraints — e.g. "race in 8 weeks, 100 km ride in 8 weeks, no riding on Sundays, long rides max 2.5 h." The AI uses this as secondary input alongside your actual training data.
     </p>
     <textarea
       v-model="text"
       class="goals-textarea"
-      placeholder="e.g. Gran fondo in 6 weeks, no riding on Sundays, long rides max 2.5 h…"
+      placeholder="e.g. race in 6 weeks, 100 km ride in 8 weeks, no riding on Sundays…"
       maxlength="500"
       rows="3"
       @keydown.ctrl.enter="handleSave"
