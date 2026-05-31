@@ -1,4 +1,4 @@
-# Unbound — AI-Powered Cycling Training Dashboard
+# Velomate — AI-Powered Cycling Training Dashboard
 
 A self-hosted cycling training dashboard that connects to **Garmin Connect** and uses **Google Gemini** to generate personalised, adaptive weekly training plans based on your actual ride data.
 
@@ -29,7 +29,7 @@ A self-hosted cycling training dashboard that connects to **Garmin Connect** and
 | **Google Gemini API key** | Free tier available at [aistudio.google.com](https://aistudio.google.com) |
 | **Docker + Docker Compose** | For the recommended installation |
 
-> **Note:** Unbound uses your Garmin username and password to connect via the Garmin Connect web API (the same flow your browser uses). Your credentials are stored locally in an encrypted session — they are never sent to any third party.
+> **Note:** Velomate uses your Garmin username and password to connect via the Garmin Connect web API (the same flow your browser uses). Your credentials are stored locally in an encrypted session — they are never sent to any third party.
 
 ---
 
@@ -37,8 +37,8 @@ A self-hosted cycling training dashboard that connects to **Garmin Connect** and
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-username/unbound.git
-cd unbound
+git clone https://github.com/your-username/velomate.git
+cd velomate
 
 # 2. Build and start
 docker compose up -d
@@ -58,15 +58,15 @@ That's it. On first run you'll be guided through the setup:
 
 ## Data Persistence
 
-All data (activities, training plans, settings, HR profile) is stored in a SQLite database inside the `unbound-data` Docker volume. It survives container restarts and updates.
+All data (activities, training plans, settings, HR profile) is stored in a SQLite database inside the `velomate-data` Docker volume. It survives container restarts and updates.
 
 ```bash
 # View volume location
-docker volume inspect unbound_unbound-data
+docker volume inspect velomate_velomate-data
 
 # Backup your data
-docker run --rm -v unbound_unbound-data:/data -v $(pwd):/backup alpine \
-  tar czf /backup/unbound-backup.tar.gz /data
+docker run --rm -v velomate_velomate-data:/data -v $(pwd):/backup alpine \
+  tar czf /backup/velomate-backup.tar.gz /data
 ```
 
 ---
@@ -150,7 +150,7 @@ npm run dev
 ## Project Structure
 
 ```
-unbound/
+velomate/
 ├── backend/
 │   └── src/
 │       ├── server.ts          # Express app + all API routes
