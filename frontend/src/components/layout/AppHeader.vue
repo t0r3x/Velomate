@@ -2,7 +2,10 @@
   <header class="main-header">
     <div class="logo-section">
       <i class="logo-icon fa-solid" :class="logoIcon"></i>
-      <h1>UN<span>BOUND</span></h1>
+      <div class="logo-text">
+        <h1>Velo<span>mate</span></h1>
+        <p class="logo-tagline">The adaptive AI cycling coach for Garmin Connect</p>
+      </div>
     </div>
 
     <button class="garmin-status-btn" aria-label="Open Connection & Profile" @click="emit('open-settings')">
