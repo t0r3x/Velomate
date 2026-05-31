@@ -1,4 +1,4 @@
-/* Modern Premium CSS for Unbound Dashboard */
+/* Modern premium CSS for dashboard */
 
 :root {
   --bg-color: #080b14;
@@ -2247,6 +2247,72 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
 }
 
 /* Divider + sync note */
+/* Goals input */
+.goals-input-section {
+  margin: 1rem 0 0.5rem;
+  padding: 0.85rem 1rem;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+}
+.goals-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.goals-header .fa-bullseye {
+  color: var(--accent);
+  font-size: 0.75rem;
+}
+.goals-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 0 0 0.6rem;
+  line-height: 1.5;
+}
+.goals-textarea {
+  width: 100%;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--panel-border);
+  border-radius: 7px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  padding: 0.5rem 0.65rem;
+  resize: vertical;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+.goals-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.goals-textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+.goals-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.goals-char-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.goals-char-warn {
+  color: #f59e0b;
+}
+
 .ai-sync-divider {
   height: 1px;
   background: var(--panel-border);

@@ -27,6 +27,7 @@
             <li><i class="fa-solid fa-forward-step"></i><span><strong>Adapts to skips and changes.</strong> Missed a session? The plan recalculates. Want to move a workout to today? Use the calendar button on any future day.</span></li>
             <li><i class="fa-solid fa-chart-line"></i><span><strong>Builds progression over time.</strong> The AI tracks your compliance and fatigue across weeks, gradually increasing load when you're ready and backing off when you need recovery.</span></li>
           </ul>
+          <GoalsInput />
           <button class="btn btn-primary" :disabled="generating" @click="handleGenerateFirst">
             <span>{{ generating ? 'Generating…' : 'Generate my first plan' }}</span>
             <i class="fa-solid" :class="generating ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'"></i>
@@ -96,6 +97,9 @@
 
           <!-- Load assessment -->
           <LoadAssessment v-if="rec.loadAssessment" :assessment="rec.loadAssessment" :generatedAt="rec.generatedAt" />
+
+          <!-- Goals input -->
+          <GoalsInput />
         </template>
       </div>
 
@@ -141,6 +145,7 @@ import WeekGrid         from './WeekGrid.vue'
 import NextWeekOverview from './NextWeekOverview.vue'
 import LoadAssessment   from './LoadAssessment.vue'
 import SyncResult       from './SyncResult.vue'
+import GoalsInput       from './GoalsInput.vue'
 
 const emit = defineEmits<{ 'open-settings': [] }>()
 
