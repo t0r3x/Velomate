@@ -56,9 +56,9 @@ body {
   position: relative;
 }
 
-/* Background Glow Effects */
+/* Background Glow Effects — fixed so they never add scroll height */
 .bg-glow-1 {
-  position: absolute;
+  position: fixed;
   top: -10%;
   left: -10%;
   width: 50%;
@@ -71,7 +71,7 @@ body {
 }
 
 .bg-glow-2 {
-  position: absolute;
+  position: fixed;
   bottom: -10%;
   right: -10%;
   width: 50%;
@@ -347,11 +347,21 @@ body {
   grid-template-columns: 1fr 2fr;
   gap: 1.5rem;
   flex-grow: 1;
-  align-items: start;
+  align-items: stretch;
+}
+
+.col-assessment {
+  height: 100%;
+}
+
+.col-assessment .dashboard-card {
+  flex: 1;
 }
 
 @media (max-width: 1024px) {
   .dashboard-grid { grid-template-columns: 1fr; }
+  .col-assessment { height: auto; }
+  .col-assessment .dashboard-card { flex: none; }
 }
 
 @media (max-width: 640px) {
