@@ -186,14 +186,11 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
   // ── Remove existing Velomate workouts before re-uploading ────────────────────
   // Prevents duplicates in the Garmin library and calendar when syncing multiple times.
   // deleteWorkout removes the workout from the library AND all scheduled calendar entries.
-  // Also cleans up legacy "Unbound " prefixed workouts from before the rename.
-  // Match both new format ("Velomate - ") and legacy formats ("Unbound ", "Velomate ")
-  const APP_PREFIXES = [`${APP_NAME} - `, `${APP_NAME} `, 'Unbound '];
+  const APP_PREFIX = `${APP_NAME} - `;
   try {
     const existingWorkouts = await client.getWorkouts(0, 100) as any[];
     const toDelete = existingWorkouts.filter(
-      (w: any) => typeof w.workoutName === 'string' &&
-        APP_PREFIXES.some(p => w.workoutName.startsWith(p))
+      (w: any) => typeof w.workoutName === 'string' && w.workoutName.startsWith(APP_PREFIX)
     );
     if (toDelete.length > 0) {
       console.log(`[Sync] Removing ${toDelete.length} existing Velomate workout(s) before re-upload…`);
