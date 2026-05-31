@@ -416,6 +416,20 @@ app.post('/api/settings/setup-complete', (_req: Request, res: Response) => {
   res.json({ saved: true });
 });
 
+app.get('/api/settings/training-goals', (_req: Request, res: Response) => {
+  res.json({ goals: getSetting('user_goals') || '' });
+});
+
+app.post('/api/settings/training-goals', (req: Request, res: Response) => {
+  const { goals } = req.body;
+  if (typeof goals !== 'string') {
+    return res.status(400).json({ error: 'goals must be a string.' });
+  }
+  setSetting('user_goals', goals.slice(0, 500));
+  console.log('[Settings] Training goals updated');
+  res.json({ saved: true });
+});
+
 // ── Training pause ────────────────────────────────────────────────────────────
 
 app.post('/api/training/pause', (req: Request, res: Response) => {

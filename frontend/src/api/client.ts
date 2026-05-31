@@ -109,6 +109,15 @@ export const postPreferredDays = (days: string[]) =>
 export const postSetupComplete = () =>
   request<void>('/api/settings/setup-complete', { method: 'POST' })
 
+export const getTrainingGoals = () =>
+  request<{ goals: string }>('/api/settings/training-goals')
+
+export const postTrainingGoals = (goals: string) =>
+  request<{ saved: boolean }>('/api/settings/training-goals', {
+    method: 'POST',
+    body: JSON.stringify({ goals })
+  })
+
 // ── Recommendation ────────────────────────────────────────────────────────────
 
 export const getRecommendation = () =>

@@ -238,6 +238,11 @@ const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext): s
     ? `TRAINING PAUSE:\nThe athlete paused training from ${pauseContext.pausedSince} to ${today}${pauseContext.pauseReason ? ` (reason: ${pauseContext.pauseReason})` : ''}.\n${pauseContext.activitiesCount > 0 ? `They recorded ${pauseContext.activitiesCount} ride(s) during the pause period.` : 'No rides were recorded during the pause period — treat this as a full rest break.'}\nStart the new plan conservatively: reduce intensity and volume for at least the first 2-3 days to allow for re-adaptation.\n\n`
     : '';
 
+  const rawGoals = getSetting('user_goals') || '';
+  const goalsBlock = rawGoals.trim()
+    ? `\nATHLETE GOALS & PREFERENCES:\n${rawGoals.trim()}\nNote: treat the above as secondary context. Reflect it in the plan where appropriate (e.g. event timing, day preferences, duration constraints), but always prioritise objective load data, HR signals, and compliance history over these stated preferences.\n\n`
+    : '';
+
   return `You are a professional cycling coach AI specializing in heart-rate based training.
 Analyze the athlete's data and generate an adaptive training plan with exact, personalised workout structures.
 The most important factor is training load management — never sacrifice recovery for volume.
@@ -245,7 +250,7 @@ The most important factor is training load management — never sacrifice recove
 TODAY: ${today} (${dayOfWeek})
 
 ATHLETE PREFERENCES:
-${prefLine}
+${prefLine}${goalsBlock}
 
 ${pauseBlock}${prevBlock}${plannedBlock}RECENT ACTIVITIES (last 21 days):
 ${JSON.stringify(recentActivities, null, 2)}
