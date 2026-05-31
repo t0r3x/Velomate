@@ -3,10 +3,10 @@
     <AppHeader @open-settings="panelOpen = true" />
 
     <main class="dashboard-grid">
-      <div class="col-assessment">
+      <div class="col-assessment" ref="assessmentCol">
         <ActivitiesCard />
       </div>
-      <div class="col-schedule">
+      <div class="col-schedule" ref="scheduleCol">
         <AiPlanCard @open-settings="panelOpen = true" />
       </div>
     </main>
@@ -31,7 +31,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { useActivitiesStore }    from '@/stores/activities.store'
 import { useRecommendationStore } from '@/stores/recommendation.store'
 import { useAuthStore }          from '@/stores/auth.store'
@@ -45,10 +45,23 @@ import ProfileSetupView from '@/views/ProfileSetupView.vue'
 
 const panelOpen        = ref(false)
 const profileModalOpen = ref(false)
+const assessmentCol    = ref<HTMLElement | null>(null)
+const scheduleCol      = ref<HTMLElement | null>(null)
 
 const activitiesStore    = useActivitiesStore()
 const recommendationStore = useRecommendationStore()
 const authStore          = useAuthStore()
+
+let heightObserver: ResizeObserver | null = null
+
+function syncColumnHeights() {
+  const planCard        = scheduleCol.value?.querySelector<HTMLElement>('.dashboard-card')
+  const activitiesCard  = assessmentCol.value?.querySelector<HTMLElement>('.dashboard-card')
+  if (!planCard || !activitiesCard) return
+  const h = planCard.offsetHeight + 'px'
+  activitiesCard.style.minHeight = h
+  activitiesCard.style.maxHeight = h
+}
 
 onMounted(async () => {
   // Fast DB render — no Garmin call
@@ -57,9 +70,18 @@ onMounted(async () => {
   recommendationStore.fetchCached()
   // Start 30s Garmin session polling
   authStore.startPolling()
+
+  await nextTick()
+  const planCard = scheduleCol.value?.querySelector('.dashboard-card')
+  if (planCard) {
+    heightObserver = new ResizeObserver(syncColumnHeights)
+    heightObserver.observe(planCard)
+    syncColumnHeights()
+  }
 })
 
 onUnmounted(() => {
   authStore.stopPolling()
+  heightObserver?.disconnect()
 })
 </script>
