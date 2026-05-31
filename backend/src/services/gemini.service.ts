@@ -40,12 +40,9 @@ const fmtZones = (zones: number[]): string =>
  * Returns true when an activity name looks like a Velomate structured workout.
  * Garmin prefixes the location when recording a scheduled workout, e.g.
  * "Tilburg - Velomate Long Ride" → contains "velomate".
- * Also matches legacy "unbound" names from before the rename.
  */
-const isAppActivity = (name: string): boolean => {
-  const lower = (name || '').toLowerCase();
-  return lower.includes(APP_NAME.toLowerCase()) || lower.includes('unbound');
-};
+const isAppActivity = (name: string): boolean =>
+  (name || '').toLowerCase().includes(APP_NAME.toLowerCase());
 
 /**
  * Binary activity match: marks any planned entry as 'completed' if a Garmin activity
