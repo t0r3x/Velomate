@@ -1,12 +1,12 @@
 /**
- * Shared utility helpers for the Unbound backend.
+ * Shared utility helpers for the Velomate backend.
  * Import from here rather than duplicating these conversions across services.
  */
 
 // ── App identity ──────────────────────────────────────────────────────────────
 
 /** Canonical application name — used in Garmin workout names, banners, and log messages. */
-export const APP_NAME = 'Unbound';
+export const APP_NAME = 'Velomate';
 
 // ── Timezone ──────────────────────────────────────────────────────────────────
 
