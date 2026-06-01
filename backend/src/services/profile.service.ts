@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { HeartRateZone, UserHRProfile } from '../types';
+import logger from '../logger';
 
 const configFile = path.join(__dirname, '../../config.json');
 
@@ -30,7 +31,7 @@ export const loadProfile = (): UserHRProfile => {
       return JSON.parse(data);
     }
   } catch (error) {
-    console.error('Error reading profile config, using defaults:', error);
+    logger.error('Error reading profile config, using defaults: ' + JSON.stringify(error));
   }
   return defaultProfile;
 };
@@ -39,6 +40,6 @@ export const saveProfile = (profile: UserHRProfile): void => {
   try {
     fs.writeFileSync(configFile, JSON.stringify(profile, null, 2), 'utf-8');
   } catch (error) {
-    console.error('Error saving profile config:', error);
+    logger.error('Error saving profile config: ' + JSON.stringify(error));
   }
 };

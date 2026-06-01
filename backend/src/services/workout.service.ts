@@ -13,6 +13,7 @@ import { getGarminClient, trySessionAuth } from './garmin.service';
 import { loadProfile } from './profile.service';
 import { getStoredProfile, PlanEntry, WorkoutStep, WorkoutStructure } from './database.service';
 import { localDate, APP_NAME } from '../utils';
+import logger from '../logger';
 
 /** Write workout definitions to ./tmp/garmin-workouts/{timestamp}/ for dev inspection. */
 const devDumpWorkouts = (workoutDefs: Record<string, any>, dateStr: string): void => {
@@ -25,11 +26,11 @@ const devDumpWorkouts = (workoutDefs: Record<string, any>, dateStr: string): voi
       const file = path.join(dumpDir, `${name}.json`);
       fs.writeFileSync(file, JSON.stringify(def, null, 2), 'utf-8');
     }
-    console.log(`[Dev] Workout definitions dumped to: ${dumpDir}`);
-    console.log(`[Dev]   scheduleDate: ${dateStr}`);
-    Object.keys(workoutDefs).forEach(n => console.log(`[Dev]   ${n}.json`));
+    logger.info(`[Dev] Workout definitions dumped to: ${dumpDir}`);
+    logger.info(`[Dev]   scheduleDate: ${dateStr}`);
+    Object.keys(workoutDefs).forEach(n => logger.info(`[Dev]   ${n}.json`));
   } catch (err: any) {
-    console.warn('[Dev] Failed to dump workouts:', err.message);
+    logger.warn(`[Dev] Failed to dump workouts: ${err.message}`);
   }
 };
 
@@ -174,14 +175,14 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
   // If the plan is empty or has no syncable types, fall back to all three so the button
   // is never a no-op (e.g. first-time sync before plan is generated).
   if (plannedEntryByType.size === 0) {
-    console.warn('[Sync] No planned syncable entries found — falling back to all three types');
+    logger.warn('[Sync] No planned syncable entries found — falling back to all three types');
     for (const type of SYNCABLE_TYPES) {
       plannedEntryByType.set(type, { date: dateStr, type, reason: '', status: 'planned', structure: null });
     }
   }
 
   const typesToSync = [...plannedEntryByType.keys()];
-  console.log(`[Sync] Syncing ${typesToSync.length} workout type(s) from plan: ${typesToSync.join(', ')}`);
+  logger.info(`[Sync] Syncing ${typesToSync.length} workout type(s) from plan: ${typesToSync.join(', ')}`);
 
   // ── Remove existing Velomate workouts before re-uploading ────────────────────
   // Prevents duplicates in the Garmin library and calendar when syncing multiple times.
@@ -193,19 +194,19 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
       (w: any) => typeof w.workoutName === 'string' && w.workoutName.startsWith(APP_PREFIX)
     );
     if (toDelete.length > 0) {
-      console.log(`[Sync] Removing ${toDelete.length} existing Velomate workout(s) before re-upload…`);
+      logger.info(`[Sync] Removing ${toDelete.length} existing Velomate workout(s) before re-upload…`);
       await Promise.all(
         toDelete.map((w: any) => {
-          console.log(`[Sync]   Deleting: ${w.workoutName} (id ${w.workoutId})`);
+          logger.info(`[Sync]   Deleting: ${w.workoutName} (id ${w.workoutId})`);
           return client.deleteWorkout({ workoutId: String(w.workoutId) });
         })
       );
     } else {
-      console.log('[Sync] No existing Velomate workouts found — clean upload');
+      logger.info('[Sync] No existing Velomate workouts found — clean upload');
     }
   } catch (err: any) {
     // Non-fatal: log and continue. Upload will still succeed; worst case is a duplicate.
-    console.warn(`[Sync] Could not clean up existing workouts (continuing anyway): ${err.message}`);
+    logger.warn(`[Sync] Could not clean up existing workouts (continuing anyway): ${err.message}`);
   }
 
   // ── Build and upload each planned type ───────────────────────────────────────
@@ -223,7 +224,7 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
       structure  = entry.structure;
       aiProvided = true;
     } else if (FALLBACK_STRUCTURES[type]) {
-      console.warn(`[Sync] No AI structure for ${type} — using built-in fallback`);
+      logger.warn(`[Sync] No AI structure for ${type} — using built-in fallback`);
       structure  = FALLBACK_STRUCTURES[type]!;
       aiProvided = false;
     } else {
@@ -231,7 +232,7 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
     }
 
     const totalMin = Math.round(structure.steps.reduce((s, st) => s + st.durationSec, 0) / 60);
-    console.log(`[Sync] ${type}: ${aiProvided ? 'AI' : 'fallback'} — ${totalMin} min, ${structure.steps.length} steps`);
+    logger.info(`[Sync] ${type}: ${aiProvided ? 'AI' : 'fallback'} — ${totalMin} min, ${structure.steps.length} steps`);
     if (!aiProvided) usingFallback.push(type);
 
     // Build workout name
@@ -258,7 +259,7 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
     devDump[type.toLowerCase()] = def;
 
     // Upload the workout definition
-    console.log(`[Sync] Uploading ${type} workout…`);
+    logger.info(`[Sync] Uploading ${type} workout…`);
     let uploaded: any;
     try {
       uploaded = await client.createWorkout(def);
@@ -269,12 +270,12 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
     // Schedule on the workout's own plan date
     const entryDate = entry.date || dateStr;
     try {
-      console.log(`[Sync] Scheduling ${type} (${uploaded.workoutName}) for ${entryDate}`);
+      logger.info(`[Sync] Scheduling ${type} (${uploaded.workoutName}) for ${entryDate}`);
       await client.scheduleWorkout({ workoutId: String(uploaded.workoutId) }, entryDate);
     } catch (err: any) {
       // createWorkout succeeded but scheduleWorkout failed — workout is now in the library
       // but not on the calendar. Tell the user explicitly so they can schedule it manually.
-      console.warn(`[Sync] ${type} uploaded (id ${uploaded.workoutId}) but scheduling failed: ${err.message}`);
+      logger.warn(`[Sync] ${type} uploaded (id ${uploaded.workoutId}) but scheduling failed: ${err.message}`);
       results.push({
         type,
         workoutId:     uploaded.workoutId,
@@ -299,8 +300,8 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
 
   devDumpWorkouts(devDump, dateStr);
   const scheduleErrors = results.filter(r => r.scheduleError).map(r => `${r.type}: ${r.scheduleError}`);
-  console.log(`[Sync] Done — ${results.length} workout(s) uploaded${scheduleErrors.length ? `, ${scheduleErrors.length} scheduling error(s)` : ', all scheduled'}`);
-  if (usingFallback.length) console.warn(`[Sync] Fallback structures used for: ${usingFallback.join(', ')}`);
+  logger.info(`[Sync] Done — ${results.length} workout(s) uploaded${scheduleErrors.length ? `, ${scheduleErrors.length} scheduling error(s)` : ', all scheduled'}`);
+  if (usingFallback.length) logger.warn(`[Sync] Fallback structures used for: ${usingFallback.join(', ')}`);
 
   return {
     scheduledWorkoutId,

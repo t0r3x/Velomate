@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import logger from '../logger';
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 const dataDir = path.join(__dirname, '../../data');
@@ -79,7 +80,7 @@ const _migrations: Array<[string, string]> = [
   [`ALTER TABLE activities ADD COLUMN feelingAfterExercise INTEGER DEFAULT NULL`, '[DB] Migration: added feelingAfterExercise column'],
 ];
 for (const [sql, msg] of _migrations) {
-  try { db.exec(sql); console.log(msg); } catch { /* column already exists */ }
+  try { db.exec(sql); logger.info(msg); } catch { /* column already exists */ }
 }
 
 // ── Activities ────────────────────────────────────────────────────────────────
@@ -183,7 +184,7 @@ export const getStoredAnalysis = (): any | null => {
   if (!row) return null;
   let suggestedZones = null;
   try { suggestedZones = JSON.parse(row.suggestedZones || 'null'); } catch {
-    console.warn('[DB] getStoredAnalysis: failed to parse suggestedZones');
+    logger.warn('[DB] getStoredAnalysis: failed to parse suggestedZones');
   }
   return {
     totalCyclingRides: row.totalCyclingRides,
@@ -216,7 +217,7 @@ export const getStoredProfile = (): any | null => {
   if (!row) return null;
   let zones = null;
   try { zones = JSON.parse(row.zones || 'null'); } catch {
-    console.warn('[DB] getStoredProfile: failed to parse zones');
+    logger.warn('[DB] getStoredProfile: failed to parse zones');
   }
   return {
     maxHr: row.maxHr,
@@ -297,7 +298,7 @@ export const getStoredRecommendation = (): any | null => {
       generatedAt:      row.generatedAt
     };
   } catch (e) {
-    console.warn('[DB] getStoredRecommendation: JSON parse failed — returning null', e);
+    logger.warn('[DB] getStoredRecommendation: JSON parse failed — returning null ' + JSON.stringify(e));
     return null;
   }
 };
@@ -314,7 +315,7 @@ export const updatePlanEntryStatus = (
   try {
     plan = JSON.parse(row.weeklyPlan || '[]');
   } catch {
-    console.warn('[DB] updatePlanEntryStatus: weeklyPlan JSON parse failed');
+    logger.warn('[DB] updatePlanEntryStatus: weeklyPlan JSON parse failed');
     return false;
   }
   const idx = plan.findIndex(e => e.date === date);
@@ -335,7 +336,7 @@ export const swapPlanEntryDates = (date1: string, date2: string): boolean => {
   try {
     plan = JSON.parse(row.weeklyPlan || '[]');
   } catch {
-    console.warn('[DB] swapPlanEntryDates: weeklyPlan JSON parse failed');
+    logger.warn('[DB] swapPlanEntryDates: weeklyPlan JSON parse failed');
     return false;
   }
   const idx1 = plan.findIndex(e => e.date === date1);
