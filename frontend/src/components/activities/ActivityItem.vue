@@ -1,8 +1,5 @@
 <template>
   <li class="activity-item">
-    <div class="activity-icon-container">
-      <i class="fa-solid fa-bicycle"></i>
-    </div>
     <div class="activity-details-main">
       <span class="activity-title">{{ activity.name || 'Cycling Activity' }}</span>
       <span class="activity-meta">{{ meta }}</span>
