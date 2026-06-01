@@ -2,6 +2,7 @@ import { getGarminClient, trySessionAuth } from './garmin.service';
 import { calculateDefaultZones, loadProfile } from './profile.service';
 import { updateActivityFeedback } from './database.service';
 import { toRpe, toFeeling } from '../utils';
+import logger from '../logger';
 
 export const fetchCyclingActivities = async (days: number = 90) => {
   const isAuthenticated = await trySessionAuth();
@@ -23,7 +24,7 @@ export const fetchCyclingActivities = async (days: number = 90) => {
     typeKey: a.activityType?.typeKey,
     date: a.startTimeLocal
   }));
-  console.log('[Activities] All activities from Garmin:', JSON.stringify(sample, null, 2));
+  logger.info('[Activities] All activities from Garmin: ' + JSON.stringify(sample, null, 2));
 
   const cyclingActivities = activities.filter(act => {
     const typeKey = (act.activityType?.typeKey || '').toLowerCase();
@@ -41,7 +42,7 @@ export const fetchCyclingActivities = async (days: number = 90) => {
   if (cyclingActivities.length > 0) {
     const sample = cyclingActivities[0] as any;
     const nonNullFields = Object.keys(sample).filter(k => sample[k] != null && sample[k] !== 0 && sample[k] !== '');
-    console.log(`[Activities] Fields with data on first activity: ${nonNullFields.join(', ')}`);
+    logger.info(`[Activities] Fields with data on first activity: ${nonNullFields.join(', ')}`);
   }
 
   const mapped = cyclingActivities.map(act => {
@@ -91,8 +92,8 @@ export const fetchCyclingActivities = async (days: number = 90) => {
     };
   });
 
-  console.log(`[Activities] Zone data found for ${zonesFoundCount}/${mapped.length} cycling activities`);
-  console.log(`[Activities] RPE data found for ${rpeFoundCount}/${mapped.length} cycling activities`);
+  logger.info(`[Activities] Zone data found for ${zonesFoundCount}/${mapped.length} cycling activities`);
+  logger.info(`[Activities] RPE data found for ${rpeFoundCount}/${mapped.length} cycling activities`);
   return mapped;
 };
 
@@ -147,12 +148,12 @@ export const fetchAndStoreRecentFeedback = async (storedActivities: any[]): Prom
     .slice(0, FEEDBACK_FETCH_LIMIT);
 
   if (missing.length === 0) {
-    console.log('[Activities] Feedback: all recent activities already have RPE data');
+    logger.info('[Activities] Feedback: all recent activities already have RPE data');
     return;
   }
 
   const client = getGarminClient();
-  console.log(`[Activities] Fetching feedback (RPE/feel) for ${missing.length} activit${missing.length === 1 ? 'y' : 'ies'} via detail endpoint…`);
+  logger.info(`[Activities] Fetching feedback (RPE/feel) for ${missing.length} activit${missing.length === 1 ? 'y' : 'ies'} via detail endpoint…`);
 
   for (const act of missing) {
     try {
@@ -171,9 +172,9 @@ export const fetchAndStoreRecentFeedback = async (storedActivities: any[]): Prom
 
       // Store the raw Garmin values — display layer converts them
       updateActivityFeedback(String(act.activityId), rawRpe ?? null, rawFeel ?? null);
-      console.log(`[Activities] Feedback stored for ${act.activityId}: raw RPE=${rawRpe ?? '-'} (→${rpe ?? '-'}/10), raw feel=${rawFeel ?? '-'} (→${feeling ?? '-'}/5)`);
+      logger.info(`[Activities] Feedback stored for ${act.activityId}: raw RPE=${rawRpe ?? '-'} (→${rpe ?? '-'}/10), raw feel=${rawFeel ?? '-'} (→${feeling ?? '-'}/5)`);
     } catch (err: any) {
-      console.warn(`[Activities] Failed to fetch feedback for ${act.activityId}: ${err.message}`);
+      logger.warn(`[Activities] Failed to fetch feedback for ${act.activityId}: ${err.message}`);
     }
   }
 };

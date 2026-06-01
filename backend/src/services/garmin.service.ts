@@ -2,6 +2,7 @@ import { GarminConnect } from '@flow-js/garmin-connect';
 import axios from 'axios';
 import { GarminSSOClient } from './sso.service';
 import { getSetting, setSetting } from './database.service';
+import logger from '../logger';
 
 const OAUTH1_KEY = 'garmin_oauth1_token';
 const OAUTH2_KEY = 'garmin_oauth2_token';
@@ -79,10 +80,10 @@ const refreshAccessToken = async (refreshToken: string): Promise<any | null> => 
         8000,
         'Garmin token refresh'
       );
-      console.log(`[Garmin] Access token refreshed (client: ${clientId})`);
+      logger.info(`[Garmin] Access token refreshed (client: ${clientId})`);
       return response.data;
     } catch (err: any) {
-      console.warn(`[Garmin] Refresh failed for ${clientId}: ${err.message}`);
+      logger.warn(`[Garmin] Refresh failed for ${clientId}: ${err.message}`);
     }
   }
   return null;
@@ -106,7 +107,7 @@ export const trySessionAuth = async (): Promise<boolean> => {
       const almostExpired  = Date.now() >= expiresAt - 5 * 60 * 1000;
 
       if (almostExpired && refreshToken) {
-        console.log('[Garmin] Access token expired/expiring — refreshing…');
+        logger.info('[Garmin] Access token expired/expiring — refreshing…');
         const refreshed = await refreshAccessToken(refreshToken);
         if (refreshed?.access_token) {
           const now = Math.floor(Date.now() / 1000);
@@ -121,21 +122,21 @@ export const trySessionAuth = async (): Promise<boolean> => {
             last_update_date: new Date().toISOString(),
           };
           setSetting(OAUTH2_KEY, JSON.stringify(oauth2Token));
-          console.log('[Garmin] New access token saved to DB.');
+          logger.info('[Garmin] New access token saved to DB.');
         } else {
-          console.warn('[Garmin] Token refresh failed — will try existing token.');
+          logger.warn('[Garmin] Token refresh failed — will try existing token.');
         }
       }
 
       (client.client as any).oauth1Token = oauth1Token;
       (client.client as any).oauth2Token = oauth2Token;
       await withTimeout(client.getUserSettings(), 8000, 'Garmin getUserSettings');
-      console.log('Successfully authenticated using DB-stored tokens.');
+      logger.info('Successfully authenticated using DB-stored tokens.');
       authCache = { valid: true, expiresAt: Date.now() + AUTH_TTL_SUCCESS };
       return true;
     }
   } catch (error: any) {
-    console.warn('Stored session is invalid or expired:', error.message);
+    logger.warn(`Stored session is invalid or expired: ${error.message}`);
   }
   authCache = { valid: false, expiresAt: Date.now() + AUTH_TTL_FAILURE };
   return false;
@@ -148,9 +149,9 @@ export const loginGarmin = async (username?: string, password?: string): Promise
 
   if (!user || !pass) throw new Error('Username and password are required.');
 
-  console.log(`Attempting login for user: ${user}`);
+  logger.info(`Attempting login for user: ${user}`);
   await client.login(user, pass);
-  console.log('Login successful.');
+  logger.info('Login successful.');
 };
 
 /**
@@ -187,11 +188,11 @@ async function exchangeTicketForDIToken(ticket: string, serviceUrl: string): Pro
         'Garmin ticket exchange'
       );
 
-      console.log(`[Garmin] DI Bearer token obtained with client ID: ${clientId}`);
+      logger.info(`[Garmin] DI Bearer token obtained with client ID: ${clientId}`);
       return response.data;
     } catch (err: any) {
       const status = err.response?.status || 'no-response';
-      console.warn(`[Garmin] DI exchange failed for ${clientId} (${status}): ${err.message}`);
+      logger.warn(`[Garmin] DI exchange failed for ${clientId} (${status}): ${err.message}`);
     }
   }
 
@@ -202,7 +203,7 @@ export const finalizeLogin = async (ticket: string, ssoClient?: GarminSSOClient)
   const client = getGarminClient();
   const serviceUrl = ssoClient?.getUsedServiceUrl() || 'https://connect.garmin.com/app';
 
-  console.log(`[Garmin] Exchanging ticket for DI Bearer token (service: ${serviceUrl})...`);
+  logger.info(`[Garmin] Exchanging ticket for DI Bearer token (service: ${serviceUrl})...`);
   const diToken = await exchangeTicketForDIToken(ticket, serviceUrl);
 
   // Build an oauth2Token object compatible with the @flow-js/garmin-connect library.
@@ -237,10 +238,10 @@ export const finalizeLogin = async (ticket: string, ssoClient?: GarminSSOClient)
   // Persist tokens to the database
   setSetting(OAUTH1_KEY, JSON.stringify(oauth1Token));
   setSetting(OAUTH2_KEY, JSON.stringify(oauth2Token));
-  console.log('[Garmin] Tokens saved to database.');
+  logger.info('[Garmin] Tokens saved to database.');
 
   // Mark session as valid so the next /api/status poll returns immediately
   authCache = { valid: true, expiresAt: Date.now() + AUTH_TTL_SUCCESS };
 
-  console.log('[Garmin] Login finalized. Bearer token is active.');
+  logger.info('[Garmin] Login finalized. Bearer token is active.');
 };

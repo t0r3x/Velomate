@@ -1,4 +1,5 @@
 import { CookieJar } from 'tough-cookie';
+import logger from '../logger';
 
 /**
  * Garmin SSO Client using TLS Impersonation (got-scraping / curl_cffi equivalent).
@@ -66,7 +67,7 @@ export class GarminSSOClient {
   }
 
   async initiate(username: string, password: string) {
-    console.log(`[SSO] Starting login for ${username}...`);
+    logger.info(`[SSO] Starting login for ${username}...`);
 
     try {
       const result = await this.tryMobileLogin(username, password);
@@ -74,7 +75,7 @@ export class GarminSSOClient {
       this.usedServiceUrl = this.MOBILE_SERVICE_URL;
       return result;
     } catch (mobileError: any) {
-      console.warn(`[SSO] Mobile strategy failed: ${mobileError.message}. Trying portal...`);
+      logger.warn(`[SSO] Mobile strategy failed: ${mobileError.message}. Trying portal...`);
     }
 
     try {
@@ -83,7 +84,7 @@ export class GarminSSOClient {
       this.usedServiceUrl = this.PORTAL_SERVICE_URL;
       return result;
     } catch (portalError: any) {
-      console.error(`[SSO] Portal strategy failed: ${portalError.message}`);
+      logger.error(`[SSO] Portal strategy failed: ${portalError.message}`);
       throw portalError;
     }
   }
@@ -91,7 +92,7 @@ export class GarminSSOClient {
   private async tryMobileLogin(username: string, password: string) {
     const client = await this.getClient();
     const serviceUrl = this.MOBILE_SERVICE_URL;
-    console.log('[SSO] Mobile strategy: establishing session...');
+    logger.info('[SSO] Mobile strategy: establishing session...');
 
     const getResp = await client.get(`${this.SSO_BASE}/mobile/api/login`, {
       searchParams: { clientId: this.MOBILE_CLIENT_ID, locale: 'en-US', service: serviceUrl },
@@ -102,7 +103,7 @@ export class GarminSSOClient {
       throw new Error(`Mobile GET failed with status ${getResp.statusCode}`);
     }
 
-    console.log('[SSO] Mobile strategy: submitting credentials...');
+    logger.info('[SSO] Mobile strategy: submitting credentials...');
     const postResp = await client.post(`${this.SSO_BASE}/mobile/api/login`, {
       json: { username, password, rememberMe: true, captchaToken: '' },
       searchParams: { clientId: this.MOBILE_CLIENT_ID, locale: 'en-US', service: serviceUrl },
@@ -123,17 +124,17 @@ export class GarminSSOClient {
   private async tryPortalLogin(username: string, password: string) {
     const client = await this.getClient();
     const serviceUrl = this.PORTAL_SERVICE_URL;
-    console.log('[SSO] Portal strategy: establishing session...');
+    logger.info('[SSO] Portal strategy: establishing session...');
 
     await client.get(`${this.SSO_BASE}/portal/sso/en-US/sign-in`, {
       searchParams: { clientId: this.PORTAL_CLIENT_ID, service: serviceUrl }
     });
 
     const delayMs = 5000 + Math.floor(Math.random() * 5000);
-    console.log(`[SSO] Portal strategy: waiting ${Math.round(delayMs / 1000)}s (anti-WAF)...`);
+    logger.info(`[SSO] Portal strategy: waiting ${Math.round(delayMs / 1000)}s (anti-WAF)...`);
     await this.delay(delayMs);
 
-    console.log('[SSO] Portal strategy: submitting credentials...');
+    logger.info('[SSO] Portal strategy: submitting credentials...');
     const response = await client.post(`${this.SSO_BASE}/portal/api/login`, {
       json: { username, password, rememberMe: true, captchaToken: '' },
       searchParams: { clientId: this.PORTAL_CLIENT_ID, locale: 'en-US', service: serviceUrl },
@@ -160,17 +161,17 @@ export class GarminSSOClient {
     }
 
     const status = this.parseResponseStatus(data);
-    console.log(`[SSO] Response status: ${status}`);
+    logger.info(`[SSO] Response status: ${status}`);
 
     if (status === 'MFA_REQUIRED') {
       const mfaInfo = data.customerMfaInfo || {};
       this.mfaMethod = mfaInfo.mfaLastMethodUsed || 'email';
-      console.log(`[SSO] MFA required, method: ${this.mfaMethod}`);
+      logger.info(`[SSO] MFA required, method: ${this.mfaMethod}`);
       return { mfaRequired: true };
     }
 
     if ((status === 'SUCCESS' || status === 'SUCCESSFUL') && data.serviceTicketId) {
-      console.log('[SSO] Login successful.');
+      logger.info('[SSO] Login successful.');
       return { success: true, ticket: data.serviceTicketId };
     }
 
@@ -179,7 +180,7 @@ export class GarminSSOClient {
   }
 
   async verify(code: string) {
-    console.log(`[SSO] Verifying MFA code (method: ${this.mfaMethod}, strategy: ${this.usedStrategy})...`);
+    logger.info(`[SSO] Verifying MFA code (method: ${this.mfaMethod}, strategy: ${this.usedStrategy})...`);
     const client = await this.getClient();
 
     const verifyPath = this.usedStrategy === 'mobile'
@@ -209,10 +210,10 @@ export class GarminSSOClient {
     }
 
     const status = this.parseResponseStatus(data);
-    console.log(`[SSO] MFA response status: ${status}`);
+    logger.info(`[SSO] MFA response status: ${status}`);
 
     if ((status === 'SUCCESS' || status === 'SUCCESSFUL') && data.serviceTicketId) {
-      console.log('[SSO] MFA verified successfully.');
+      logger.info('[SSO] MFA verified successfully.');
       return { success: true, ticket: data.serviceTicketId };
     }
 

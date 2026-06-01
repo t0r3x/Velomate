@@ -9,6 +9,7 @@ import {
   PlanEntry
 } from './database.service';
 import { localDate, toRpe, toFeeling, USER_TZ, APP_NAME } from '../utils';
+import logger from '../logger';
 
 // ── Key helpers ───────────────────────────────────────────────────────────────
 
@@ -399,14 +400,14 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[], pauseCo
   const prompt = buildPrompt(previousPlan, pauseContext);
 
   // ── Log outgoing prompt ───────────────────────────────────────────────────────
-  console.log('\n' + '═'.repeat(72));
-  console.log('[Gemini] ── PROMPT SENT ─────────────────────────────────────────────');
-  console.log('─'.repeat(72));
-  console.log(prompt);
-  console.log('─'.repeat(72) + '\n');
+  logger.info('\n' + '═'.repeat(72));
+  logger.info('[Gemini] ── PROMPT SENT ─────────────────────────────────────────────');
+  logger.info('─'.repeat(72));
+  logger.info(prompt);
+  logger.info('─'.repeat(72) + '\n');
 
   const model = getSetting('gemini_model') || 'gemini-3.5-flash';
-  console.log(`[Gemini] Model: ${model}`);
+  logger.info(`[Gemini] Model: ${model}`);
 
   const response = await axios.post(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
@@ -428,11 +429,11 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[], pauseCo
   const finishReason = candidate?.finishReason ?? 'unknown';
 
   // ── Log raw response ──────────────────────────────────────────────────────────
-  console.log('[Gemini] ── RAW RESPONSE ────────────────────────────────────────────');
-  console.log(`[Gemini] finishReason: ${finishReason} | length: ${rawText.length} chars`);
-  console.log('─'.repeat(72));
-  console.log(rawText ?? '(empty)');
-  console.log('─'.repeat(72) + '\n');
+  logger.info('[Gemini] ── RAW RESPONSE ────────────────────────────────────────────');
+  logger.info(`[Gemini] finishReason: ${finishReason} | length: ${rawText.length} chars`);
+  logger.info('─'.repeat(72));
+  logger.info(rawText ?? '(empty)');
+  logger.info('─'.repeat(72) + '\n');
 
   if (!rawText) throw new Error('Empty response from Gemini API');
 
@@ -503,7 +504,7 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[], pauseCo
     }
   }
   if (scoredMap.size > 0) {
-    console.log(`[Gemini] executionScores received for: ${[...scoredMap.keys()].join(', ')}`);
+    logger.info(`[Gemini] executionScores received for: ${[...scoredMap.keys()].join(', ')}`);
   }
 
   // Keep past completed entries from the last 14 days, with AI scores applied
@@ -530,7 +531,7 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[], pauseCo
     if (todayScore) {
       weeklyPlan[0].executionScore = todayScore.score;
       weeklyPlan[0].executionNote  = todayScore.note || null;
-      console.log(`[Gemini] executionScores[] fallback applied for today (${weeklyPlan[0].date}): score=${todayScore.score}`);
+      logger.info(`[Gemini] executionScores[] fallback applied for today (${weeklyPlan[0].date}): score=${todayScore.score}`);
     }
   }
 
@@ -550,23 +551,23 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[], pauseCo
   });
 
   // ── Log parsed result summary ─────────────────────────────────────────────────
-  console.log('[Gemini] ── PARSED RESULT ───────────────────────────────────────────');
-  console.log(`  Today:    ${parsed.today.type} (priority: ${parsed.today.priority})`);
-  console.log(`  Reason:   ${parsed.today.reason}`);
-  console.log(`  Fatigue:  ${parsed.loadAssessment?.fatigue}  |  Trend: ${parsed.loadAssessment?.weeklyLoadTrend}`);
-  console.log(`  Insight:  ${parsed.loadAssessment?.insight}`);
+  logger.info('[Gemini] ── PARSED RESULT ───────────────────────────────────────────');
+  logger.info(`  Today:    ${parsed.today.type} (priority: ${parsed.today.priority})`);
+  logger.info(`  Reason:   ${parsed.today.reason}`);
+  logger.info(`  Fatigue:  ${parsed.loadAssessment?.fatigue}  |  Trend: ${parsed.loadAssessment?.weeklyLoadTrend}`);
+  logger.info(`  Insight:  ${parsed.loadAssessment?.insight}`);
   if (scoredHistory.length > 0) {
-    console.log(`  Scored history (${scoredHistory.length} past entries):`);
+    logger.info(`  Scored history (${scoredHistory.length} past entries):`);
     scoredHistory.forEach(e =>
-      console.log(`    ${e.date}  ${e.type.padEnd(10)}  [${e.status}]  score=${e.executionScore ?? 'null'}  ${e.executionNote ?? ''}`)
+      logger.info(`    ${e.date}  ${e.type.padEnd(10)}  [${e.status}]  score=${e.executionScore ?? 'null'}  ${e.executionNote ?? ''}`)
     );
   }
-  console.log(`  New 7-day plan (${weeklyPlan.length} entries):`);
+  logger.info(`  New 7-day plan (${weeklyPlan.length} entries):`);
   weeklyPlan.forEach(e =>
-    console.log(`    ${e.date}  ${e.type.padEnd(10)}  [${e.status}]  ${e.reason}`)
+    logger.info(`    ${e.date}  ${e.type.padEnd(10)}  [${e.status}]  ${e.reason}`)
   );
-  console.log(`  Next week: ${parsed.nextWeekOverview?.summary}`);
-  console.log('═'.repeat(72) + '\n');
+  logger.info(`  Next week: ${parsed.nextWeekOverview?.summary}`);
+  logger.info('═'.repeat(72) + '\n');
 
   return getStoredRecommendation();
 };
