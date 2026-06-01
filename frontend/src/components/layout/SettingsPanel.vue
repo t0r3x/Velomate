@@ -4,8 +4,8 @@
   <aside class="settings-panel" :class="{ open: open }">
     <div class="settings-panel-header">
       <div class="settings-panel-title">
-        <i class="fa-solid fa-sliders"></i>
-        <span>Connection &amp; Profile</span>
+        <i class="fa-solid fa-plug"></i>
+        <span>Connections</span>
       </div>
       <button class="panel-close-btn" aria-label="Close" @click="emit('update:open', false)">
         <i class="fa-solid fa-xmark"></i>
@@ -84,7 +84,7 @@
       <div class="panel-section">
         <div class="panel-section-label">
           <i class="fa-solid fa-brain"></i>
-          <span>AI Recommendation</span>
+          <span>AI Connection</span>
         </div>
 
         <div v-if="settingsStore.geminiConfigured" style="margin-bottom:0.75rem">
@@ -105,17 +105,6 @@
               <i class="fa-solid fa-key input-icon"></i>
               <input type="password" id="panel-api-key" v-model="apiKey" placeholder="AIza…" autocomplete="off">
             </div>
-          </div>
-
-          <div class="input-group" style="margin-top:0.85rem">
-            <label>Preferred Long Ride Days</label>
-            <div class="preferred-days-grid">
-              <label v-for="day in ALL_DAYS" :key="day.value" class="day-chip">
-                <input type="checkbox" :value="day.value" v-model="selectedDays">
-                <span>{{ day.label }}</span>
-              </label>
-            </div>
-            <p class="helper-text" style="margin-top:0.35rem">The AI will prefer these days for long endurance rides. Select multiple.</p>
           </div>
 
           <div class="input-group" style="margin-top:0.85rem">
@@ -152,8 +141,8 @@
         <i class="fa-solid" :class="saveBusy ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
       </button>
       <button class="btn btn-secondary" @click="handleEditProfile">
-        <span>Edit HR Profile</span>
-        <i class="fa-solid fa-heart-pulse"></i>
+        <span>Training Profile</span>
+        <i class="fa-solid fa-user-gear"></i>
       </button>
     </div>
   </aside>
@@ -181,25 +170,13 @@ const mfaCode  = ref('')
 const loginBusy = ref(false)
 
 // AI settings form state
-const apiKey       = ref('')
-const selectedDays = ref<string[]>([])
+const apiKey        = ref('')
 const selectedModel = ref('gemini-3.5-flash')
-const saveBusy     = ref(false)
-
-const ALL_DAYS = [
-  { value: 'Monday',    label: 'Mon' },
-  { value: 'Tuesday',   label: 'Tue' },
-  { value: 'Wednesday', label: 'Wed' },
-  { value: 'Thursday',  label: 'Thu' },
-  { value: 'Friday',    label: 'Fri' },
-  { value: 'Saturday',  label: 'Sat' },
-  { value: 'Sunday',    label: 'Sun' }
-]
+const saveBusy      = ref(false)
 
 // Sync form state from store when panel opens
 watch(() => props.open, (isOpen) => {
   if (isOpen) {
-    selectedDays.value  = [...settingsStore.preferredLongRideDays]
     selectedModel.value = settingsStore.geminiModel
     apiKey.value        = ''
     mfaCode.value       = ''
@@ -247,7 +224,7 @@ async function handleSave() {
   saveBusy.value = true
   try {
     const onSetup = router.currentRoute.value.name === 'setup'
-    const success = await settingsStore.saveAll(apiKey.value, selectedDays.value, selectedModel.value)
+    const success = await settingsStore.saveAll(apiKey.value, selectedModel.value)
     if (!success) {
       show('error', 'Save Failed', 'Could not save settings.')
       return

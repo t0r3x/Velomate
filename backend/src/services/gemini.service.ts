@@ -234,8 +234,11 @@ const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext): s
     ? `- Preferred Long Ride day(s): ${preferredDays.join(', ')} — schedule the LongRide on one of these days when load allows.`
     : `- No preferred Long Ride days specified.`;
 
+  const pauseDays = pauseContext
+    ? Math.round((new Date(today).getTime() - new Date(pauseContext.pausedSince).getTime()) / 86_400_000)
+    : 0;
   const pauseBlock = pauseContext
-    ? `TRAINING PAUSE:\nThe athlete paused training from ${pauseContext.pausedSince} to ${today}${pauseContext.pauseReason ? ` (reason: ${pauseContext.pauseReason})` : ''}.\n${pauseContext.activitiesCount > 0 ? `They recorded ${pauseContext.activitiesCount} ride(s) during the pause period.` : 'No rides were recorded during the pause period — treat this as a full rest break.'}\nStart the new plan conservatively: reduce intensity and volume for at least the first 2-3 days to allow for re-adaptation.\n\n`
+    ? `TRAINING PAUSE:\nThe athlete paused training from ${pauseContext.pausedSince} to ${today} (${pauseDays} day${pauseDays !== 1 ? 's' : ''})${pauseContext.pauseReason ? ` — reason: ${pauseContext.pauseReason}` : ''}.\n${pauseContext.activitiesCount > 0 ? `They recorded ${pauseContext.activitiesCount} ride(s) during the pause period.` : 'No rides were recorded during the pause period.'}\nConsider the duration, reason, and the athlete's prior training history to judge whether and how much re-adaptation is needed before resuming normal load.\n\n`
     : '';
 
   const rawGoals = getSetting('user_goals') || '';

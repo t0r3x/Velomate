@@ -44,16 +44,23 @@ export const useSettingsStore = defineStore('settings', () => {
     } catch { /* ignore */ }
   }
 
-  async function saveAll(apiKey: string, days: string[], model: string): Promise<boolean> {
+  async function saveAll(apiKey: string, model: string): Promise<boolean> {
     try {
-      await Promise.all([
-        postPreferredDays(days),
-        postGeminiModel(model)
-      ])
+      await postGeminiModel(model)
       if (apiKey.trim()) {
         await postGeminiKey(apiKey.trim())
       }
       await reload()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  async function savePreferredDays(days: string[]): Promise<boolean> {
+    try {
+      await postPreferredDays(days)
+      preferredLongRideDays.value = days
       return true
     } catch {
       return false
@@ -77,6 +84,7 @@ export const useSettingsStore = defineStore('settings', () => {
     init,
     reload,
     saveAll,
+    savePreferredDays,
     markSetupComplete
   }
 })
