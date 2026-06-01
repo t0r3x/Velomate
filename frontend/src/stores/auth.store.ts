@@ -14,7 +14,8 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const data = await getStatus()
       isLoggedIn.value = data.loggedIn
-    } catch {
+    } catch (err) {
+      console.warn('[Auth] status check failed during init:', err)
       isLoggedIn.value = false
     } finally {
       loaded.value = true
@@ -25,7 +26,8 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const data = await getStatus()
       isLoggedIn.value = data.loggedIn
-    } catch {
+    } catch (err) {
+      console.warn('[Auth] status poll failed:', err)
       isLoggedIn.value = false
     }
   }
@@ -40,7 +42,8 @@ export const useAuthStore = defineStore('auth', () => {
       isLoggedIn.value = true
       showMfa.value    = false
       return 'ok'
-    } catch {
+    } catch (err) {
+      console.error('[Auth] login failed:', err)
       return 'error'
     }
   }
@@ -51,7 +54,8 @@ export const useAuthStore = defineStore('auth', () => {
       isLoggedIn.value = true
       showMfa.value    = false
       return true
-    } catch {
+    } catch (err) {
+      console.error('[Auth] MFA submit failed:', err)
       return false
     }
   }

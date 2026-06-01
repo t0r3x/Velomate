@@ -18,7 +18,9 @@ export const useActivitiesStore = defineStore('activities', () => {
       if (data.profile) {
         useProfileStore().setFromDashboard(data.profile)
       }
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[Activities] loadFromDb failed:', err)
+    }
   }
 
   /** Full Garmin sync: fetches new rides, updates DB, re-runs analysis. */
@@ -32,6 +34,9 @@ export const useActivitiesStore = defineStore('activities', () => {
         useProfileStore().setFromDashboard(data.currentProfile)
       }
       return { newCount: data.newCount || 0, planRegenTriggered: data.planRegenTriggered ?? false }
+    } catch (err) {
+      console.error('[Activities] syncFromGarmin failed:', err)
+      throw err
     } finally {
       loading.value = false
     }
