@@ -2222,11 +2222,11 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
   font-style: italic;
 }
 
-/* Load assessment */
+/* Load assessment — lives inside ai-week-section */
 .ai-load-assessment {
-  padding: 0.6rem 0;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
   border-top: 1px solid var(--panel-border);
-  margin-bottom: 0.5rem;
 }
 
 .ai-load-header {
@@ -2270,9 +2270,9 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
 .goals-input-section {
   margin: 0 0 1rem;
   padding: 0.85rem 1rem;
-  background: rgba(255,255,255,0.03);
+  background: rgba(255,255,255,0.02);
   border: 1px solid var(--panel-border);
-  border-radius: 10px;
+  border-radius: 12px;
 }
 .goals-header {
   display: flex;

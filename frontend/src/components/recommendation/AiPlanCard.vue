@@ -90,16 +90,14 @@
             <p class="ai-today-reason">{{ todayReason }}</p>
           </div>
 
-          <!-- Week grid -->
+          <!-- Week grid + load assessment -->
           <div class="ai-week-section">
             <WeekGrid :plan="rec.weeklyPlan" @reschedule="handleReschedule" />
+            <LoadAssessment v-if="rec.loadAssessment" :assessment="rec.loadAssessment" :generatedAt="rec.generatedAt" />
           </div>
 
           <!-- Next week -->
           <NextWeekOverview v-if="rec.nextWeekOverview" :overview="rec.nextWeekOverview" />
-
-          <!-- Load assessment -->
-          <LoadAssessment v-if="rec.loadAssessment" :assessment="rec.loadAssessment" :generatedAt="rec.generatedAt" />
         </template>
       </div>
 
