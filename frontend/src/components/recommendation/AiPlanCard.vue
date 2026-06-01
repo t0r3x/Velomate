@@ -79,15 +79,15 @@
               </div>
             </div>
             <div class="ai-today-chip-row">
-              <span class="ai-workout-chip" :class="`wt-${rec.workoutType.toLowerCase()}`">
-                <i class="fa-solid" :class="typeIcon(rec.workoutType)"></i>
-                <span>{{ typeLabel(rec.workoutType) }}</span>
+              <span class="ai-workout-chip" :class="`wt-${todayType.toLowerCase()}`">
+                <i class="fa-solid" :class="typeIcon(todayType)"></i>
+                <span>{{ typeLabel(todayType) }}</span>
               </span>
-              <span class="ai-priority-badge" :class="`priority-${rec.priority.toLowerCase()}`">
+              <span v-if="todayType !== 'Rest'" class="ai-priority-badge" :class="`priority-${rec.priority.toLowerCase()}`">
                 {{ priorityLabel(rec.priority) }}
               </span>
             </div>
-            <p class="ai-today-reason">{{ rec.reason }}</p>
+            <p class="ai-today-reason">{{ todayReason }}</p>
           </div>
 
           <!-- Week grid -->
@@ -138,7 +138,7 @@ import { useRecommendationStore } from '@/stores/recommendation.store'
 import { useToast }               from '@/composables/useToast'
 import { useConfirm }             from '@/composables/useConfirm'
 import { usePauseDialog }         from '@/composables/usePauseDialog'
-import { workoutTypeIcon, workoutTypeLabel } from '@/utils'
+import { workoutTypeIcon, workoutTypeLabel, isoDate } from '@/utils'
 import type { SyncResult as SyncResultType } from '@/types'
 
 import WeekGrid         from './WeekGrid.vue'
@@ -155,6 +155,12 @@ const { confirm } = useConfirm()
 const { promptForReason } = usePauseDialog()
 
 const rec = computed(() => recStore.recommendation)
+
+const todayPlanEntry = computed(() =>
+  rec.value?.weeklyPlan?.find(e => e.date === isoDate()) ?? null
+)
+const todayType   = computed(() => todayPlanEntry.value?.type   ?? rec.value?.workoutType ?? '')
+const todayReason = computed(() => todayPlanEntry.value?.reason ?? rec.value?.reason      ?? '')
 
 const generating = ref(false)
 const skipping   = ref(false)
