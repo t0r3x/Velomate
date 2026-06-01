@@ -95,6 +95,10 @@
               <p class="helper-text">{{ settingsStore.maskedKey }}</p>
             </div>
           </div>
+          <button class="btn btn-secondary" style="margin-top:0.6rem" @click="handleDisconnectGemini">
+            <span>Disconnect</span>
+            <i class="fa-solid fa-arrow-right-from-bracket"></i>
+          </button>
         </div>
 
         <p class="helper-text">
@@ -215,6 +219,12 @@ async function handleLogin() {
 
 function handleLogout() {
   authStore.logout()
+}
+
+async function handleDisconnectGemini() {
+  const ok = await settingsStore.disconnectGemini()
+  if (ok) show('success', 'AI Disconnected', 'Google Gemini API key removed.')
+  else     show('error', 'Disconnect Failed', 'Could not remove the API key.')
 }
 
 // ── Save Settings ─────────────────────────────────────────────────────────────

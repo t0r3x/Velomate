@@ -54,6 +54,10 @@
                 <span class="stat-label">Max HR (bpm)</span>
                 <input type="number" class="stat-value-input" min="100" max="250" v-model.number="maxHr">
               </div>
+              <button type="button" class="hr-recalc-btn" title="Recalculate LTHR as 88% of Max HR" @click="recalcLthr">
+                <i class="fa-solid fa-arrow-right"></i>
+                <span class="hr-recalc-label">88%</span>
+              </button>
               <div class="hr-stat-box">
                 <span class="stat-label">LTHR (bpm)</span>
                 <input type="number" class="stat-value-input" min="80" max="230" v-model.number="lthr">
@@ -197,6 +201,10 @@ onMounted(async () => {
 
   loadingState.value = 'form'
 })
+
+function recalcLthr() {
+  lthr.value = Math.round(maxHr.value * 0.88)
+}
 
 function useSuggestion() {
   maxHr.value = suggestedMaxHr.value

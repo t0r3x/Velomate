@@ -12,7 +12,7 @@ import { localDate, toRpe, toFeeling, USER_TZ, APP_NAME } from '../utils';
 
 // ── Key helpers ───────────────────────────────────────────────────────────────
 
-export const getGeminiKey = (): string | null => getSetting('gemini_api_key');
+export const getGeminiKey = (): string | null => getSetting('gemini_api_key') || null;
 
 export const maskKey = (key: string): string =>
   key.length > 6 ? key.slice(0, 6) + '***' : '***';

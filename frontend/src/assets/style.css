@@ -866,8 +866,35 @@ body {
 /* Heart Rate Dashboard specifics */
 .hr-stats-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.hr-recalc-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.5rem 0.6rem;
+  background: rgba(var(--primary-rgb), 0.08);
+  border: 1px solid rgba(var(--primary-rgb), 0.25);
+  border-radius: 8px;
+  color: var(--primary-color);
+  cursor: pointer;
+  font-family: var(--font-main);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.hr-recalc-btn:hover {
+  background: rgba(var(--primary-rgb), 0.18);
+  border-color: rgba(var(--primary-rgb), 0.5);
+}
+.hr-recalc-btn i { font-size: 0.75rem; }
+.hr-recalc-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
 }
 
 .hr-stat-box {
