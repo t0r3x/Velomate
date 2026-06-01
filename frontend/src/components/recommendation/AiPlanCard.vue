@@ -65,7 +65,7 @@
           <!-- Today block -->
           <div class="ai-today-block">
             <div class="ai-today-header">
-              <span class="ai-today-label">Today's Recommendation</span>
+              <span class="ai-today-label"><i class="fa-solid fa-calendar-day"></i>Today's Recommendation</span>
               <div class="ai-today-actions">
                 <button class="btn-icon-sm btn-icon-pause" title="Pause training — use for injury, illness or travel" :disabled="pausing" @click="handlePause">
                   <i class="fa-solid" :class="pausing ? 'fa-spinner fa-spin' : 'fa-circle-pause'"></i>
