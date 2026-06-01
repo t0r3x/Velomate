@@ -94,6 +94,9 @@ export const postGeminiKey = (apiKey: string) =>
     body: JSON.stringify({ apiKey })
   })
 
+export const deleteGeminiKey = () =>
+  request<{ removed: boolean }>('/api/settings/gemini-key', { method: 'DELETE' })
+
 export const postGeminiModel = (model: string) =>
   request<void>('/api/settings/gemini-model', {
     method: 'POST',

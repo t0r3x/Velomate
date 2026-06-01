@@ -411,6 +411,12 @@ app.post('/api/settings/gemini-key', (req: Request, res: Response) => {
   res.json({ saved: true });
 });
 
+app.delete('/api/settings/gemini-key', (_req: Request, res: Response) => {
+  setSetting('gemini_api_key', '');
+  console.log('[Gemini] API key removed');
+  res.json({ removed: true });
+});
+
 app.post('/api/settings/setup-complete', (_req: Request, res: Response) => {
   setSetting('setup_complete', '1');
   console.log('[Setup] Setup marked complete — user confirmed HR profile');
@@ -524,7 +530,7 @@ const handleGeminiError = (res: Response, error: any, context: string): void => 
   }
   const msg = geminiErrorMessage(error);
   console.error(`[Gemini] ${context}:`, msg);
-  res.status(500).json({ error: 'Failed to generate recommendation.', details: msg });
+  res.status(500).json({ error: 'Failed to generate recommendation. Check if the API key is correctly set.', details: msg });
 };
 
 app.post('/api/recommendation/refresh', async (req: Request, res: Response) => {

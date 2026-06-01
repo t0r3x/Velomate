@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import {
   getGeminiKeyStatus,
   postGeminiKey,
+  deleteGeminiKey,
   postGeminiModel,
   postPreferredDays,
   postSetupComplete
@@ -57,6 +58,17 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  async function disconnectGemini(): Promise<boolean> {
+    try {
+      await deleteGeminiKey()
+      geminiConfigured.value = false
+      maskedKey.value        = null
+      return true
+    } catch {
+      return false
+    }
+  }
+
   async function savePreferredDays(days: string[]): Promise<boolean> {
     try {
       await postPreferredDays(days)
@@ -84,6 +96,7 @@ export const useSettingsStore = defineStore('settings', () => {
     init,
     reload,
     saveAll,
+    disconnectGemini,
     savePreferredDays,
     markSetupComplete
   }
