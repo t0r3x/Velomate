@@ -37,6 +37,7 @@ async function request<T>(
       const body = await res.json()
       details = body.error || body.details || JSON.stringify(body)
     } catch { /* ignore */ }
+    console.error('[API]', options.method ?? 'GET', path, res.status, details)
     throw new ApiError(res.status, `HTTP ${res.status}`, details)
   }
   return res.json() as Promise<T>

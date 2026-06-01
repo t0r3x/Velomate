@@ -26,8 +26,8 @@ export const useSettingsStore = defineStore('settings', () => {
       maskedKey.value             = data.hasKey ? data.maskedKey : null
       preferredLongRideDays.value = Array.isArray(data.preferredLongRideDays) ? data.preferredLongRideDays : []
       geminiModel.value           = data.geminiModel || 'gemini-3.5-flash'
-    } catch {
-      // Backend offline — don't block routing
+    } catch (err) {
+      console.warn('[Settings] init failed (backend offline?):', err)
     } finally {
       loaded.value = true
     }
@@ -42,7 +42,9 @@ export const useSettingsStore = defineStore('settings', () => {
       maskedKey.value             = data.hasKey ? data.maskedKey : null
       preferredLongRideDays.value = Array.isArray(data.preferredLongRideDays) ? data.preferredLongRideDays : []
       geminiModel.value           = data.geminiModel || 'gemini-3.5-flash'
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[Settings] reload failed:', err)
+    }
   }
 
   async function saveAll(apiKey: string, model: string): Promise<boolean> {
@@ -53,7 +55,8 @@ export const useSettingsStore = defineStore('settings', () => {
       }
       await reload()
       return true
-    } catch {
+    } catch (err) {
+      console.error('[Settings] saveAll failed:', err)
       return false
     }
   }
@@ -64,7 +67,8 @@ export const useSettingsStore = defineStore('settings', () => {
       geminiConfigured.value = false
       maskedKey.value        = null
       return true
-    } catch {
+    } catch (err) {
+      console.error('[Settings] disconnectGemini failed:', err)
       return false
     }
   }
@@ -74,7 +78,8 @@ export const useSettingsStore = defineStore('settings', () => {
       await postPreferredDays(days)
       preferredLongRideDays.value = days
       return true
-    } catch {
+    } catch (err) {
+      console.error('[Settings] savePreferredDays failed:', err)
       return false
     }
   }
@@ -83,7 +88,9 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       await postSetupComplete()
       setupComplete.value = true
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[Settings] markSetupComplete failed:', err)
+    }
   }
 
   return {

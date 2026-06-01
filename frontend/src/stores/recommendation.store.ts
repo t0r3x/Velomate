@@ -45,6 +45,7 @@ export const useRecommendationStore = defineStore('recommendation', () => {
       recommendation.value = data as Recommendation
       state.value = 'loaded'
     } catch (err) {
+      console.error('[Recommendation] fetchCached failed:', err)
       errorMessage.value = 'Failed to connect to backend.'
       state.value = 'error'
     }
@@ -57,6 +58,7 @@ export const useRecommendationStore = defineStore('recommendation', () => {
       recommendation.value = await postRefreshRecommendation()
       state.value = 'loaded'
     } catch (err: unknown) {
+      console.error('[Recommendation] refresh failed:', err)
       const e = err as { details?: string; message?: string }
       errorMessage.value = e.details || e.message || 'Failed to get recommendation.'
       state.value = 'error'
@@ -68,7 +70,8 @@ export const useRecommendationStore = defineStore('recommendation', () => {
       recommendation.value = await postSkipToday()
       state.value = 'loaded'
       return true
-    } catch {
+    } catch (err) {
+      console.error('[Recommendation] skipToday failed:', err)
       return false
     }
   }
@@ -80,7 +83,8 @@ export const useRecommendationStore = defineStore('recommendation', () => {
       recommendation.value = await postReschedule(fromDate, toDate)
       state.value = 'loaded'
       return true
-    } catch {
+    } catch (err) {
+      console.error('[Recommendation] reschedule failed:', err)
       return false
     }
   }
@@ -114,7 +118,8 @@ export const useRecommendationStore = defineStore('recommendation', () => {
       recommendation.value = null
       state.value          = 'paused'
       return true
-    } catch {
+    } catch (err) {
+      console.error('[Recommendation] pauseTraining failed:', err)
       return false
     }
   }
@@ -127,7 +132,8 @@ export const useRecommendationStore = defineStore('recommendation', () => {
       pauseReason.value = null
       await fetchCached()
       return true
-    } catch {
+    } catch (err) {
+      console.error('[Recommendation] resumeTraining failed:', err)
       state.value = 'error'
       return false
     }
@@ -141,7 +147,8 @@ export const useRecommendationStore = defineStore('recommendation', () => {
     })()
     try {
       return await postSyncWorkouts(scheduleDate)
-    } catch {
+    } catch (err) {
+      console.error('[Recommendation] syncWorkouts failed:', err)
       return null
     }
   }
