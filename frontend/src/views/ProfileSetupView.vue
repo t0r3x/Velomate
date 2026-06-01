@@ -4,10 +4,10 @@
       <div id="view-profile-setup" :class="{ 'ps-modal': modalMode }">
         <div class="setup-card glass-panel ps-card">
           <div class="setup-logo">
-            <i class="fa-solid fa-heart-pulse logo-icon" style="color:#ef4444"></i>
-            <h1>HR <span>Profile</span></h1>
+            <i class="fa-solid fa-user-gear logo-icon"></i>
+            <h1>Training <span>Profile</span></h1>
           </div>
-          <p class="setup-tagline">We fetched your Garmin history to suggest your optimal training zones. Review and confirm.</p>
+          <p class="setup-tagline">Your HR zones, training preferences and goals — used by the AI to personalise your plan.</p>
 
           <!-- Loading state -->
           <div v-if="loadingState === 'loading'" class="ps-state">
@@ -61,9 +61,34 @@
               <HrZonesBar :maxHr="maxHr" :lthr="lthr" />
             </div>
 
+            <!-- Preferred long ride days -->
+            <div class="ps-section">
+              <label class="ps-section-label"><i class="fa-solid fa-calendar-week"></i> Preferred Long Ride Days</label>
+              <div class="preferred-days-grid">
+                <label v-for="day in ALL_DAYS" :key="day.value" class="day-chip">
+                  <input type="checkbox" :value="day.value" v-model="selectedDays">
+                  <span>{{ day.label }}</span>
+                </label>
+              </div>
+              <p class="helper-text" style="margin-top:0.35rem">The AI will prefer these days for long endurance rides.</p>
+            </div>
+
+            <!-- Goals & preferences -->
+            <div class="ps-section">
+              <label class="ps-section-label"><i class="fa-solid fa-bullseye"></i> Goals &amp; Preferences</label>
+              <textarea
+                v-model="goals"
+                class="goals-textarea"
+                placeholder="e.g. race in 6 weeks, 100 km ride in 8 weeks, no riding on Sundays…"
+                maxlength="500"
+                rows="3"
+              ></textarea>
+              <p class="helper-text" style="margin-top:0.35rem">Share your goals, events, or constraints. The AI uses this as secondary input alongside your training data.</p>
+            </div>
+
             <button class="btn btn-primary btn-glow setup-configure-btn" :disabled="saving" @click="handleConfirm">
-              <span>{{ saving ? 'Setting up…' : 'Confirm' }}</span>
-              <i class="fa-solid" :class="saving ? 'fa-spinner fa-spin' : 'fa-rocket'"></i>
+              <span>{{ saving ? 'Saving…' : 'Save Profile' }}</span>
+              <i class="fa-solid" :class="saving ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
             </button>
             <button class="btn btn-secondary ps-cancel-btn" @click="handleCancel">
               <span>Cancel</span>
@@ -84,7 +109,18 @@ import { useSettingsStore } from '@/stores/settings.store'
 import { useActivitiesStore } from '@/stores/activities.store'
 import { useToast }    from '@/composables/useToast'
 import { calcZones }   from '@/composables/useZones'
+import { getTrainingGoals, postTrainingGoals } from '@/api/client'
 import HrZonesBar from '@/components/profile/HrZonesBar.vue'
+
+const ALL_DAYS = [
+  { value: 'Monday',    label: 'Mon' },
+  { value: 'Tuesday',   label: 'Tue' },
+  { value: 'Wednesday', label: 'Wed' },
+  { value: 'Thursday',  label: 'Thu' },
+  { value: 'Friday',    label: 'Fri' },
+  { value: 'Saturday',  label: 'Sat' },
+  { value: 'Sunday',    label: 'Sun' }
+]
 
 const props = defineProps<{ modalMode?: boolean }>()
 const emit  = defineEmits<{ confirmed: []; cancelled: [] }>()
@@ -96,8 +132,10 @@ const activitiesStore = useActivitiesStore()
 const { show }       = useToast()
 
 // Form state
-const maxHr = ref(profileStore.profile?.maxHr ?? 190)
-const lthr  = ref(profileStore.profile?.lthr  ?? 165)
+const maxHr        = ref(profileStore.profile?.maxHr ?? 190)
+const lthr         = ref(profileStore.profile?.lthr  ?? 165)
+const selectedDays = ref<string[]>([...settingsStore.preferredLongRideDays])
+const goals        = ref('')
 
 // Suggestion state
 type LoadState = 'loading' | 'form'
@@ -115,8 +153,15 @@ onMounted(async () => {
   const hasCustom = profileStore.profile?.hasCustomOverrides ?? false
 
   // Populate inputs immediately
-  maxHr.value = profileStore.profile?.maxHr ?? 190
-  lthr.value  = profileStore.profile?.lthr  ?? 165
+  maxHr.value        = profileStore.profile?.maxHr ?? 190
+  lthr.value         = profileStore.profile?.lthr  ?? 165
+  selectedDays.value = [...settingsStore.preferredLongRideDays]
+
+  // Load saved goals
+  try {
+    const data = await getTrainingGoals()
+    goals.value = data.goals ?? ''
+  } catch { /* non-fatal */ }
 
   // If user already has a custom profile, show the form straight away
   if (hasCustom) {
@@ -178,16 +223,19 @@ async function handleConfirm() {
   try {
     const zones   = calcZones(lthr.value, maxHr.value)
     const profile = { maxHr: maxHr.value, lthr: lthr.value, zones, hasCustomOverrides: true }
-    const ok      = await profileStore.save(profile)
+    const [ok] = await Promise.all([
+      profileStore.save(profile),
+      settingsStore.savePreferredDays(selectedDays.value),
+      postTrainingGoals(goals.value).catch(() => {})
+    ])
     if (!ok) {
-      show('error', 'Save Failed', 'Could not save HR profile. Please try again.')
+      show('error', 'Save Failed', 'Could not save profile. Please try again.')
       return
     }
     if (props.modalMode) {
-      show('success', 'HR Profile Updated', 'Training zones recalculated and saved.')
+      show('success', 'Training Profile Updated', 'Zones, preferences and goals saved.')
       emit('confirmed')
     } else {
-      // First-time setup: mark complete, load dashboard
       await settingsStore.markSetupComplete()
       await activitiesStore.loadFromDb()
       router.push({ name: 'dashboard' })
