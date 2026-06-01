@@ -8,24 +8,37 @@
       </div>
     </div>
 
-    <button class="garmin-status-btn" aria-label="Open Connection & Profile" @click="emit('open-settings')">
-      <StatusDot :state="dotState" />
-      <span class="status-text">{{ statusText }}</span>
-      <span class="garmin-btn-sep"></span>
-      <i class="fa-solid fa-heart-pulse garmin-btn-hr-icon"></i>
-      <span class="garmin-btn-hr-label">{{ profileStore.hrLabel }}</span>
-      <i class="fa-solid fa-chevron-right garmin-btn-arrow"></i>
-    </button>
+    <div class="header-menu-wrapper" ref="wrapperRef">
+      <button class="garmin-status-btn" @click="toggleDropdown">
+        <StatusDot :state="dotState" />
+        <span class="status-text">{{ statusText }}</span>
+        <span class="garmin-btn-sep"></span>
+        <i class="fa-solid fa-heart-pulse garmin-btn-hr-icon"></i>
+        <span class="garmin-btn-hr-label">{{ profileStore.hrLabel }}</span>
+        <i class="fa-solid fa-chevron-down garmin-btn-arrow" :class="{ 'rotate-180': dropdownOpen }"></i>
+      </button>
+
+      <div v-if="dropdownOpen" class="header-dropdown">
+        <button class="header-dropdown-item" @click="select('connections')">
+          <i class="fa-solid fa-plug"></i>
+          <span>Connections</span>
+        </button>
+        <button class="header-dropdown-item" @click="select('profile')">
+          <i class="fa-solid fa-user-gear"></i>
+          <span>Training Profile</span>
+        </button>
+      </div>
+    </div>
   </header>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuthStore }    from '@/stores/auth.store'
 import { useProfileStore } from '@/stores/profile.store'
 import StatusDot from '@/components/ui/StatusDot.vue'
 
-const emit = defineEmits<{ 'open-settings': [] }>()
+const emit = defineEmits<{ 'open-settings': []; 'open-profile': [] }>()
 
 const authStore    = useAuthStore()
 const profileStore = useProfileStore()
@@ -36,11 +49,34 @@ const dotState = computed<'pulsing' | 'connected' | 'disconnected'>(() => {
 })
 
 const statusText = computed(() => {
-  if (!authStore.loaded)    return 'Checking Garmin…'
+  if (!authStore.loaded) return 'Checking Garmin…'
   return authStore.isLoggedIn ? 'Connected' : 'Not connected'
 })
 
-// Shablagoo easter egg — toggled by AppFooter via a shared ref
+// Dropdown
+const dropdownOpen = ref(false)
+const wrapperRef   = ref<HTMLElement | null>(null)
+
+function toggleDropdown() {
+  dropdownOpen.value = !dropdownOpen.value
+}
+
+function select(target: 'connections' | 'profile') {
+  dropdownOpen.value = false
+  if (target === 'connections') emit('open-settings')
+  else emit('open-profile')
+}
+
+function onClickOutside(e: MouseEvent) {
+  if (wrapperRef.value && !wrapperRef.value.contains(e.target as Node)) {
+    dropdownOpen.value = false
+  }
+}
+
+onMounted(() => document.addEventListener('mousedown', onClickOutside))
+onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
+
+// Shablagoo easter egg
 import { useShablagoo } from '@/composables/useShablagoo'
 const { active } = useShablagoo()
 const logoIcon = computed(() => active.value ? 'fa-bowl-food' : 'fa-route')

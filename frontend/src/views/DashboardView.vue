@@ -1,6 +1,6 @@
 <template>
   <div class="app-container">
-    <AppHeader @open-settings="panelOpen = true" />
+    <AppHeader @open-settings="panelOpen = true" @open-profile="profileModalOpen = true" />
 
     <main class="dashboard-grid">
       <div class="col-assessment" ref="assessmentCol">
@@ -14,10 +14,7 @@
     <AppFooter />
   </div>
 
-  <SettingsPanel
-    v-model:open="panelOpen"
-    @edit-profile="profileModalOpen = true"
-  />
+  <SettingsPanel v-model:open="panelOpen" />
 
   <!-- HR profile modal overlay -->
   <Teleport to="body">

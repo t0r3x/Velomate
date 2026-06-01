@@ -1,15 +1,22 @@
 <template>
-  <Teleport to="body" :disabled="!modalMode">
-    <div :class="modalMode ? 'ps-modal-backdrop' : ''" v-if="!modalMode || true">
-      <div id="view-profile-setup" :class="{ 'ps-modal': modalMode }">
-        <div class="setup-card glass-panel ps-card">
-          <div class="setup-logo">
-            <i class="fa-solid fa-user-gear logo-icon"></i>
-            <h1>Training <span>Profile</span></h1>
-          </div>
-          <p class="setup-tagline">Your HR zones, training preferences and goals — used by the AI to personalise your plan.</p>
+  <div class="tp-backdrop" :class="{ 'tp-modal-mode': modalMode }">
+      <div class="tp-panel glass-panel">
 
-          <!-- Loading state -->
+        <!-- Header -->
+        <div class="tp-header">
+          <div class="tp-title">
+            <i class="fa-solid fa-user-gear tp-title-icon"></i>
+            <span>Training Profile</span>
+          </div>
+          <button v-if="modalMode" class="panel-close-btn" aria-label="Close" @click="handleCancel">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <!-- Body -->
+        <div class="tp-body">
+
+          <!-- Loading -->
           <div v-if="loadingState === 'loading'" class="ps-state">
             <div class="ps-loading-row">
               <i class="fa-solid fa-spinner fa-spin"></i>
@@ -17,32 +24,29 @@
             </div>
           </div>
 
-          <!-- Form state -->
-          <div v-else class="ps-state">
+          <template v-else>
 
-            <!-- Suggestion area -->
-            <div class="ps-suggestion-area">
-              <div v-if="suggestionState === 'loading'" class="ps-suggestion-loading">
-                <i class="fa-solid fa-spinner fa-spin"></i>
-                <span>Fetching suggestion from Garmin…</span>
-              </div>
-              <div v-else-if="suggestionState === 'shown'" class="ps-suggestion-row">
-                <div class="ps-suggestion-label">
-                  <i class="fa-solid fa-wand-magic-sparkles"></i>
-                  <span>
-                    Suggestion based on <span>{{ suggestionRides }} ride{{ suggestionRides !== 1 ? 's' : '' }}</span>:
-                    Max HR <strong>{{ suggestedMaxHr }}</strong> bpm,
-                    LTHR <strong>{{ suggestedLthr }}</strong> bpm
-                  </span>
-                </div>
-                <button type="button" class="btn btn-secondary btn-sm" @click="useSuggestion">
-                  <span>Use suggestion</span>
-                  <i class="fa-solid fa-arrow-up-to-line"></i>
-                </button>
-              </div>
+            <!-- ── Heart Rate Profile ── -->
+            <div class="tp-section-label">
+              <i class="fa-solid fa-heart-pulse" style="color: var(--z5-color)"></i>
+              Heart Rate Profile
             </div>
 
-            <!-- Notice -->
+            <div v-if="suggestionState !== 'hidden'" class="ps-suggestion-row">
+              <div class="ps-suggestion-label">
+                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                <span v-if="suggestionState === 'loading'" class="ps-suggestion-placeholder">Fetching Garmin history for suggestion…</span>
+                <span v-else>
+                  Derived from your peak recorded data:
+                  Max HR <strong>{{ suggestedMaxHr }}</strong> bpm, LTHR <strong>{{ suggestedLthr }}</strong> bpm
+                </span>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" :disabled="suggestionState === 'loading'" @click="useSuggestion">
+                <span>Use suggestion</span>
+                <i class="fa-solid fa-arrow-up-to-line"></i>
+              </button>
+            </div>
+
             <div v-if="noticeText" class="ps-notice ps-notice-info">{{ noticeText }}</div>
 
             <div class="hr-stats-row">
@@ -61,44 +65,46 @@
               <HrZonesBar :maxHr="maxHr" :lthr="lthr" />
             </div>
 
-            <!-- Preferred long ride days -->
-            <div class="ps-section">
-              <label class="ps-section-label"><i class="fa-solid fa-calendar-week"></i> Preferred Long Ride Days</label>
-              <div class="preferred-days-grid">
-                <label v-for="day in ALL_DAYS" :key="day.value" class="day-chip">
-                  <input type="checkbox" :value="day.value" v-model="selectedDays">
-                  <span>{{ day.label }}</span>
-                </label>
-              </div>
-              <p class="helper-text" style="margin-top:0.35rem">The AI will prefer these days for long endurance rides.</p>
+            <!-- ── Preferred Long Ride Days ── -->
+            <div class="tp-section-label tp-section-divider">
+              <i class="fa-solid fa-calendar-week"></i>
+              Preferred Long Ride Days
             </div>
-
-            <!-- Goals & preferences -->
-            <div class="ps-section">
-              <label class="ps-section-label"><i class="fa-solid fa-bullseye"></i> Goals &amp; Preferences</label>
-              <textarea
-                v-model="goals"
-                class="goals-textarea"
-                placeholder="e.g. race in 6 weeks, 100 km ride in 8 weeks, no riding on Sundays…"
-                maxlength="500"
-                rows="3"
-              ></textarea>
-              <p class="helper-text" style="margin-top:0.35rem">Share your goals, events, or constraints. The AI uses this as secondary input alongside your training data.</p>
+            <div class="preferred-days-grid">
+              <label v-for="day in ALL_DAYS" :key="day.value" class="day-chip">
+                <input type="checkbox" :value="day.value" v-model="selectedDays">
+                <span>{{ day.label }}</span>
+              </label>
             </div>
+            <p class="helper-text" style="margin-top: 0.35rem">The AI will prefer these days for long endurance rides.</p>
 
-            <button class="btn btn-primary btn-glow setup-configure-btn" :disabled="saving" @click="handleConfirm">
-              <span>{{ saving ? 'Saving…' : 'Save Profile' }}</span>
-              <i class="fa-solid" :class="saving ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
-            </button>
-            <button class="btn btn-secondary ps-cancel-btn" @click="handleCancel">
-              <span>Cancel</span>
-              <i class="fa-solid fa-xmark"></i>
-            </button>
-          </div>
+            <!-- ── Goals & Preferences ── -->
+            <div class="tp-section-label tp-section-divider">
+              <i class="fa-solid fa-bullseye"></i>
+              Goals &amp; Preferences
+            </div>
+            <textarea
+              v-model="goals"
+              class="goals-textarea"
+              placeholder="e.g. race in 6 weeks, 100 km ride in 8 weeks, no riding on Sundays…"
+              maxlength="500"
+              rows="3"
+            ></textarea>
+            <p class="helper-text" style="margin-top: 0.35rem">Share your goals, events, or constraints. The AI uses this as secondary input alongside your training data.</p>
+
+          </template>
         </div>
+
+        <!-- Footer -->
+        <div class="tp-footer">
+          <button class="btn btn-primary" :disabled="saving || loadingState === 'loading'" @click="handleConfirm">
+            <span>{{ saving ? 'Saving…' : 'Save Profile' }}</span>
+            <i class="fa-solid" :class="saving ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
+          </button>
+        </div>
+
       </div>
     </div>
-  </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -145,68 +151,48 @@ const loadingState   = ref<LoadState>('loading')
 const suggestionState = ref<SugState>('loading')
 const suggestedMaxHr = ref(0)
 const suggestedLthr  = ref(0)
-const suggestionRides = ref(0)
 const noticeText     = ref('')
 const saving         = ref(false)
 
 onMounted(async () => {
   const hasCustom = profileStore.profile?.hasCustomOverrides ?? false
 
-  // Populate inputs immediately
   maxHr.value        = profileStore.profile?.maxHr ?? 190
   lthr.value         = profileStore.profile?.lthr  ?? 165
   selectedDays.value = [...settingsStore.preferredLongRideDays]
 
-  // Load saved goals
   try {
     const data = await getTrainingGoals()
     goals.value = data.goals ?? ''
   } catch { /* non-fatal */ }
 
-  // If user already has a custom profile, show the form straight away
   if (hasCustom) {
     loadingState.value = 'form'
   }
 
-  // Always try to fetch a fresh Garmin suggestion
   try {
     const data = await activitiesStore.syncFromGarmin()
-    // syncFromGarmin updates the profile store; grab fresh data
     const analysis = activitiesStore.analysis
 
     if (analysis?.estimatedMaxHr) {
       const sugMaxHr = analysis.estimatedMaxHr
       const sugLthr  = analysis.estimatedLthr || lthr.value
-      const rides    = analysis.totalCyclingRides || 0
 
-      suggestedMaxHr.value  = sugMaxHr
-      suggestedLthr.value   = sugLthr
-      suggestionRides.value = rides
+      suggestedMaxHr.value = sugMaxHr
+      suggestedLthr.value  = sugLthr
 
-      if (hasCustom) {
-        // Only show the suggestion row when it actually differs from saved values
-        if (sugMaxHr !== maxHr.value || sugLthr !== lthr.value) {
-          suggestionState.value = 'shown'
-        } else {
-          suggestionState.value = 'hidden'
-        }
-      } else {
-        // First-time: fill inputs with suggestion
+      if (!hasCustom) {
         maxHr.value = sugMaxHr
         lthr.value  = sugLthr
-        suggestionState.value = 'shown'
       }
+      suggestionState.value = 'shown'
     } else {
       suggestionState.value = 'hidden'
-      if (!hasCustom) {
-        noticeText.value = 'No Garmin rides yet — using defaults. Adjust to match your fitness level.'
-      }
+      if (!hasCustom) noticeText.value = 'No Garmin rides yet — using defaults. Adjust to match your fitness level.'
     }
   } catch {
     suggestionState.value = 'hidden'
-    if (!hasCustom) {
-      noticeText.value = 'Garmin data unavailable — using defaults. You can update at any time.'
-    }
+    if (!hasCustom) noticeText.value = 'Garmin data unavailable — using defaults. You can update at any time.'
   }
 
   loadingState.value = 'form'

@@ -91,16 +91,19 @@
           <div class="success-indicator">
             <i class="fa-solid fa-circle-check success-icon"></i>
             <div class="success-details">
-              <h3>AI Connected</h3>
+              <h3>Google Gemini Connected</h3>
               <p class="helper-text">{{ settingsStore.maskedKey }}</p>
             </div>
           </div>
         </div>
 
-        <p class="helper-text">Enter your AI API key to enable adaptive training recommendations.</p>
+        <p class="helper-text">
+          A <strong>Google Gemini API key</strong> is required to enable adaptive training recommendations.
+          Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style="color:var(--primary-color)">aistudio.google.com ↗</a>
+        </p>
         <form @submit.prevent>
           <div class="input-group">
-            <label for="panel-api-key">AI API Key</label>
+            <label for="panel-api-key">API Key</label>
             <div class="input-wrapper">
               <i class="fa-solid fa-key input-icon"></i>
               <input type="password" id="panel-api-key" v-model="apiKey" placeholder="AIza…" autocomplete="off">
@@ -140,10 +143,6 @@
         <span>{{ saveBusy ? 'Saving…' : 'Save Settings' }}</span>
         <i class="fa-solid" :class="saveBusy ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
       </button>
-      <button class="btn btn-secondary" @click="handleEditProfile">
-        <span>Training Profile</span>
-        <i class="fa-solid fa-user-gear"></i>
-      </button>
     </div>
   </aside>
 </template>
@@ -156,7 +155,7 @@ import { useSettingsStore } from '@/stores/settings.store'
 import { useToast }         from '@/composables/useToast'
 
 const props  = defineProps<{ open: boolean }>()
-const emit   = defineEmits<{ 'update:open': [boolean]; 'edit-profile': [] }>()
+const emit   = defineEmits<{ 'update:open': [boolean] }>()
 
 const authStore     = useAuthStore()
 const settingsStore = useSettingsStore()
@@ -251,8 +250,4 @@ function checkRouting() {
   }
 }
 
-function handleEditProfile() {
-  emit('update:open', false)
-  emit('edit-profile')
-}
 </script>

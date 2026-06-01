@@ -39,8 +39,9 @@ router.beforeEach(async (to) => {
   }
 
   // Logged in + AI configured, but HR profile not confirmed yet → profile setup
+  // Allow navigating back to 'setup' as well (e.g. Back button in profile-setup)
   if (!settings.setupComplete) {
-    if (to.name !== 'profile-setup') return { name: 'profile-setup' }
+    if (to.name !== 'profile-setup' && to.name !== 'setup') return { name: 'profile-setup' }
     return
   }
 
