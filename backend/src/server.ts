@@ -253,7 +253,8 @@ const syncActivitiesFromGarmin = async (): Promise<boolean> => {
     // always has the complete picture before generateRecommendation() is called.
     await fetchAndStoreRecentFeedback(getStoredActivities());
 
-    // Re-run assessment (last 90 days)
+    // Re-run assessment: 90-day window for ride count/duration stats,
+    // but all stored activities for peak HR so older hard efforts aren't lost.
     const allStored = getStoredActivities();
     const cutoff    = new Date();
     cutoff.setDate(cutoff.getDate() - 90);
