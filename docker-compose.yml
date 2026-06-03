@@ -2,7 +2,7 @@ services:
   velomate:
     build: .
     ports:
-      - "3001:3001"
+      - "2012:2012"
     volumes:
       - ./data:/app/backend/data   # SQLite database
       - ./logs:/app/logs           # Winston log files

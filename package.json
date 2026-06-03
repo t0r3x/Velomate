@@ -1,7 +1,7 @@
 {
   "name": "velomate-root",
   "version": "1.0.0",
-  "description": "Velomate Garmin Training Root",
+  "description": "Velomate — AI cycling training dashboard",
   "scripts": {
     "install-all": "npm install --prefix backend && npm install --prefix frontend",
     "dev": "concurrently --names \"backend,frontend\" --prefix-colors \"cyan,magenta\" --kill-others-on-fail \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
