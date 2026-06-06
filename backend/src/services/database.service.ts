@@ -7,7 +7,10 @@ import logger from '../logger';
 const dataDir = path.join(__dirname, '../../data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
-const db = new Database(path.join(dataDir, 'velomate.db'));
+const dbFilePath = process.env.VELOMATE_DB_PATH
+  ? path.resolve(process.env.VELOMATE_DB_PATH)
+  : path.join(dataDir, 'velomate.db');
+const db = new Database(dbFilePath);
 
 // WAL mode — better concurrent read performance
 db.pragma('journal_mode = WAL');
