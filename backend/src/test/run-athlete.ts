@@ -87,13 +87,14 @@ async function main(athlete: AthleteDefinition) {
 
   // ── Output ────────────────────────────────────────────────────────────────────
   const output = {
-    athleteId:    athlete.id,
-    name:         athlete.name,
-    age:          athlete.age,
-    fitnessLevel: athlete.fitnessLevel,
-    profile:      athlete.profile,
-    preferences:  athlete.preferences,
-    ridesCount:   activities.length,
+    athleteId:     athlete.id,
+    name:          athlete.name,
+    age:           athlete.age,
+    fitnessLevel:  athlete.fitnessLevel,
+    trainingPhase: athlete.trainingPhase,
+    profile:       athlete.profile,
+    preferences:   athlete.preferences,
+    ridesCount:    activities.length,
     analysis,
     recommendation,
   };

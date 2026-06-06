@@ -398,7 +398,8 @@ STRICT RULES:
 - zone MUST be one of: z1, z2, z3, z4, z5
 - durationSec MUST be a positive integer (minimum 20 for sprint intervals)
 - weeklyPlan MUST contain exactly 7 entries starting from TODAY (${today})
-- totalMinutes MUST equal Math.round(sum(durationSec) / 60)`;
+- totalMinutes MUST equal Math.round(sum(durationSec) / 60)
+- COMPACT STRUCTURES: Sprint max 6 interval sets, Threshold max 3 sets, VO2Max max 4 sets. Step labels must be ≤ 4 words. reason fields: 1 short sentence only.`;
 };
 
 // ── Main generation function ──────────────────────────────────────────────────

@@ -9,7 +9,7 @@
  *
  * Output:
  *   backend/data/test/<athleteId>.db   — isolated DB per athlete
- *   backend/data/test/report.html      — self-contained HTML evaluation report
+ *   backend/data/test/report.html      — self-contained HTML report
  */
 
 import { spawnSync } from 'child_process';
@@ -17,7 +17,6 @@ import path from 'path';
 import fs from 'fs';
 import { config as loadDotenv } from 'dotenv';
 import { ATHLETES } from './athletes';
-import { evaluatePlan, type EvaluationResult } from './evaluator';
 import type { PlanEntry } from '../services/database.service';
 
 const backendDir     = path.join(__dirname, '../..');
@@ -41,16 +40,16 @@ function readGeminiConfig(): { key: string; model: string } | null {
 // ── Runner ────────────────────────────────────────────────────────────────────
 
 interface AthleteResult {
-  athleteId:    string;
-  name:         string;
-  age:          number;
-  fitnessLevel: string;
-  profile:      { maxHr: number; lthr: number };
-  preferences:  { preferredLongRideDays: string[]; goals: string };
-  ridesCount:   number;
-  analysis:     any;
+  athleteId:     string;
+  name:          string;
+  age:           number;
+  fitnessLevel:  string;
+  trainingPhase: string;
+  profile:       { maxHr: number; lthr: number };
+  preferences:   { preferredLongRideDays: string[]; goals: string };
+  ridesCount:    number;
+  analysis:      any;
   recommendation: any;
-  evaluation:   EvaluationResult;
 }
 
 async function main() {
@@ -65,7 +64,7 @@ async function main() {
     console.error(
       'ERROR: TEST_GEMINI_KEY and TEST_GEMINI_MODEL must both be set in backend/.env:\n\n' +
       '  TEST_GEMINI_KEY=your_api_key_here\n' +
-      '  TEST_GEMINI_MODEL=gemini-3.5-flash\n'
+      '  TEST_GEMINI_MODEL=gemini-2.5-flash\n'
     );
     process.exit(1);
   }
@@ -120,16 +119,8 @@ async function main() {
       continue;
     }
 
-    const plan: PlanEntry[] = result.recommendation?.weeklyPlan ?? [];
-    const evaluation = evaluatePlan(athlete.fitnessLevel as any, plan, athlete.trainingPhase);
-    results.push({ ...result, evaluation });
-
-    const icon = evaluation.score >= 75 ? '✓' : evaluation.score >= 55 ? '~' : '✗';
-    console.log(`${icon} ${evaluation.verdict.toUpperCase()} (${evaluation.score}/100)`);
-
-    for (const issue of evaluation.issues) {
-      console.log(`     ⚠ ${issue}`);
-    }
+    results.push(result);
+    console.log('done');
   }
 
   console.log(`\n${results.length}/${ATHLETES.length} athletes completed.\n`);
@@ -174,10 +165,8 @@ const LEVEL_BORDER: Record<string, string> = {
   beginner: '#43a047', recreational: '#1e88e5',
   intermediate: '#fb8c00', advanced: '#e53935', pro: '#7b1fa2',
 };
-const STATUS_BG: Record<string, string>    = { ok: '#e8f5e9', warn: '#fff3e0', fail: '#ffebee' };
-const STATUS_COLOR: Record<string, string> = { ok: '#1b5e20', warn: '#e65100', fail: '#b71c1c' };
-const VERDICT_COLOR: Record<string, string> = {
-  excellent: '#1b5e20', good: '#2e7d32', acceptable: '#e65100', poor: '#b71c1c',
+const PHASE_BORDER: Record<string, string> = {
+  base: '#607d8b', build: '#3f51b5', taper: '#f9a825', recovery: '#43a047',
 };
 
 function planRow(entry: PlanEntry): string {
@@ -187,30 +176,26 @@ function planRow(entry: PlanEntry): string {
     ? `${entry.structure.totalMinutes} min`
     : entry.type === 'Rest' ? '—' : '?';
   const reason = (entry.reason || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // Steps detail
+  let stepsHtml = '';
+  if (entry.structure?.steps?.length) {
+    const stepLines = entry.structure.steps.map((s: any) =>
+      `<span style="display:inline-block;margin:1px 3px 1px 0;padding:1px 6px;background:#fff;border:1px solid #ddd;border-radius:3px;font-size:10px;white-space:nowrap">${s.label} <em style="color:#888">${Math.round(s.durationSec/60)}m ${s.zone}</em></span>`
+    ).join('');
+    stepsHtml = `<div style="margin-top:4px">${stepLines}</div>`;
+  }
+
   return `
     <tr style="background:${bg};border-left:3px solid ${border}">
       <td style="white-space:nowrap;font-size:12px">${formatDate(entry.date)}</td>
       <td><strong>${entry.type}</strong></td>
       <td style="white-space:nowrap">${duration}</td>
-      <td style="color:#555;font-size:12px">${reason}</td>
-    </tr>`;
-}
-
-function evalRow(c: { label: string; planned: number; expected: string; status: string }): string {
-  const icon = c.status === 'ok' ? '✓' : c.status === 'warn' ? '⚠' : '✗';
-  return `
-    <tr>
-      <td style="font-size:13px">${c.label}</td>
-      <td style="text-align:center;font-weight:bold">${c.planned}</td>
-      <td style="text-align:center;color:#777">${c.expected}</td>
-      <td style="text-align:center;background:${STATUS_BG[c.status]};color:${STATUS_COLOR[c.status]};font-weight:bold;font-size:12px">
-        ${icon} ${c.status.toUpperCase()}
-      </td>
+      <td style="color:#555;font-size:12px">${reason}${stepsHtml}</td>
     </tr>`;
 }
 
 function athleteSection(r: AthleteResult): string {
-  const vColor = VERDICT_COLOR[r.evaluation.verdict];
   const today = new Date().toISOString().slice(0, 10);
   const planEntries: PlanEntry[] = (r.recommendation?.weeklyPlan ?? [])
     .filter((e: PlanEntry) => e.date >= today)
@@ -225,14 +210,22 @@ function athleteSection(r: AthleteResult): string {
       <span style="color:#555">${(loadAssessment.insight || '').replace(/</g, '&lt;')}</span>
     </div>` : '';
 
+  const nextWeek = r.recommendation?.nextWeekOverview;
+  const nextWeekHtml = nextWeek ? `
+    <div style="margin-top:12px;padding:10px 14px;background:#f0f4ff;border-radius:6px;font-size:13px">
+      <strong>Next week:</strong> ${(nextWeek.summary || '').replace(/</g, '&lt;')}<br>
+      <span style="color:#555;font-style:italic">${(nextWeek.emphasis || '').replace(/</g, '&lt;')}</span>
+    </div>` : '';
+
+  const phase = r.trainingPhase || 'unknown';
+
   return `
   <section style="border:2px solid ${LEVEL_BORDER[r.fitnessLevel]};border-radius:10px;margin:28px 0;overflow:hidden">
     <div style="background:${LEVEL_BG[r.fitnessLevel]};padding:16px 20px;border-bottom:1px solid ${LEVEL_BORDER[r.fitnessLevel]}">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <h2 style="margin:0;font-size:20px">${r.name}</h2>
         <span style="background:${LEVEL_BORDER[r.fitnessLevel]};color:#fff;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:.5px">${r.fitnessLevel}</span>
-        <span style="background:#607d8b;color:#fff;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:.5px">${r.evaluation.trainingPhase}</span>
-        <span style="color:${vColor};font-weight:bold;margin-left:auto">${r.evaluation.verdict.toUpperCase()} — ${r.evaluation.score}/100</span>
+        <span style="background:${PHASE_BORDER[phase]};color:#fff;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:.5px">${phase}</span>
       </div>
       <div style="margin-top:8px;font-size:13px;color:#444;display:flex;gap:20px;flex-wrap:wrap">
         <span>Age ${r.age}</span>
@@ -245,43 +238,19 @@ function athleteSection(r: AthleteResult): string {
       <div style="margin-top:6px;font-size:13px;color:#555;font-style:italic">Goal: "${r.preferences.goals}"</div>
     </div>
 
-    <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:24px">
-      <div>
-        <h3 style="margin:0 0 10px;font-size:15px">7-Day Training Plan</h3>
-        <table style="width:100%;border-collapse:collapse;font-size:13px">
-          <thead><tr style="background:#f0f0f0;font-size:11px;text-transform:uppercase;letter-spacing:.4px">
-            <th style="padding:6px 8px;text-align:left">Date</th>
-            <th style="padding:6px 8px;text-align:left">Type</th>
-            <th style="padding:6px 8px;text-align:left">Duration</th>
-            <th style="padding:6px 8px;text-align:left">AI Rationale</th>
-          </tr></thead>
-          <tbody>${planEntries.map(planRow).join('')}</tbody>
-        </table>
-        ${loadHtml}
-      </div>
-
-      <div>
-        <h3 style="margin:0 0 4px;font-size:15px">Plan Evaluation</h3>
-        <p style="margin:0 0 10px;font-size:12px;color:#666">${r.evaluation.criteria.description}</p>
-        <table style="width:100%;border-collapse:collapse;font-size:13px">
-          <thead><tr style="background:#f0f0f0;font-size:11px;text-transform:uppercase;letter-spacing:.4px">
-            <th style="padding:6px 8px;text-align:left">Criterion</th>
-            <th style="padding:6px 8px;text-align:center">Got</th>
-            <th style="padding:6px 8px;text-align:center">Expected</th>
-            <th style="padding:6px 8px;text-align:center">Status</th>
-          </tr></thead>
-          <tbody>${r.evaluation.checks.map(evalRow).join('')}</tbody>
-        </table>
-
-        ${r.evaluation.issues.length ? `
-        <div style="margin-top:10px;padding:10px;background:#fff3e0;border-radius:6px;font-size:13px">
-          <strong>Issues:</strong>
-          <ul style="margin:6px 0 0;padding-left:18px">${r.evaluation.issues.map(i => `<li>${i}</li>`).join('')}</ul>
-        </div>` : `
-        <div style="margin-top:10px;padding:10px;background:#e8f5e9;border-radius:6px;font-size:13px;color:#2e7d32">
-          <strong>✓ All criteria met</strong> — plan looks appropriate for this athlete.
-        </div>`}
-      </div>
+    <div style="padding:20px">
+      <h3 style="margin:0 0 10px;font-size:15px">7-Day Training Plan</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:#f0f0f0;font-size:11px;text-transform:uppercase;letter-spacing:.4px">
+          <th style="padding:6px 8px;text-align:left">Date</th>
+          <th style="padding:6px 8px;text-align:left">Type</th>
+          <th style="padding:6px 8px;text-align:left">Duration</th>
+          <th style="padding:6px 8px;text-align:left">AI Rationale + Steps</th>
+        </tr></thead>
+        <tbody>${planEntries.map(planRow).join('')}</tbody>
+      </table>
+      ${loadHtml}
+      ${nextWeekHtml}
     </div>
   </section>`;
 }
@@ -290,12 +259,12 @@ function generateReport(results: AthleteResult[]): string {
   const now = new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam' });
 
   const summary = results.map(r => {
-    const vColor = VERDICT_COLOR[r.evaluation.verdict];
+    const load = r.recommendation?.loadAssessment;
     return `<li style="margin:4px 0">
-      <strong>${r.name}</strong> (${r.fitnessLevel}) —
-      <span style="color:${vColor};font-weight:bold">${r.evaluation.verdict}</span>
-      ${r.evaluation.score}/100
-      ${r.evaluation.issues.length ? `· <span style="color:#e65100">${r.evaluation.issues.length} issue(s)</span>` : ''}
+      <strong>${r.name}</strong>
+      <span style="background:${LEVEL_BORDER[r.fitnessLevel]};color:#fff;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:bold;text-transform:uppercase;margin-left:6px">${r.fitnessLevel}</span>
+      <span style="background:${PHASE_BORDER[r.trainingPhase||'base']};color:#fff;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:bold;text-transform:uppercase;margin-left:4px">${r.trainingPhase}</span>
+      ${load ? `· fatigue <em>${load.fatigue}</em> · trend <em>${load.weeklyLoadTrend}</em>` : ''}
     </li>`;
   }).join('');
 
@@ -307,11 +276,10 @@ function generateReport(results: AthleteResult[]): string {
   <title>Velomate Plan Test Report</title>
   <style>
     *, *::before, *::after { box-sizing: border-box }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 1100px; margin: 0 auto; padding: 24px 20px 60px; color: #202124; background: #fafafa }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 1000px; margin: 0 auto; padding: 24px 20px 60px; color: #202124; background: #fafafa }
     h1, h2, h3 { margin: 0 }
     table td, table th { padding: 7px 10px; border-bottom: 1px solid #e0e0e0 }
     tr:last-child td { border-bottom: none }
-    @media (max-width: 700px) { section > div:last-child { grid-template-columns: 1fr !important } }
   </style>
 </head>
 <body>
