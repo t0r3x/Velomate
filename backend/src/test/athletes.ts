@@ -1,4 +1,5 @@
 export type FitnessLevel = 'beginner' | 'recreational' | 'intermediate' | 'advanced' | 'pro';
+export type TrainingPhase = 'base' | 'build' | 'taper' | 'recovery';
 export type RideType = 'easy' | 'moderate' | 'threshold' | 'sprint' | 'long';
 
 export interface RideSpec {
@@ -12,6 +13,7 @@ export interface AthleteDefinition {
   name: string;
   age: number;
   fitnessLevel: FitnessLevel;
+  trainingPhase: TrainingPhase;
   profile: { maxHr: number; lthr: number };
   preferences: { preferredLongRideDays: string[]; goals: string };
   rides: RideSpec[];
@@ -93,6 +95,7 @@ export const ATHLETES: AthleteDefinition[] = [
     name: 'Emma Santos',
     age: 28,
     fitnessLevel: 'beginner',
+    trainingPhase: 'base',
     profile: { maxHr: 187, lthr: 165 },
     preferences: {
       preferredLongRideDays: ['Sunday'],
@@ -112,6 +115,7 @@ export const ATHLETES: AthleteDefinition[] = [
     name: 'Marc de Vries',
     age: 42,
     fitnessLevel: 'recreational',
+    trainingPhase: 'base',
     profile: { maxHr: 175, lthr: 154 },
     preferences: {
       preferredLongRideDays: ['Saturday', 'Sunday'],
@@ -134,6 +138,7 @@ export const ATHLETES: AthleteDefinition[] = [
     name: 'Sarah Müller',
     age: 35,
     fitnessLevel: 'intermediate',
+    trainingPhase: 'build',
     profile: { maxHr: 181, lthr: 162 },
     preferences: {
       preferredLongRideDays: ['Saturday'],
@@ -158,6 +163,7 @@ export const ATHLETES: AthleteDefinition[] = [
     name: 'Thomas Bakker',
     age: 31,
     fitnessLevel: 'advanced',
+    trainingPhase: 'build',
     profile: { maxHr: 177, lthr: 160 },
     preferences: {
       preferredLongRideDays: ['Saturday', 'Sunday'],
@@ -186,6 +192,7 @@ export const ATHLETES: AthleteDefinition[] = [
     name: 'Alex Ivanov',
     age: 26,
     fitnessLevel: 'pro',
+    trainingPhase: 'build',
     profile: { maxHr: 193, lthr: 174 },
     preferences: {
       preferredLongRideDays: ['Saturday', 'Sunday'],

@@ -8,7 +8,8 @@
  *   TEST_GEMINI_MODEL    — Gemini model name
  */
 
-import { ATHLETES, buildActivity, type AthleteDefinition } from './athletes';
+import fs from 'fs';
+import { ATHLETES, buildActivity, type AthleteDefinition, type TrainingPhase } from './athletes';
 import {
   upsertActivities,
   updateActivityFeedback,
@@ -35,12 +36,26 @@ if (!athleteFound) {
 const geminiKey   = process.env.TEST_GEMINI_KEY   ?? '';
 const geminiModel = process.env.TEST_GEMINI_MODEL ?? '';
 
+// Enrich goals with training phase context — the AI infers fitness level and volume
+// from the ride history, but the current training phase (taper, recovery, etc.) is
+// intentional context the athlete explicitly provides, not derivable from data alone.
+function buildEnrichedGoals(athlete: AthleteDefinition): string {
+  const phaseInstructions: Record<TrainingPhase, string> = {
+    base:     'Currently in base phase. Focus on aerobic foundation and consistency.',
+    build:    'Currently in build phase. Progressively increase structured load.',
+    taper:    'Currently tapering for an upcoming race. Reduce volume ~30-40%, maintain intensity sharpness.',
+    recovery: 'Currently in post-race recovery. Prioritize rest and easy aerobic work only.',
+  };
+
+  return `${athlete.preferences.goals}\n${phaseInstructions[athlete.trainingPhase]}`;
+}
+
 async function main(athlete: AthleteDefinition) {
   // ── Settings ────────────────────────────────────────────────────────────────
   setSetting('gemini_api_key', geminiKey);
   setSetting('gemini_model', geminiModel);
   setSetting('preferred_long_ride_days', athlete.preferences.preferredLongRideDays.join(','));
-  setSetting('user_goals', athlete.preferences.goals);
+  setSetting('user_goals', buildEnrichedGoals(athlete));
   setSetting('setup_complete', '1');
   setSetting('gemini_last_generated', '0'); // force generation, never stale
 
@@ -83,7 +98,9 @@ async function main(athlete: AthleteDefinition) {
     recommendation,
   };
 
-  process.stdout.write(JSON.stringify(output));
+  const resultPath = process.env.TEST_RESULT_PATH;
+  if (!resultPath) throw new Error('TEST_RESULT_PATH env var not set');
+  fs.writeFileSync(resultPath, JSON.stringify(output), 'utf8');
 }
 
 main(athleteFound).catch(err => {
