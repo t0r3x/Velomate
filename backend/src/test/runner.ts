@@ -33,8 +33,8 @@ loadDotenv({ path: path.join(backendDir, '.env') });
 
 function readGeminiConfig(): { key: string; model: string } | null {
   const key   = process.env.TEST_GEMINI_KEY;
-  const model = process.env.TEST_GEMINI_MODEL || 'gemini-2.0-flash';
-  if (!key) return null;
+  const model = process.env.TEST_GEMINI_MODEL;
+  if (!key || !model) return null;
   return { key, model };
 }
 
@@ -63,10 +63,9 @@ async function main() {
   const geminiConfig = readGeminiConfig();
   if (!geminiConfig) {
     console.error(
-      'ERROR: TEST_GEMINI_KEY is not set.\n' +
-      'Add it to backend/.env:\n\n' +
+      'ERROR: TEST_GEMINI_KEY and TEST_GEMINI_MODEL must both be set in backend/.env:\n\n' +
       '  TEST_GEMINI_KEY=your_api_key_here\n' +
-      '  TEST_GEMINI_MODEL=gemini-2.0-flash   # optional, this is the default\n'
+      '  TEST_GEMINI_MODEL=gemini-3.5-flash\n'
     );
     process.exit(1);
   }
