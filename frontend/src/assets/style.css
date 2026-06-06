@@ -391,13 +391,19 @@ body {
 .dashboard-grid {
   display: grid;
   grid-template-columns: 1fr 2fr;
+  grid-template-rows: 1fr;
   gap: 1.5rem;
   flex-grow: 1;
   align-items: start;
 }
 
+.col-assessment {
+  align-self: stretch;
+}
+
 .col-assessment .dashboard-card {
   overflow: hidden; /* allows card-body scroll-panel to actually scroll */
+  flex: 1;
 }
 
 @media (max-width: 1024px) {
