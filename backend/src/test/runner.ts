@@ -23,8 +23,8 @@ import type { PlanEntry } from '../services/database.service';
 const backendDir     = path.join(__dirname, '../..');
 const testDataDir    = path.join(backendDir, 'data', 'test');
 const runAthletePath = path.join(__dirname, 'run-athlete.ts');
-const isWin          = process.platform === 'win32';
-const tsxBin         = path.join(backendDir, 'node_modules', '.bin', isWin ? 'tsx.cmd' : 'tsx');
+// Use node + tsx CLI directly — avoids shell quoting issues with spaces in paths
+const tsxCli         = path.join(backendDir, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 
 // Load .env — TEST_GEMINI_KEY and TEST_GEMINI_MODEL must be set there
 loadDotenv({ path: path.join(backendDir, '.env') });
@@ -77,45 +77,51 @@ async function main() {
   const results: AthleteResult[] = [];
 
   for (const athlete of ATHLETES) {
-    const dbPath = path.join(testDataDir, `${athlete.id}.db`);
+    const dbPath     = path.join(testDataDir, `${athlete.id}.db`);
+    const resultPath = path.join(testDataDir, `${athlete.id}.json`);
 
-    // Remove stale DB from a previous run
-    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    // Remove stale files from a previous run
+    if (fs.existsSync(dbPath))     fs.unlinkSync(dbPath);
+    if (fs.existsSync(resultPath)) fs.unlinkSync(resultPath);
 
     process.stdout.write(`► ${athlete.name.padEnd(18)} (${athlete.fitnessLevel.padEnd(12)}) … `);
 
-    const child = spawnSync(tsxBin, [runAthletePath, athlete.id], {
-      shell: isWin,
+    const child = spawnSync(process.execPath, [tsxCli, runAthletePath, athlete.id], {
+      shell: false,
       encoding: 'utf8',
       timeout: 120_000,
       cwd: backendDir,
       env: {
         ...process.env,
-        VELOMATE_DB_PATH:      dbPath,
+        VELOMATE_DB_PATH:  dbPath,
+        TEST_RESULT_PATH:  resultPath,
         TEST_GEMINI_KEY:   geminiConfig.key,
         TEST_GEMINI_MODEL: geminiConfig.model,
       },
     });
 
-    if (child.stderr?.trim()) {
-      process.stderr.write(`\n[${athlete.id}] ${child.stderr.trim()}\n`);
+    if (child.status !== 0) {
+      console.log('FAILED');
+      if (child.stderr?.trim()) process.stderr.write(`[${athlete.id}] ${child.stderr.trim()}\n`);
+      continue;
     }
 
-    if (child.status !== 0 || !child.stdout?.trim()) {
-      console.log('FAILED');
+    if (!fs.existsSync(resultPath)) {
+      console.log('FAILED (no result file written)');
+      if (child.stderr?.trim()) process.stderr.write(`[${athlete.id}] ${child.stderr.trim()}\n`);
       continue;
     }
 
     let result: AthleteResult;
     try {
-      result = JSON.parse(child.stdout);
+      result = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
     } catch {
       console.log('FAILED (JSON parse error)');
       continue;
     }
 
     const plan: PlanEntry[] = result.recommendation?.weeklyPlan ?? [];
-    const evaluation = evaluatePlan(athlete.fitnessLevel as any, plan);
+    const evaluation = evaluatePlan(athlete.fitnessLevel as any, plan, athlete.trainingPhase);
     results.push({ ...result, evaluation });
 
     const icon = evaluation.score >= 75 ? '✓' : evaluation.score >= 55 ? '~' : '✗';
@@ -134,7 +140,7 @@ async function main() {
   console.log(`Report saved → ${reportPath}`);
 
   // Open in default browser
-  if (isWin) {
+  if (process.platform === 'win32') {
     spawnSync('cmd', ['/c', 'start', '', reportPath], { shell: false });
   } else {
     spawnSync('open', [reportPath]);
@@ -225,6 +231,7 @@ function athleteSection(r: AthleteResult): string {
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <h2 style="margin:0;font-size:20px">${r.name}</h2>
         <span style="background:${LEVEL_BORDER[r.fitnessLevel]};color:#fff;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:.5px">${r.fitnessLevel}</span>
+        <span style="background:#607d8b;color:#fff;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:.5px">${r.evaluation.trainingPhase}</span>
         <span style="color:${vColor};font-weight:bold;margin-left:auto">${r.evaluation.verdict.toUpperCase()} — ${r.evaluation.score}/100</span>
       </div>
       <div style="margin-top:8px;font-size:13px;color:#444;display:flex;gap:20px;flex-wrap:wrap">

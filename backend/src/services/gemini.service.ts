@@ -112,14 +112,14 @@ interface PauseContext {
   activitiesCount: number
 }
 
-const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext): string => {
+const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, activityDays = 21): string => {
   const today     = localDate();
   const dayOfWeek = new Date().toLocaleDateString('en-GB', { weekday: 'long', timeZone: USER_TZ });
 
-  // Recent 21 days of activities — include zone distribution when available
+  // Recent activities window — reduced automatically on MAX_TOKENS retry
   const allActivities = getStoredActivities();
   const cutoff21 = new Date();
-  cutoff21.setDate(cutoff21.getDate() - 21);
+  cutoff21.setDate(cutoff21.getDate() - activityDays);
   const recentActivities = allActivities
     .filter(a => a.startTime && new Date(a.startTime) >= cutoff21)
     .map(a => {
@@ -249,7 +249,10 @@ const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext): s
 
   return `You are a professional cycling coach AI specializing in heart-rate based training.
 Analyze the athlete's data and generate an adaptive training plan with exact, personalised workout structures.
-The most important factor is training load management — never sacrifice recovery for volume.
+Calibrate training volume and intensity to the athlete's demonstrated capacity from their recent history.
+An athlete who consistently trains at high frequency and intensity has established that as their sustainable baseline — match that load.
+Only reduce volume when recovery signals (rpe ≥ 8, feeling ≤ 2, HR drift upward over successive rides) indicate genuine fatigue accumulation.
+High training volume alone is not a reason to prescribe rest — look at the quality signals.
 
 TODAY: ${today} (${dayOfWeek})
 
@@ -275,17 +278,19 @@ TRAINING ANALYSIS (last 90 days):
 
 WORKOUT TYPE GUIDELINES — you decide the exact structure for each day based on athlete load:
 
-Sprint (ONLY when fully rested — 48h+ since last hard effort, low fatigue):
+Sprint (requires neuromuscular recovery — use athlete's own history to judge adequate rest):
   Warm-up [WarmUp]: 480-720 sec Z2
   Intervals: 4-8 sets of [Sprint [Run] 20-45 sec Z5 → Recovery [Recovery] 180-300 sec Z1]
   Cool-down [Cooldown]: 480-720 sec Z1
   Short maximal bursts — trains neuromuscular power. Fewer/shorter when less fresh.
+  Recovery window: for high-volume athletes who regularly train daily, 24-36h between hard sessions may be their normal pattern.
+  For lower-volume athletes, 48h+ rest before a sprint session is appropriate.
 
-VO2Max (only when well-rested — 48h+ since last hard effort, low-to-moderate fatigue):
+VO2Max (requires good recovery — sustained Z5 is more demanding than Sprint):
   Warm-up [WarmUp]: 480-720 sec Z2
   Intervals: 4-5 sets of [Work [Run] 180-300 sec Z5 → Recovery [Recovery] 180-240 sec Z1]
   Cool-down [Cooldown]: 480-600 sec Z1
-  Sustained Z5 blocks raise the aerobic ceiling. More demanding than Sprint — do NOT schedule after consecutive hard days.
+  Sustained Z5 blocks raise the aerobic ceiling. Do NOT schedule after consecutive hard days without at least one easy session in between.
   Fewer sets when less fresh; 5 sets only when athlete is progressing well and compliance is high.
 
 Threshold (when moderately fresh — core aerobic progression):
@@ -302,15 +307,20 @@ Tempo (ideal for moderate fatigue — sweet spot, Z3):
   Long Z3 blocks build fatigue resistance and muscular endurance. Perfect when athlete is too tired for Z4 Threshold but too fresh for Z2 only.
 
 LongRide (safe even when moderately fatigued):
-  Single steady block [Run]: 3600-14400 sec Z2
-  Scale to fatigue level and averageRideDurationMinutes — shorter when tired, longer when fresh.
+  Single steady block [Run]: 1800-14400 sec Z2
+  Scale to the athlete's averageRideDurationMinutes — a beginner averaging 40 min rides should get a 50-70 min long ride, not 2+ hours.
+  A pro averaging 90 min rides may go 2.5-4 hours. Shorter when tired, longer when fresh.
 
 Rest: no structure needed — set structure to null.
 
-PROGRESSION GOAL: Develop all energy systems using the full training pyramid:
-  Rest → LongRide (Z2 base) → Tempo (Z3 fatigue resistance) → Threshold (Z4 aerobic power) → VO2Max (Z5 aerobic ceiling) → Sprint (Z5+ neuromuscular)
-Higher-intensity sessions require more recovery. Build from the base — do not stack VO2Max + Threshold + Sprint in the same week unless fatigue is consistently low and compliance is excellent.
-Gradually increase intensity/frequency when fatigue is low and compliance is good.
+PROGRESSION GOAL: Match the athlete's established training level, then progress from there:
+  Training pyramid: Rest → LongRide (Z2 base) → Tempo (Z3 fatigue resistance) → Threshold (Z4 aerobic power) → VO2Max (Z5 aerobic ceiling) → Sprint (Z5+ neuromuscular)
+
+  - If the athlete's history already shows regular Sprint/Threshold/VO2Max work: continue at that level — do NOT reset to base.
+  - If the history shows only easy aerobic rides: stay in Z2/Z3 range and introduce intensity gradually.
+  - Only stack VO2Max + Threshold + Sprint in the same week when the athlete is demonstrably managing that load (history shows it, rpe/feeling are fine).
+  - If the athlete is already at a consistently high load with no negative signals, the goal is quality maintenance — not pushing further volume or intensity.
+  - Increase intensity/frequency only when fatigue signals are low AND current load is below the athlete's demonstrated ceiling.
 If execution scores are consistently below 60, prioritise consolidation over progression — the athlete is not absorbing the current load.
 
 EXECUTION SCORING — for ALL entries marked "NEEDS SCORING" above:
@@ -397,7 +407,27 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[], pauseCo
   const key = getGeminiKey();
   if (!key) throw new Error('GEMINI_KEY_NOT_CONFIGURED');
 
-  const prompt = buildPrompt(previousPlan, pauseContext);
+  // Retry with progressively smaller activity windows if Gemini truncates the response
+  const ACTIVITY_WINDOWS = [21, 14, 10];
+
+  for (const activityDays of ACTIVITY_WINDOWS) {
+    const result = await _attemptGeneration(previousPlan, pauseContext, activityDays);
+    if (result.truncated) {
+      logger.warn(`[Gemini] Response truncated (MAX_TOKENS) with ${activityDays}-day window — retrying with fewer activities`);
+      continue;
+    }
+    return result.value;
+  }
+  throw new Error('[Gemini] Response truncated even with minimal activity window (10 days). Try a model with higher output limits.');
+};
+
+const _attemptGeneration = async (
+  previousPlan: PlanEntry[] | undefined,
+  pauseContext: PauseContext | undefined,
+  activityDays: number
+): Promise<{ truncated: true } | { truncated: false; value: any }> => {
+  const key = getGeminiKey()!;
+  const prompt = buildPrompt(previousPlan, pauseContext, activityDays);
 
   // ── Log outgoing prompt ───────────────────────────────────────────────────────
   logger.info('\n' + '═'.repeat(72));
@@ -425,23 +455,27 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[], pauseCo
   const parts: any[] = candidate?.content?.parts || [];
   const rawText: string = parts.map((p: any) => p.text ?? '').join('');
 
-  // Log finish reason so we can spot premature stops
   const finishReason = candidate?.finishReason ?? 'unknown';
 
   // ── Log raw response ──────────────────────────────────────────────────────────
   logger.info('[Gemini] ── RAW RESPONSE ────────────────────────────────────────────');
-  logger.info(`[Gemini] finishReason: ${finishReason} | length: ${rawText.length} chars`);
+  logger.info(`[Gemini] finishReason: ${finishReason} | length: ${rawText.length} chars | activityDays: ${activityDays}`);
   logger.info('─'.repeat(72));
   logger.info(rawText ?? '(empty)');
   logger.info('─'.repeat(72) + '\n');
 
   if (!rawText) throw new Error('Empty response from Gemini API');
 
+  // Response was cut short — signal to the caller to retry with less context
+  if (finishReason === 'MAX_TOKENS') {
+    return { truncated: true };
+  }
+
   let parsed: any;
   try {
     parsed = JSON.parse(rawText);
   } catch (e) {
-    throw new Error(`Gemini returned invalid JSON (${rawText.length} chars):\n${rawText}`);
+    throw new Error(`Gemini returned invalid JSON (${rawText.length} chars, finishReason: ${finishReason}):\n${rawText}`);
   }
 
   // Validate required fields
@@ -569,5 +603,5 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[], pauseCo
   logger.info(`  Next week: ${parsed.nextWeekOverview?.summary}`);
   logger.info('═'.repeat(72) + '\n');
 
-  return getStoredRecommendation();
+  return { truncated: false, value: getStoredRecommendation() };
 };
