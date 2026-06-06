@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "pinia": "^2.1.7",
+    "velomate-root": "file:..",
     "vue": "^3.4.21",
     "vue-router": "^4.3.0"
   },
