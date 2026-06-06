@@ -32,8 +32,8 @@ if (!athleteFound) {
   process.exit(1);
 }
 
-const geminiKey   = process.env.TEST_GEMINI_KEY   || '';
-const geminiModel = process.env.TEST_GEMINI_MODEL || 'gemini-2.0-flash';
+const geminiKey   = process.env.TEST_GEMINI_KEY   ?? '';
+const geminiModel = process.env.TEST_GEMINI_MODEL ?? '';
 
 async function main(athlete: AthleteDefinition) {
   // ── Settings ────────────────────────────────────────────────────────────────
