@@ -21,6 +21,9 @@
               @keydown.enter="submit"
               @keydown.esc="_cancel"
             />
+            <span class="pause-reason-counter" :class="{ 'near-limit': reason.length >= 100 }">
+              {{ reason.length }}/120
+            </span>
           </div>
           <div class="confirm-actions">
             <button class="btn btn-secondary btn-sm" @click="_cancel">Cancel</button>
@@ -108,6 +111,15 @@ function submit() {
 }
 .pause-reason-input::placeholder { color: var(--text-muted); }
 .pause-reason-input:focus { border-color: #f59e0b; }
+
+.pause-reason-counter {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: right;
+}
+.pause-reason-counter.near-limit {
+  color: #f59e0b;
+}
 
 .confirm-actions {
   display: flex;
