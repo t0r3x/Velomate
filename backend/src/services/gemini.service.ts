@@ -231,8 +231,8 @@ const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, ac
   // Support multiple preferred days (new plural key) with fallback to old singular key
   const rawDays = getSetting('preferred_long_ride_days') || getSetting('preferred_long_ride_day') || '';
   const preferredDays = rawDays ? rawDays.split(',').map(d => d.trim()).filter(Boolean) : [];
-  const prefLine = preferredDays.length > 0
-    ? `- Preferred Long Ride day(s): ${preferredDays.join(', ')} — schedule the LongRide on one of these days when load allows.`
+const prefLine = preferredDays.length > 0
+    ? `- Preferred Long Ride day(s): ${preferredDays.join(', ')} — Treat these as primary candidates for scheduling 'LongRide'. You are not required to schedule a ride on every preferred day. Prioritize optimal recovery; it is perfectly acceptable to schedule a Rest day on a preferred day if athletically justified.`
     : `- No preferred Long Ride days specified.`;
 
   const pauseDays = pauseContext
@@ -316,8 +316,8 @@ Rest: no structure needed — set structure to null.
 PROGRESSION GOAL: Match the athlete's established training level, then progress from there:
   Training pyramid: Rest → LongRide (Z2 base) → Tempo (Z3 fatigue resistance) → Threshold (Z4 aerobic power) → VO2Max (Z5 aerobic ceiling) → Sprint (Z5+ neuromuscular)
 
-  - If the athlete's history already shows regular Sprint/Threshold/VO2Max work: continue at that level — do NOT reset to base.
-  - If the history shows only easy aerobic rides: stay in Z2/Z3 range and introduce intensity gradually.
+- If the athlete's history already shows regular Sprint/Threshold/VO2Max work: continue at that level — do NOT reset to base.
+  - Rule: Do NOT prescribe high-intensity interval sessions (Tempo, Threshold, VO2Max, Sprint) if the athlete's recent ride history consists exclusively of 'easy' or 'moderate' aerobic rides, unless their specific goals require race preparation.
   - Only stack VO2Max + Threshold + Sprint in the same week when the athlete is demonstrably managing that load (history shows it, rpe/feeling are fine).
   - If the athlete is already at a consistently high load with no negative signals, the goal is quality maintenance — not pushing further volume or intensity.
   - Increase intensity/frequency only when fatigue signals are low AND current load is below the athlete's demonstrated ceiling.
