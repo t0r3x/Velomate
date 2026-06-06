@@ -388,22 +388,30 @@ body {
 .panel-section-label i { color: var(--primary-color); font-size: 0.8rem; }
 
 /* ── Grid Layout ── */
+.dashboard-layout {
+  height: 100dvh;
+  overflow: hidden;
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: 1fr 2fr;
   grid-template-rows: 1fr;
   gap: 1.5rem;
   flex-grow: 1;
+  min-height: 0;
   align-items: start;
 }
 
 .col-assessment {
   align-self: stretch;
+  min-height: 0;
 }
 
 .col-assessment .dashboard-card {
-  overflow: hidden; /* allows card-body scroll-panel to actually scroll */
+  overflow: hidden;
   flex: 1;
+  min-height: 0; /* overrides min-height: fit-content from base rule — allows flex to bound the height */
 }
 
 @media (max-width: 1024px) {

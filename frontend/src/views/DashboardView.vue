@@ -1,5 +1,5 @@
 <template>
-  <div class="app-container">
+  <div class="app-container dashboard-layout">
     <AppHeader @open-settings="panelOpen = true" @open-profile="profileModalOpen = true" />
 
     <main class="dashboard-grid">
