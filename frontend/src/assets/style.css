@@ -415,7 +415,10 @@ body {
 }
 
 @media (max-width: 1024px) {
-  .dashboard-grid { grid-template-columns: 1fr; }
+  .dashboard-layout { height: auto; overflow: visible; }
+  .dashboard-grid { grid-template-columns: 1fr; grid-template-rows: auto; }
+  .col-assessment { align-self: auto; min-height: unset; order: 2; }
+  .col-schedule { order: 1; }
   .col-assessment .dashboard-card { overflow: visible; min-height: fit-content !important; max-height: none !important; }
 }
 
