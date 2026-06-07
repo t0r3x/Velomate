@@ -440,17 +440,36 @@ const _attemptGeneration = async (
   const model = getSetting('gemini_model') || 'gemini-3.5-flash';
   logger.info(`[Gemini] Model: ${model}`);
 
-  const response = await axios.post(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-    {
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.4,
-        maxOutputTokens: 8192
+  // Retry up to 3 times on 429 (rate limit) with exponential backoff.
+  // Quota exhaustion (daily limit) also returns 429 but with a longer Retry-After —
+  // the backoff handles both cases gracefully.
+  const MAX_RATE_RETRIES = 3;
+  let response: any;
+  for (let attempt = 1; attempt <= MAX_RATE_RETRIES; attempt++) {
+    try {
+      response = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+        {
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.4,
+            maxOutputTokens: 8192
+          }
+        }
+      );
+      break; // success — exit retry loop
+    } catch (err: any) {
+      if (err.response?.status === 429 && attempt < MAX_RATE_RETRIES) {
+        const retryAfterSec = parseInt(err.response.headers?.['retry-after'] ?? '0', 10);
+        const waitMs = retryAfterSec > 0 ? retryAfterSec * 1000 : 2000 * attempt; // 2s, 4s
+        logger.warn(`[Gemini] Rate limited (429) — waiting ${waitMs}ms before retry ${attempt}/${MAX_RATE_RETRIES - 1}`);
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+        continue;
       }
+      throw err;
     }
-  );
+  }
 
   const candidate  = response.data?.candidates?.[0];
   const parts: any[] = candidate?.content?.parts || [];
