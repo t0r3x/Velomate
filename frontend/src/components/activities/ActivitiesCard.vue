@@ -10,7 +10,7 @@
           :disabled="syncing || !authStore.isLoggedIn"
           @click="handleSync"
         >
-          <span>{{ syncing ? 'Syncing…' : 'Sync from Garmin' }}</span>
+          <span>{{ syncing ? 'Syncing…' : 'Sync' }}</span>
           <i class="fa-solid" :class="syncing ? 'fa-spinner fa-spin' : 'fa-rotate'"></i>
         </button>
       </div>
@@ -18,7 +18,7 @@
     <div class="card-body scroll-panel">
       <div id="activities-list-container">
         <p v-if="activitiesStore.activities.length === 0" class="helper-text empty-state-text">
-          No rides yet. Click "Sync from Garmin" to sync your rides.
+          No rides yet. Click "Sync" to sync your rides from Garmin.
         </p>
         <ul v-else class="activities-list">
           <ActivityItem
