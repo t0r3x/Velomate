@@ -1,15 +1,20 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import logger from '../logger';
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
-const dataDir = path.join(__dirname, '../../data');
-if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+// Default: %APPDATA%\velomate on Windows, ~/.velomate elsewhere.
+// Outside the project directory so git clean never touches it.
+const defaultDataDir = path.join(process.env.APPDATA ?? os.homedir(), 'velomate');
 
 const dbFilePath = process.env.VELOMATE_DB_PATH
   ? path.resolve(process.env.VELOMATE_DB_PATH)
-  : path.join(dataDir, 'velomate.db');
+  : path.join(defaultDataDir, 'velomate.db');
+
+const dataDir = path.dirname(dbFilePath);
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 const db = new Database(dbFilePath);
 
 // WAL mode — better concurrent read performance

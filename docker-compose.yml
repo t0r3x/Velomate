@@ -8,4 +8,5 @@ services:
       - ./logs:/app/logs           # Winston log files
     environment:
       - LOG_DIR=/app/logs
+      - VELOMATE_DB_PATH=/app/backend/data/velomate.db
     restart: unless-stopped
