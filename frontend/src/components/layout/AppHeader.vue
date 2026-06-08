@@ -1,7 +1,8 @@
 <template>
   <header class="main-header">
     <div class="logo-section">
-      <i class="logo-icon fa-solid" :class="logoIcon"></i>
+      <img v-if="!active" class="logo-header" :src="veloImg" alt="" />
+      <i v-else class="logo-icon fa-solid fa-bowl-food"></i>
       <div class="logo-text">
         <h1>Velo<span>mate</span></h1>
         <p class="logo-tagline">The adaptive AI cycling coach for Garmin Connect</p>
@@ -36,7 +37,9 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuthStore }    from '@/stores/auth.store'
 import { useProfileStore } from '@/stores/profile.store'
-import StatusDot from '@/components/ui/StatusDot.vue'
+import StatusDot           from '@/components/ui/StatusDot.vue'
+import { useShablagoo }    from '@/composables/useShablagoo'
+import veloImg            from '@/assets/velomate.png'
 
 const emit = defineEmits<{ 'open-settings': []; 'open-profile': [] }>()
 
@@ -77,7 +80,5 @@ onMounted(() => document.addEventListener('mousedown', onClickOutside))
 onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
 
 // Shablagoo easter egg
-import { useShablagoo } from '@/composables/useShablagoo'
 const { active } = useShablagoo()
-const logoIcon = computed(() => active.value ? 'fa-bowl-food' : 'fa-route')
 </script>
