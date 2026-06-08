@@ -2,7 +2,7 @@
   <div id="view-setup">
     <div class="setup-card glass-panel">
       <div class="setup-logo">
-        <i class="fa-solid fa-route logo-icon"></i>
+        <img class="logo-header" :src="veloImg" alt="" />
         <h1>Velo<span>mate</span></h1>
       </div>
       <p class="setup-tagline">AI-powered training for cyclists.</p>
@@ -41,6 +41,7 @@ import { ref } from 'vue'
 import { useAuthStore }     from '@/stores/auth.store'
 import { useSettingsStore } from '@/stores/settings.store'
 import SettingsPanel from '@/components/layout/SettingsPanel.vue'
+import veloImg from '@/assets/velomate.png'
 
 const authStore     = useAuthStore()
 const settingsStore = useSettingsStore()

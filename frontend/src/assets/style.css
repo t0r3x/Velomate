@@ -112,15 +112,14 @@ body {
 .main-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 2rem;
-  padding-bottom: 1rem;
 }
 
 .logo-section {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 1.25rem;
 }
 
 .logo-icon {
@@ -132,10 +131,16 @@ body {
   filter: drop-shadow(0 0 10px rgba(var(--primary-rgb), 0.4));
 }
 
+.logo-header {
+  height: 8rem;
+  width: auto;
+}
+
 .logo-section h1 {
-  font-size: 1.75rem;
+  font-size: 6rem;
   font-weight: 800;
-  letter-spacing: -0.5px;
+  letter-spacing: -2px;
+  line-height: 1;
 }
 
 .logo-section h1 span {
@@ -152,11 +157,12 @@ body {
 }
 
 .logo-tagline {
-  font-size: 0.68rem;
+  font-size: 1.1rem;
   font-weight: 400;
   color: var(--text-muted);
   letter-spacing: 0.01em;
   line-height: 1.2;
+  margin-top: 0.4rem;
 }
 
 /* ── Garmin Status Button (header) ── */
@@ -1755,17 +1761,22 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
 .setup-logo {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 1.25rem;
 }
 
 .setup-logo .logo-icon {
   font-size: 2.4rem;
 }
 
+.setup-logo .logo-header {
+  height: 13rem;
+}
+
 .setup-logo h1 {
-  font-size: 2rem;
+  font-size: 6.5rem;
   font-weight: 800;
-  letter-spacing: -0.5px;
+  letter-spacing: -2px;
+  line-height: 1;
 }
 
 .setup-logo h1 span {
