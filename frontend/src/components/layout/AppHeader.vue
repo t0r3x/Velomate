@@ -2,7 +2,7 @@
   <header class="main-header">
     <div class="logo-section">
       <img v-if="!active" class="logo-header" :src="veloImg" alt="" />
-      <i v-else class="logo-icon fa-solid fa-bowl-food"></i>
+      <img v-else class="logo-header" :src="mbcImg" alt="" />
       <div class="logo-text">
         <h1>Velo<span>mate</span></h1>
         <p class="logo-tagline">The adaptive AI cycling coach for Garmin Connect</p>
@@ -40,6 +40,7 @@ import { useProfileStore } from '@/stores/profile.store'
 import StatusDot           from '@/components/ui/StatusDot.vue'
 import { useShablagoo }    from '@/composables/useShablagoo'
 import veloImg            from '@/assets/velomate.png'
+import mbcImg            from '@/assets/mbc.png'
 
 const emit = defineEmits<{ 'open-settings': []; 'open-profile': [] }>()
 
