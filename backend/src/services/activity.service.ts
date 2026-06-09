@@ -51,7 +51,15 @@ export const fetchCyclingActivities = async (days: number = 90) => {
     const rawZones =
       (act as any).hrTimeInHrZone ||
       (act as any).timeInHrZone   ||
-      null;
+      ((act as any).hrTimeInZone_1 != null
+        ? [
+            (act as any).hrTimeInZone_1 ?? 0,
+            (act as any).hrTimeInZone_2 ?? 0,
+            (act as any).hrTimeInZone_3 ?? 0,
+            (act as any).hrTimeInZone_4 ?? 0,
+            (act as any).hrTimeInZone_5 ?? 0,
+          ]
+        : null);
 
     const timeInZones: number[] | null =
       Array.isArray(rawZones) && rawZones.length >= 5

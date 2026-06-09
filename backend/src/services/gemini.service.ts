@@ -100,7 +100,7 @@ export const detectAutoSkippedEntries = (plan: PlanEntry[]): string[] => {
   const today = localDate();
 
   return plan
-    .filter(e => e.status === 'planned' && e.date < today && !activityDates.has(e.date))
+    .filter(e => e.status === 'planned' && e.type !== 'Rest' && e.date < today && !activityDates.has(e.date))
     .map(e => e.date);
 };
 
