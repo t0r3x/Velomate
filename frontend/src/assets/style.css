@@ -452,19 +452,52 @@ body {
     min-width: 308px; /* 7 × 44px */
   }
 
-  /* Header: tighter on small screens */
+  /* Header: logo banner fills width, button floats over it */
   .main-header {
-    flex-wrap: wrap;
-    gap: 0.6rem;
+    position: relative;
+    display: block;
     margin-bottom: 1rem;
+    z-index: 200;
   }
 
-  /* Mobiel: alleen logo-afbeelding, tekst verbergen */
+  /* Mobile: hide text, bound logo to container width */
   .logo-text {
     display: none;
   }
+  .logo-section {
+    display: block;
+  }
   .logo-header {
+    width: 100%;
     height: 4rem;
+    object-fit: contain;
+    object-position: left center;
+  }
+
+  /* Button overlaid on the right side of the banner, scaled down */
+  .header-menu-wrapper {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .garmin-status-btn {
+    padding: 0.35rem 0.75rem 0.35rem 0.65rem;
+    font-size: 0.8rem;
+    gap: 0.45rem;
+    border-radius: 9999px;
+  }
+  .garmin-btn-hr-label {
+    font-size: 0.7rem;
+    min-width: unset;
+  }
+  .garmin-btn-sep {
+    height: 14px;
+  }
+
+  /* Cards: tighter padding so content fits */
+  .dashboard-card {
+    padding: 1rem;
   }
 
   /* Activity stats: 2 columns instead of 3 */
