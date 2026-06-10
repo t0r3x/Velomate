@@ -1500,6 +1500,36 @@ body {
 .wdc-badge-score-ok      { color: #f59e0b; }   /* 60-79 — amber */
 .wdc-badge-score-poor    { color: #ef4444; }   /* < 60  — red   */
 
+/* Hover tooltip — teleported to body, so scoped styles won't reach it */
+.wdc-tooltip {
+  position: fixed;
+  transform: translateX(-50%) translateY(-100%);
+  z-index: 600;
+  background: rgba(14, 18, 32, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  width: 220px;
+  max-width: min(220px, 90vw);
+  text-align: left;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  white-space: normal;
+  word-break: break-word;
+}
+.wdc-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: rgba(14, 18, 32, 0.97);
+}
+
 /* Workout detail cards below the grid */
 .workout-detail-cards {
   display: flex;
@@ -1768,30 +1798,13 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
 
 .setup-logo {
   display: flex;
+  justify-content: center;
   align-items: center;
-  gap: 1.25rem;
-}
-
-.setup-logo .logo-icon {
-  font-size: 2.4rem;
 }
 
 .setup-logo .logo-header {
-  height: 13rem;
-}
-
-.setup-logo h1 {
-  font-size: 6.5rem;
-  font-weight: 800;
-  letter-spacing: -2px;
-  line-height: 1;
-}
-
-.setup-logo h1 span {
-  background: var(--primary-glow);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  height: 8rem;
+  width: auto;
 }
 
 .setup-tagline {

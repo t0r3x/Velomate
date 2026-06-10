@@ -2,11 +2,8 @@
   <div id="view-setup">
     <div class="setup-card glass-panel">
       <div class="setup-logo">
-        <img class="logo-header" :src="veloImg" alt="" />
-        <h1>Velo<span>mate</span></h1>
+        <img class="logo-header" :src="veloImg" alt="Velomate" />
       </div>
-      <p class="setup-tagline">AI-powered training for cyclists.</p>
-
       <ul class="setup-steps">
         <li :class="{ 'step-done': authStore.isLoggedIn }">
           <i class="fa-solid fa-link"></i>

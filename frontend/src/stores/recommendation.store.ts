@@ -66,12 +66,14 @@ export const useRecommendationStore = defineStore('recommendation', () => {
   }
 
   async function skipToday(): Promise<boolean> {
+    state.value = 'loading'
     try {
       recommendation.value = await postSkipToday()
       state.value = 'loaded'
       return true
     } catch (err) {
       console.error('[Recommendation] skipToday failed:', err)
+      await fetchCached()
       return false
     }
   }
@@ -79,12 +81,15 @@ export const useRecommendationStore = defineStore('recommendation', () => {
   async function reschedule(fromDate: string): Promise<boolean> {
     const toDate = isoDate()
     if (fromDate === toDate) return false
+    state.value = 'loading'
     try {
       recommendation.value = await postReschedule(fromDate, toDate)
       state.value = 'loaded'
       return true
     } catch (err) {
       console.error('[Recommendation] reschedule failed:', err)
+      // Dates may have been swapped in DB even if AI regeneration failed — reload from DB
+      await fetchCached()
       return false
     }
   }
