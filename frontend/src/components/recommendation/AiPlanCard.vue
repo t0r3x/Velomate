@@ -3,6 +3,14 @@
     <div class="card-header">
       <i class="fa-solid fa-brain header-icon"></i>
       <h2>AI Training Plan</h2>
+      <div v-if="recStore.state === 'loaded'" class="card-header-actions">
+        <button class="btn-icon-sm btn-icon-pause" title="Pause training — use for injury, illness or travel" :disabled="pausing" @click="handlePause">
+          <i class="fa-solid" :class="pausing ? 'fa-spinner fa-spin' : 'fa-circle-pause'"></i>
+        </button>
+<button class="btn-icon-sm" title="Refresh recommendation" :disabled="recStore.state === 'loading'" @click="handleRefresh">
+          <i class="fa-solid fa-rotate"></i>
+        </button>
+      </div>
     </div>
     <div class="card-body">
 
@@ -37,7 +45,7 @@
       <!-- State: loading -->
       <div v-show="recStore.state === 'loading'" class="ai-rec-state">
         <div class="ai-rec-loading">
-          <i class="fa-solid fa-spinner fa-spin"></i><span>Asking AI…</span>
+          <i class="fa-solid fa-spinner fa-spin"></i><span>Updating AI Training Plan…</span>
         </div>
       </div>
 
@@ -58,37 +66,9 @@
       <!-- State: loaded -->
       <div v-show="recStore.state === 'loaded'" class="ai-rec-state">
         <template v-if="rec">
-          <!-- Today block -->
-          <div class="ai-today-block">
-            <div class="ai-today-header">
-              <span class="ai-today-label"><i class="fa-solid fa-calendar-day"></i>Today's Recommendation</span>
-              <div class="ai-today-actions">
-                <button class="btn-icon-sm btn-icon-pause" title="Pause training — use for injury, illness or travel" :disabled="pausing" @click="handlePause">
-                  <i class="fa-solid" :class="pausing ? 'fa-spinner fa-spin' : 'fa-circle-pause'"></i>
-                </button>
-                <button class="btn-icon-sm" title="Skip today's workout" :disabled="skipping" @click="handleSkip">
-                  <i class="fa-solid" :class="skipping ? 'fa-spinner fa-spin' : 'fa-forward-step'"></i>
-                </button>
-                <button class="btn-icon-sm" title="Refresh recommendation" :disabled="recStore.state === 'loading'" @click="handleRefresh">
-                  <i class="fa-solid fa-rotate"></i>
-                </button>
-              </div>
-            </div>
-            <div class="ai-today-chip-row">
-              <span class="ai-workout-chip" :class="`wt-${todayType.toLowerCase()}`">
-                <i class="fa-solid" :class="typeIcon(todayType)"></i>
-                <span>{{ typeLabel(todayType) }}</span>
-              </span>
-              <span v-if="todayType !== 'Rest'" class="ai-priority-badge" :class="`priority-${rec.priority.toLowerCase()}`">
-                {{ priorityLabel(rec.priority) }}
-              </span>
-            </div>
-            <p class="ai-today-reason">{{ todayReason }}</p>
-          </div>
-
           <!-- Week grid + load assessment -->
           <div class="ai-week-section">
-            <WeekGrid :plan="rec.weeklyPlan" @reschedule="handleReschedule" />
+            <WeekGrid :plan="rec.weeklyPlan" :todayPriority="rec.priority" @reschedule="handleReschedule" @skip-today="handleSkip" />
             <LoadAssessment v-if="rec.loadAssessment" :assessment="rec.loadAssessment" :generatedAt="rec.generatedAt" />
           </div>
 
@@ -132,7 +112,7 @@ import { useRecommendationStore } from '@/stores/recommendation.store'
 import { useToast }               from '@/composables/useToast'
 import { useConfirm }             from '@/composables/useConfirm'
 import { usePauseDialog }         from '@/composables/usePauseDialog'
-import { workoutTypeIcon, workoutTypeLabel, isoDate } from '@/utils'
+
 import type { SyncResult as SyncResultType } from '@/types'
 
 import WeekGrid         from './WeekGrid.vue'
@@ -149,14 +129,8 @@ const { promptForReason } = usePauseDialog()
 
 const rec = computed(() => recStore.recommendation)
 
-const todayPlanEntry = computed(() =>
-  rec.value?.weeklyPlan?.find(e => e.date === isoDate()) ?? null
-)
-const todayType   = computed(() => todayPlanEntry.value?.type   ?? rec.value?.workoutType ?? '')
-const todayReason = computed(() => todayPlanEntry.value?.reason ?? rec.value?.reason      ?? '')
-
 const generating = ref(false)
-const skipping   = ref(false)
+
 const pausing    = ref(false)
 const resuming   = ref(false)
 const syncing    = ref(false)
@@ -167,14 +141,6 @@ function formatPausedDate(iso: string | null): string {
   const d = new Date(iso)
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
 }
-
-const typeIcon  = (t: string) => workoutTypeIcon[t]  ?? 'fa-dumbbell'
-const typeLabel = (t: string) => workoutTypeLabel[t] ?? t
-
-const PRIORITY_LABELS: Record<string, string> = {
-  high: 'Essential', medium: 'Recommended', low: 'Optional'
-}
-const priorityLabel = (p: string) => PRIORITY_LABELS[p.toLowerCase()] ?? p
 
 async function handleGenerateFirst() {
   generating.value = true
@@ -223,9 +189,7 @@ async function handleSkip() {
   })
   if (!confirmed) return
 
-  skipping.value = true
   const ok = await recStore.skipToday()
-  skipping.value = false
   if (ok) {
     show('success', 'Workout skipped', 'Plan updated by AI.')
   } else {

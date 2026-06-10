@@ -1,11 +1,20 @@
 <template>
   <div
+    ref="cellRef"
     class="week-day-cell"
     :class="[
       isRest ? 'rest' : `has-workout wt-${entry.type.toLowerCase()}`,
-      { 'is-today': isToday, 'is-completed': isCompleted, 'is-skipped': isSkipped }
+      {
+        'is-today':     isToday,
+        'is-completed': isCompleted,
+        'is-skipped':   isSkipped,
+        'is-selected':  isSelected,
+        'is-clickable': !isRest,
+      }
     ]"
-    :title="entry.reason || ''"
+    @click="!isRest && emit('select', entry.date)"
+    @mouseenter="handleMouseEnter"
+    @mouseleave="showTooltip = false"
   >
     <div class="wdc-day">
       <span class="wdc-day-label">{{ dayLabel }}</span>
@@ -36,26 +45,44 @@
         <i class="fa-solid fa-forward-step"></i> Skipped
       </div>
 
-      <!-- Move to today button — only on future planned entries -->
-      <button
-        v-if="canMove"
-        class="btn-move-today"
-        title="Move to today"
-        @click.stop="emit('reschedule', entry.date)"
-      >
-        <i class="fa-solid fa-calendar-day"></i>
-      </button>
     </template>
+
+    <!-- Hover tooltip (teleported to body to avoid overflow clipping) -->
+    <Teleport to="body">
+      <div
+        v-if="showTooltip && entry.reason"
+        class="wdc-tooltip"
+        :style="{ left: tooltipPos.left, top: tooltipPos.top }"
+      >
+        {{ entry.reason }}
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { PlanEntry } from '@/types'
-import { workoutTypeIcon, workoutTypeLabel, DAY_NAMES, isoDate } from '@/utils'
+import { workoutTypeIcon, workoutTypeLabel, DAY_NAMES } from '@/utils'
 
-const props = defineProps<{ entry: PlanEntry; isToday: boolean }>()
-const emit  = defineEmits<{ reschedule: [date: string] }>()
+const props = defineProps<{ entry: PlanEntry; isToday: boolean; isSelected?: boolean }>()
+const emit  = defineEmits<{
+  select: [date: string]
+}>()
+
+const cellRef     = ref<HTMLElement | null>(null)
+const showTooltip = ref(false)
+const tooltipPos  = ref({ left: '0px', top: '0px' })
+
+function handleMouseEnter() {
+  if (!props.entry.reason || !cellRef.value) return
+  const rect = cellRef.value.getBoundingClientRect()
+  tooltipPos.value = {
+    left: `${rect.left + rect.width / 2}px`,
+    top:  `${rect.top - 8}px`,
+  }
+  showTooltip.value = true
+}
 
 const d = computed(() => new Date(props.entry.date + 'T12:00:00'))
 const dayLabel   = computed(() => DAY_NAMES[d.value.getDay()])
@@ -77,10 +104,16 @@ const scoreBadgeClass = computed(() => {
   if (score == null) return 'wdc-badge-done'
   return `wdc-badge-score ${score >= 80 ? 'wdc-badge-score-great' : score >= 60 ? 'wdc-badge-score-ok' : 'wdc-badge-score-poor'}`
 })
-
-const canMove = computed(() =>
-  !props.isToday &&
-  props.entry.status === 'planned' &&
-  props.entry.date > isoDate()
-)
 </script>
+
+<style scoped>
+.week-day-cell.is-clickable {
+  cursor: pointer;
+}
+
+.week-day-cell.is-selected {
+  background: rgba(var(--primary-rgb), 0.14) !important;
+  outline: 1px solid rgba(var(--primary-rgb), 0.4);
+  outline-offset: -1px;
+}
+</style>
