@@ -1,6 +1,5 @@
 <template>
   <div
-    ref="cellRef"
     class="week-day-cell"
     :class="[
       isRest ? 'rest' : `has-workout wt-${entry.type.toLowerCase()}`,
@@ -9,12 +8,10 @@
         'is-completed': isCompleted,
         'is-skipped':   isSkipped,
         'is-selected':  isSelected,
-        'is-clickable': !isRest,
+        'is-clickable': true,
       }
     ]"
-    @click="!isRest && emit('select', entry.date)"
-    @mouseenter="handleMouseEnter"
-    @mouseleave="showTooltip = false"
+    @click="emit('select', entry.date)"
   >
     <div class="wdc-day">
       <span class="wdc-day-label">{{ dayLabel }}</span>
@@ -44,47 +41,19 @@
       <div v-else-if="isSkipped" class="wdc-scheduled-badge wdc-badge-skipped">
         <i class="fa-solid fa-forward-step"></i> Skipped
       </div>
-
     </template>
-
-    <!-- Hover tooltip (teleported to body to avoid overflow clipping) -->
-    <Teleport to="body">
-      <div
-        v-if="showTooltip && entry.reason"
-        class="wdc-tooltip"
-        :style="{ left: tooltipPos.left, top: tooltipPos.top }"
-      >
-        {{ entry.reason }}
-      </div>
-    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import type { PlanEntry } from '@/types'
 import { workoutTypeIcon, workoutTypeLabel, DAY_NAMES } from '@/utils'
 
 const props = defineProps<{ entry: PlanEntry; isToday: boolean; isSelected?: boolean }>()
-const emit  = defineEmits<{
-  select: [date: string]
-}>()
+const emit  = defineEmits<{ select: [date: string] }>()
 
-const cellRef     = ref<HTMLElement | null>(null)
-const showTooltip = ref(false)
-const tooltipPos  = ref({ left: '0px', top: '0px' })
-
-function handleMouseEnter() {
-  if (!props.entry.reason || !cellRef.value) return
-  const rect = cellRef.value.getBoundingClientRect()
-  tooltipPos.value = {
-    left: `${rect.left + rect.width / 2}px`,
-    top:  `${rect.top - 8}px`,
-  }
-  showTooltip.value = true
-}
-
-const d = computed(() => new Date(props.entry.date + 'T12:00:00'))
+const d          = computed(() => new Date(props.entry.date + 'T12:00:00'))
 const dayLabel   = computed(() => DAY_NAMES[d.value.getDay()])
 const dayOfMonth = computed(() => d.value.getDate())
 

@@ -83,7 +83,7 @@ const selectedDate = ref<string | null>(isoDate())
 
 const selectedEntry = computed(() =>
   selectedDate.value
-    ? displayPlan.value.find(e => e.date === selectedDate.value && e.type !== 'Rest') ?? null
+    ? displayPlan.value.find(e => e.date === selectedDate.value) ?? null
     : null
 )
 

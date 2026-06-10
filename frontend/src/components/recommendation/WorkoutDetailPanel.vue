@@ -38,7 +38,7 @@
     </div>
 
     <!-- Reason -->
-    <p class="wdp-reason">{{ entry.reason }}</p>
+    <p v-if="entry.reason" class="wdp-reason">{{ entry.reason }}</p>
 
     <!-- Action buttons -->
     <div v-if="canSkip || canMove" class="wdp-actions">
