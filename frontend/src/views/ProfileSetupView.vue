@@ -1,5 +1,5 @@
 <template>
-  <div class="tp-backdrop" :class="{ 'tp-modal-mode': modalMode }">
+  <div class="tp-backdrop" :class="{ 'tp-modal-mode': modalMode }" @click.self="modalMode ? handleCancel() : undefined">
       <div class="tp-panel glass-panel">
 
         <!-- Header -->
