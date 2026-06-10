@@ -33,7 +33,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { PlanEntry } from '@/types'
+import type { PlanEntry, PlanEntryStatus } from '@/types'
 import { isoDate } from '@/utils'
 import WeekDayCell       from './WeekDayCell.vue'
 import WorkoutDetailPanel from './WorkoutDetailPanel.vue'
@@ -46,7 +46,27 @@ const emit  = defineEmits<{
 
 const todayStr = isoDate()
 
-const displayPlan = computed(() => props.plan.slice(0, 7))
+const displayPlan = computed((): PlanEntry[] => {
+  // Build Mon–Sun of the current week, filling missing days with synthetic Rest entries
+  const today = new Date(todayStr + 'T12:00:00')
+  const dow = today.getDay() // 0=Sun … 6=Sat
+  const monday = new Date(today)
+  monday.setDate(today.getDate() + (dow === 0 ? -6 : 1 - dow))
+
+  const planMap = new Map(props.plan.map(e => [e.date, e]))
+
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday)
+    d.setDate(monday.getDate() + i)
+    const dateStr = isoDate(d)
+    return planMap.get(dateStr) ?? {
+      date:   dateStr,
+      type:   'Rest',
+      reason: '',
+      status: 'planned' as PlanEntryStatus,
+    }
+  })
+})
 
 const weekLabel = computed(() => {
   if (displayPlan.value.length === 0) return ''
