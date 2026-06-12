@@ -90,7 +90,7 @@
             <textarea
               v-model="goals"
               class="goals-textarea"
-              placeholder="e.g. race in 6 weeks, 100 km ride in 8 weeks, no riding on Sundays…"
+              placeholder="e.g. Build stamina for a 100 km ride in August, no more than 3 sessions a week, etc."
               maxlength="500"
               rows="3"
             ></textarea>
