@@ -274,6 +274,7 @@ const syncActivitiesFromGarmin = async (): Promise<boolean> => {
         const summary = classified.map(c => `${c.date}:${c.status}`).join(', ');
         logger.info(`[Sync] Classified ${classified.length} workout(s): ${summary}`);
         classified.forEach(({ date, status }) => updatePlanEntryStatus(date, status));
+        setSetting('last_plan_activity_date', localDate());
       }
     }
 
@@ -467,6 +468,8 @@ app.post('/api/training/resume', async (req: Request, res: Response) => {
   setSetting('training_paused', '');
   setSetting('paused_since', '');
   setSetting('pause_reason', '');
+  // Reset the inactivity clock — the 14-day counter starts fresh from today
+  setSetting('last_plan_activity_date', localDate());
   logger.info(`[Training] Resumed — was paused since ${pausedSince || 'unknown'}, ${activitiesCount} ride(s) during pause`);
 
   // Sync fresh activities, then regenerate plan with pause context
@@ -536,6 +539,9 @@ const handleGeminiError = (res: Response, error: any, context: string): void => 
 
 app.post('/api/recommendation/refresh', async (req: Request, res: Response) => {
   try {
+    if (getSetting('training_paused') === '1') {
+      return res.status(403).json({ error: 'Training is paused. Resume training before refreshing the plan.' });
+    }
     // Always sync activities first so the AI works with current ride data
     await syncActivitiesFromGarmin();
 
@@ -556,6 +562,9 @@ app.post('/api/recommendation/refresh', async (req: Request, res: Response) => {
 
 app.post('/api/recommendation/skip-today', async (req: Request, res: Response) => {
   try {
+    if (getSetting('training_paused') === '1') {
+      return res.status(403).json({ error: 'Training is paused. Resume training before making changes.' });
+    }
     // Sync first so the AI sees the latest rides before re-planning
     await syncActivitiesFromGarmin();
 
@@ -575,6 +584,9 @@ app.post('/api/recommendation/skip-today', async (req: Request, res: Response) =
 
 app.post('/api/recommendation/reschedule', async (req: Request, res: Response) => {
   try {
+    if (getSetting('training_paused') === '1') {
+      return res.status(403).json({ error: 'Training is paused. Resume training before making changes.' });
+    }
     const { fromDate, toDate } = req.body;
     if (!fromDate || !toDate) {
       return res.status(400).json({ error: 'fromDate and toDate are required.' });
@@ -716,6 +728,22 @@ const runGeminiAutoCheck = async () => {
         await generateRecommendation(updated?.weeklyPlan);
         setSetting('gemini_last_generated', new Date().toISOString());
         return; // already regenerated
+      }
+    }
+
+    // Auto-pause after 14 consecutive days without any completed workout.
+    // Reference date: last completed workout, or if never, the plan creation date.
+    // This naturally handles "plan not yet started" — a brand-new plan won't reach 14 days yet.
+    const lastActivity = getSetting('last_plan_activity_date');
+    const refDate      = lastActivity ?? getSetting('gemini_last_generated');
+    if (refDate && refDate !== '0') {
+      const daysSince = Math.floor((Date.now() - new Date(refDate).getTime()) / 86_400_000);
+      if (daysSince >= 14) {
+        setSetting('training_paused', '1');
+        setSetting('paused_since', new Date().toISOString());
+        setSetting('pause_reason', 'Automatically paused after 14 days without any training activity.');
+        logger.info(`[Gemini] Auto-check: auto-pausing — ${daysSince} days without activity (ref: ${refDate})`);
+        return;
       }
     }
 
