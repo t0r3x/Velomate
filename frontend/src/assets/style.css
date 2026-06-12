@@ -2555,6 +2555,7 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
   line-height: 1.5;
   padding: 0.5rem 0.65rem;
   resize: vertical;
+  min-height: 4.5rem;
   box-sizing: border-box;
   transition: border-color 0.2s;
 }
