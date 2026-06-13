@@ -235,23 +235,29 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
     logger.info(`[Sync] ${type}: ${aiProvided ? 'AI' : 'fallback'} — ${totalMin} min, ${structure.steps.length} steps`);
     if (!aiProvided) usingFallback.push(type);
 
-    // Build workout name
+    // Resolve date first — used in the workout name so it's visible on the device
+    const entryDate = entry.date || dateStr;
+    const dateLabel = new Date(entryDate + 'T12:00:00').toLocaleDateString('en-GB', {
+      weekday: 'short', day: 'numeric', month: 'short'
+    }); // e.g. "Sat 14 Jun"
+
+    // Build workout name — date prefix makes workouts easy to identify on the device
     let workoutName: string;
     let workoutDesc: string;
     if (type === 'Sprint') {
-      workoutName = `${APP_NAME} - Sprint`;
+      workoutName = `${APP_NAME} - ${dateLabel}: Sprint`;
       workoutDesc = 'Sprint intervals targeted to heart rate zones';
     } else if (type === 'VO2Max') {
-      workoutName = `${APP_NAME} - VO2 Max`;
+      workoutName = `${APP_NAME} - ${dateLabel}: VO2 Max`;
       workoutDesc = 'VO2 Max intervals (Z5, 4 min) to raise aerobic ceiling';
     } else if (type === 'Threshold') {
-      workoutName = `${APP_NAME} - Threshold`;
+      workoutName = `${APP_NAME} - ${dateLabel}: Threshold`;
       workoutDesc = 'Threshold intervals (Z4) to increase aerobic power';
     } else if (type === 'Tempo') {
-      workoutName = `${APP_NAME} - Tempo`;
+      workoutName = `${APP_NAME} - ${dateLabel}: Tempo`;
       workoutDesc = 'Tempo / sweet spot blocks (Z3) to build fatigue resistance';
     } else {
-      workoutName = `${APP_NAME} - Long Ride`;
+      workoutName = `${APP_NAME} - ${dateLabel}: Long Ride`;
       workoutDesc = 'Steady Z2 endurance ride — press Lap when done';
     }
 
@@ -266,9 +272,6 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
     } catch (err: any) {
       throw new Error(`Failed to upload ${type} workout: ${err.message}`);
     }
-
-    // Schedule on the workout's own plan date
-    const entryDate = entry.date || dateStr;
     try {
       logger.info(`[Sync] Scheduling ${type} (${uploaded.workoutName}) for ${entryDate}`);
       await client.scheduleWorkout({ workoutId: String(uploaded.workoutId) }, entryDate);
