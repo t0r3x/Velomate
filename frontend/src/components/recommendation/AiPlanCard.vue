@@ -7,7 +7,7 @@
         <button class="btn-icon-sm btn-icon-pause" title="Pause training — use for injury, illness or travel" :disabled="pausing" @click="handlePause">
           <i class="fa-solid" :class="pausing ? 'fa-spinner fa-spin' : 'fa-circle-pause'"></i>
         </button>
-<button class="btn-icon-sm" title="Refresh recommendation" :disabled="recStore.state === 'loading'" @click="handleRefresh">
+<button class="btn-icon-sm" title="Refresh recommendation" @click="handleRefresh">
           <i class="fa-solid fa-rotate"></i>
         </button>
       </div>
@@ -207,9 +207,11 @@ async function handleReschedule(fromDate: string) {
   const toDate = await pickDay(entry, plan)
   if (!toDate) return
 
-  const ok = await recStore.reschedule(fromDate, toDate)
-  if (ok) {
+  const result = await recStore.reschedule(fromDate, toDate)
+  if (result === 'ok') {
     show('success', 'Workout moved', 'Plan updated — AI recalculated the week.')
+  } else if (result === 'moved') {
+    show('warn', 'Workout moved', 'AI refresh temporarily unavailable — plan will update automatically.')
   } else {
     show('error', 'Move Failed', 'Could not move workout.')
   }
