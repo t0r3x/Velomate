@@ -78,18 +78,18 @@ export const useRecommendationStore = defineStore('recommendation', () => {
     }
   }
 
-  async function reschedule(fromDate: string, toDate: string): Promise<boolean> {
-    if (fromDate === toDate) return false
+  async function reschedule(fromDate: string, toDate: string): Promise<'ok' | 'moved' | 'failed'> {
+    if (fromDate === toDate) return 'failed'
     state.value = 'loading'
     try {
-      recommendation.value = await postReschedule(fromDate, toDate)
+      const result = await postReschedule(fromDate, toDate)
+      recommendation.value = result
       state.value = 'loaded'
-      return true
+      return result.regenFailed ? 'moved' : 'ok'
     } catch (err) {
       console.error('[Recommendation] reschedule failed:', err)
-      // Dates may have been swapped in DB even if AI regeneration failed — reload from DB
       await fetchCached()
-      return false
+      return 'failed'
     }
   }
 

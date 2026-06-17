@@ -607,9 +607,16 @@ app.post('/api/recommendation/reschedule', async (req: Request, res: Response) =
 
     // Re-evaluate with the updated plan so the AI adjusts the rest of the week
     const updated = getStoredRecommendation();
-    const result  = await generateRecommendation(updated?.weeklyPlan);
-    setSetting('gemini_last_generated', new Date().toISOString());
-    res.json(result);
+    try {
+      const result = await generateRecommendation(updated?.weeklyPlan);
+      setSetting('gemini_last_generated', new Date().toISOString());
+      res.json(result);
+    } catch (regenError: any) {
+      // Swap succeeded but AI regen failed — return the swapped plan so the UI
+      // reflects the move without falsely reporting the whole operation as failed.
+      logger.warn(`[Plan] Reschedule regen failed (swap already committed): ${regenError?.message}`);
+      res.json({ ...updated, regenFailed: true });
+    }
   } catch (error: any) {
     handleGeminiError(res, error, 'Reschedule error');
   }

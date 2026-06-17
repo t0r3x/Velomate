@@ -81,6 +81,7 @@ export interface Recommendation {
   loadAssessment: LoadAssessment
   generatedAt: string
   stale?: boolean
+  regenFailed?: boolean
 }
 
 // ── Activity types ────────────────────────────────────────────────────────────
