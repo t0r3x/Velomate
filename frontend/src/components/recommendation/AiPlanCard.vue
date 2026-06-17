@@ -112,6 +112,7 @@ import { useRecommendationStore } from '@/stores/recommendation.store'
 import { useToast }               from '@/composables/useToast'
 import { useConfirm }             from '@/composables/useConfirm'
 import { usePauseDialog }         from '@/composables/usePauseDialog'
+import { useMoveDayDialog }       from '@/composables/useMoveDayDialog'
 
 import type { SyncResult as SyncResultType } from '@/types'
 
@@ -126,6 +127,7 @@ const recStore  = useRecommendationStore()
 const { show }  = useToast()
 const { confirm } = useConfirm()
 const { promptForReason } = usePauseDialog()
+const { pickDay }         = useMoveDayDialog()
 
 const rec = computed(() => recStore.recommendation)
 
@@ -198,19 +200,18 @@ async function handleSkip() {
 }
 
 async function handleReschedule(fromDate: string) {
-  const confirmed = await confirm({
-    title:        'Move workout to today?',
-    message:      'This will reschedule the selected workout to today and ask AI to recalculate your week.',
-    confirmLabel: 'Move to today',
-    danger:       false,
-  })
-  if (!confirmed) return
+  const plan  = rec.value?.weeklyPlan ?? []
+  const entry = plan.find(e => e.date === fromDate)
+  if (!entry) return
 
-  const ok = await recStore.reschedule(fromDate)
+  const toDate = await pickDay(entry, plan)
+  if (!toDate) return
+
+  const ok = await recStore.reschedule(fromDate, toDate)
   if (ok) {
-    show('success', 'Workout moved to today', 'Plan updated — AI recalculated the week.')
+    show('success', 'Workout moved', 'Plan updated — AI recalculated the week.')
   } else {
-    show('error', 'Reschedule Failed', 'Could not move workout.')
+    show('error', 'Move Failed', 'Could not move workout.')
   }
 }
 

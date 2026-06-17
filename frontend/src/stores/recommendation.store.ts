@@ -78,8 +78,7 @@ export const useRecommendationStore = defineStore('recommendation', () => {
     }
   }
 
-  async function reschedule(fromDate: string): Promise<boolean> {
-    const toDate = isoDate()
+  async function reschedule(fromDate: string, toDate: string): Promise<boolean> {
     if (fromDate === toDate) return false
     state.value = 'loading'
     try {
