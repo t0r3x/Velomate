@@ -4,6 +4,7 @@
   <ToastContainer />
   <ConfirmDialog />
   <PauseDialog />
+  <MoveDayDialog />
   <router-view />
 </template>
 
@@ -11,4 +12,5 @@
 import ToastContainer from '@/components/ui/ToastContainer.vue'
 import ConfirmDialog  from '@/components/ui/ConfirmDialog.vue'
 import PauseDialog    from '@/components/ui/PauseDialog.vue'
+import MoveDayDialog  from '@/components/ui/MoveDayDialog.vue'
 </script>

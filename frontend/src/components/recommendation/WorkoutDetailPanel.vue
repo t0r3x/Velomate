@@ -48,7 +48,7 @@
       </button>
       <button v-if="canMove" class="btn btn-secondary btn-sm" @click="emit('reschedule', entry.date)">
         <i class="fa-solid fa-calendar-day"></i>
-        <span>Move to today</span>
+        <span>Move to day</span>
       </button>
     </div>
   </div>
@@ -86,7 +86,7 @@ const canSkip = computed(() =>
   props.entry.date === isoDate() && props.entry.status === 'planned'
 )
 const canMove = computed(() =>
-  props.entry.date > isoDate() && props.entry.status === 'planned'
+  props.entry.date >= isoDate() && props.entry.status === 'planned'
 )
 
 function fmtDur(sec: number): string {
