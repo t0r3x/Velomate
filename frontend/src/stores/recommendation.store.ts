@@ -65,16 +65,17 @@ export const useRecommendationStore = defineStore('recommendation', () => {
     }
   }
 
-  async function skipToday(): Promise<boolean> {
+  async function skipToday(): Promise<'ok' | 'skipped' | 'failed'> {
     state.value = 'loading'
     try {
-      recommendation.value = await postSkipToday()
+      const result = await postSkipToday()
+      recommendation.value = result
       state.value = 'loaded'
-      return true
+      return result.regenFailed ? 'skipped' : 'ok'
     } catch (err) {
       console.error('[Recommendation] skipToday failed:', err)
       await fetchCached()
-      return false
+      return 'failed'
     }
   }
 

@@ -574,9 +574,14 @@ app.post('/api/recommendation/skip-today', async (req: Request, res: Response) =
     logger.info(`[Gemini] Skip-today: marking ${today} as skipped (was: ${todayEntry?.type ?? 'unknown'} [${todayEntry?.status ?? 'unknown'}])`);
     updatePlanEntryStatus(today, 'skipped');
     const updated = getStoredRecommendation();
-    const result  = await generateRecommendation(updated?.weeklyPlan);
-    setSetting('gemini_last_generated', new Date().toISOString());
-    res.json(result);
+    try {
+      const result = await generateRecommendation(updated?.weeklyPlan);
+      setSetting('gemini_last_generated', new Date().toISOString());
+      res.json(result);
+    } catch (regenError: any) {
+      logger.warn(`[Plan] Skip-today regen failed (skip already committed): ${regenError?.message}`);
+      res.json({ ...updated, regenFailed: true });
+    }
   } catch (error: any) {
     handleGeminiError(res, error, 'Skip-today error');
   }

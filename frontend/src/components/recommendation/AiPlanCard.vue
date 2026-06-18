@@ -191,9 +191,11 @@ async function handleSkip() {
   })
   if (!confirmed) return
 
-  const ok = await recStore.skipToday()
-  if (ok) {
+  const result = await recStore.skipToday()
+  if (result === 'ok') {
     show('success', 'Workout skipped', 'Plan updated by AI.')
+  } else if (result === 'skipped') {
+    show('warn', 'Workout skipped', 'AI refresh temporarily unavailable — plan will update automatically.')
   } else {
     show('error', 'Skip Failed', 'Could not skip today.')
   }
