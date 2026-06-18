@@ -83,7 +83,7 @@
           <i class="fa-solid fa-circle-exclamation"></i>
           <p>{{ recStore.errorMessage || 'Failed to get recommendation.' }}</p>
           <button class="btn btn-secondary btn-sm" @click="recStore.fetchCached()">
-            <span>Retry</span><i class="fa-solid fa-rotate"></i>
+            <span>OK</span>
           </button>
         </div>
       </div>
