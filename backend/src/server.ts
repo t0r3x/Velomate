@@ -612,8 +612,16 @@ app.post('/api/recommendation/reschedule', async (req: Request, res: Response) =
 
     // Re-evaluate with the updated plan so the AI adjusts the rest of the week
     const updated = getStoredRecommendation();
+
+    // If today was one of the swapped dates, pin its new type so the AI cannot override it.
+    const today = localDate();
+    const pinnedTodayType = (fromDate === today || toDate === today)
+      ? updated?.weeklyPlan?.find((e: any) => e.date === today)?.type
+      : undefined;
+    if (pinnedTodayType) logger.info(`[Plan] Pinning today's type to "${pinnedTodayType}" after reschedule`);
+
     try {
-      const result = await generateRecommendation(updated?.weeklyPlan);
+      const result = await generateRecommendation(updated?.weeklyPlan, undefined, pinnedTodayType);
       setSetting('gemini_last_generated', new Date().toISOString());
       res.json(result);
     } catch (regenError: any) {
