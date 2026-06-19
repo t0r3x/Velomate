@@ -112,7 +112,7 @@ interface PauseContext {
   activitiesCount: number
 }
 
-const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, activityDays = 21): string => {
+const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, activityDays = 21, pinnedTodayType?: string): string => {
   const today     = localDate();
   const dayOfWeek = new Date().toLocaleDateString('en-GB', { weekday: 'long', timeZone: USER_TZ });
 
@@ -219,14 +219,25 @@ const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, ac
   let plannedBlock = '';
   if (previousPlan && previousPlan.length > 0) {
     const futurePlanned = previousPlan.filter(e => e.status === 'planned' && e.date > today);
-    if (futurePlanned.length > 0) {
-      const lines = futurePlanned.map(e => {
-        const dow = new Date(e.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short' });
-        return `- ${e.date} (${dow}): ${e.type}`;
-      });
+    const lines = futurePlanned.map(e => {
+      const dow = new Date(e.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short' });
+      return `- ${e.date} (${dow}): ${e.type}`;
+    });
+    if (pinnedTodayType) {
+      const todayDow = new Date(today + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short' });
+      lines.unshift(`- ${today} (${todayDow}): ${pinnedTodayType} ← RESCHEDULED BY USER — MANDATORY`);
+    }
+    if (lines.length > 0) {
       plannedBlock = `EXISTING SCHEDULED WORKOUTS (keep unless explicitly justified — see rules below):\n${lines.join('\n')}\n\n`;
     }
+  } else if (pinnedTodayType) {
+    const todayDow = new Date(today + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short' });
+    plannedBlock = `EXISTING SCHEDULED WORKOUTS (keep unless explicitly justified — see rules below):\n- ${today} (${todayDow}): ${pinnedTodayType} ← RESCHEDULED BY USER — MANDATORY\n\n`;
   }
+
+  const pinnedTodayBlock = pinnedTodayType
+    ? `CRITICAL — USER RESCHEDULED TODAY: The athlete explicitly moved a workout to today. Today (${today}) MUST be "${pinnedTodayType}". Output "${pinnedTodayType}" as today.type and weeklyPlan[0].type — this is a direct user instruction, not a suggestion.\n\n`
+    : '';
 
   // Support multiple preferred days (new plural key) with fallback to old singular key
   const rawDays = getSetting('preferred_long_ride_days') || getSetting('preferred_long_ride_day') || '';
@@ -259,7 +270,7 @@ TODAY: ${today} (${dayOfWeek})
 ATHLETE PREFERENCES:
 ${prefLine}${goalsBlock}
 
-${pauseBlock}${prevBlock}${plannedBlock}RECENT ACTIVITIES (last 21 days):
+${pauseBlock}${prevBlock}${pinnedTodayBlock}${plannedBlock}RECENT ACTIVITIES (last 21 days):
 ${JSON.stringify(recentActivities, null, 2)}
 
 Note: zonesMin shows minutes spent in each Garmin HR zone (z1=lowest, z5=highest intensity).
@@ -399,12 +410,12 @@ STRICT RULES:
 - durationSec MUST be a positive integer (minimum 20 for sprint intervals)
 - weeklyPlan MUST contain exactly 7 entries starting from TODAY (${today})
 - totalMinutes MUST equal Math.round(sum(durationSec) / 60)
-- COMPACT STRUCTURES: Sprint max 6 interval sets, Threshold max 3 sets, VO2Max max 4 sets. Step labels must be ≤ 4 words. reason fields: 1 short sentence only.`;
+- COMPACT STRUCTURES: Sprint max 6 interval sets, Threshold max 3 sets, VO2Max max 4 sets. Step labels must be ≤ 4 words. reason fields: 1 short sentence only.${pinnedTodayType ? `\n- PINNED TODAY: A "CRITICAL — USER RESCHEDULED TODAY" block is present above. You MUST output "${pinnedTodayType}" for today.type and weeklyPlan[0].type. No exceptions — not fatigue, not load assessment.` : ''}`;
 };
 
 // ── Main generation function ──────────────────────────────────────────────────
 
-export const generateRecommendation = async (previousPlan?: PlanEntry[], pauseContext?: PauseContext): Promise<any> => {
+export const generateRecommendation = async (previousPlan?: PlanEntry[], pauseContext?: PauseContext, pinnedTodayType?: string): Promise<any> => {
   const key = getGeminiKey();
   if (!key) throw new Error('GEMINI_KEY_NOT_CONFIGURED');
 
@@ -412,7 +423,7 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[], pauseCo
   const ACTIVITY_WINDOWS = [21, 14, 10];
 
   for (const activityDays of ACTIVITY_WINDOWS) {
-    const result = await _attemptGeneration(previousPlan, pauseContext, activityDays);
+    const result = await _attemptGeneration(previousPlan, pauseContext, activityDays, pinnedTodayType);
     if (result.truncated) {
       logger.warn(`[Gemini] Response truncated (MAX_TOKENS) with ${activityDays}-day window — retrying with fewer activities`);
       continue;
@@ -425,10 +436,11 @@ export const generateRecommendation = async (previousPlan?: PlanEntry[], pauseCo
 const _attemptGeneration = async (
   previousPlan: PlanEntry[] | undefined,
   pauseContext: PauseContext | undefined,
-  activityDays: number
+  activityDays: number,
+  pinnedTodayType?: string
 ): Promise<{ truncated: true } | { truncated: false; value: any }> => {
   const key = getGeminiKey()!;
-  const prompt = buildPrompt(previousPlan, pauseContext, activityDays);
+  const prompt = buildPrompt(previousPlan, pauseContext, activityDays, pinnedTodayType);
 
   // ── Log outgoing prompt ───────────────────────────────────────────────────────
   logger.info('\n' + '═'.repeat(72));
