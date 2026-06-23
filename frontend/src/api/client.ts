@@ -130,8 +130,11 @@ export const getRecommendation = () =>
 export const postRefreshRecommendation = () =>
   request<Recommendation>('/api/recommendation/refresh', { method: 'POST' })
 
-export const postSkipToday = () =>
-  request<Recommendation>('/api/recommendation/skip-today', { method: 'POST' })
+export const postSkipToday = (date?: string) =>
+  request<Recommendation>('/api/recommendation/skip-today', {
+    method: 'POST',
+    body: date ? JSON.stringify({ date }) : undefined
+  })
 
 export const postReschedule = (fromDate: string, toDate: string) =>
   request<Recommendation>('/api/recommendation/reschedule', {

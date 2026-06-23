@@ -23,7 +23,7 @@
           v-if="selectedEntry"
           :entry="selectedEntry"
           :priority="selectedEntry.date === todayStr ? todayPriority : undefined"
-          @skip-today="handleSkipToday"
+          @skip="handleSkip"
           @reschedule="handleReschedule"
         />
       </Transition>
@@ -40,8 +40,8 @@ import WorkoutDetailPanel from './WorkoutDetailPanel.vue'
 
 const props = defineProps<{ plan: PlanEntry[]; todayPriority?: string }>()
 const emit  = defineEmits<{
-  reschedule:  [date: string]
-  'skip-today': []
+  reschedule: [date: string]
+  skip:       [date: string]
 }>()
 
 const todayStr = isoDate()
@@ -95,8 +95,8 @@ function handleReschedule(date: string) {
   emit('reschedule', date)
 }
 
-function handleSkipToday() {
-  emit('skip-today')
+function handleSkip(date: string) {
+  emit('skip', date)
 }
 </script>
 

@@ -569,10 +569,11 @@ app.post('/api/recommendation/skip-today', async (req: Request, res: Response) =
     await syncActivitiesFromGarmin();
 
     const today = localDate();
+    const date = (req.body?.date && /^\d{4}-\d{2}-\d{2}$/.test(req.body.date)) ? req.body.date : today;
     const stored = getStoredRecommendation();
-    const todayEntry = stored?.weeklyPlan?.find((e: any) => e.date === today);
-    logger.info(`[Gemini] Skip-today: marking ${today} as skipped (was: ${todayEntry?.type ?? 'unknown'} [${todayEntry?.status ?? 'unknown'}])`);
-    updatePlanEntryStatus(today, 'skipped');
+    const entry = stored?.weeklyPlan?.find((e: any) => e.date === date);
+    logger.info(`[Gemini] Skip: marking ${date} as skipped (was: ${entry?.type ?? 'unknown'} [${entry?.status ?? 'unknown'}])`);
+    updatePlanEntryStatus(date, 'skipped');
     const updated = getStoredRecommendation();
     try {
       const result = await generateRecommendation(updated?.weeklyPlan);

@@ -68,7 +68,7 @@
         <template v-if="rec">
           <!-- Week grid + load assessment -->
           <div class="ai-week-section">
-            <WeekGrid :plan="rec.weeklyPlan" :todayPriority="rec.priority" @reschedule="handleReschedule" @skip-today="handleSkip" />
+            <WeekGrid :plan="rec.weeklyPlan" :todayPriority="rec.priority" @reschedule="handleReschedule" @skip="handleSkip" />
             <LoadAssessment v-if="rec.loadAssessment" :assessment="rec.loadAssessment" :generatedAt="rec.generatedAt" />
           </div>
 
@@ -99,7 +99,7 @@
         <span>{{ syncing ? 'Syncing Workouts…' : 'Sync &amp; Schedule Workouts' }}</span>
         <i class="fa-solid" :class="syncing ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'"></i>
       </button>
-
+w
       <!-- Sync result -->
       <SyncResult :result="syncResult" />
     </div>
@@ -182,16 +182,16 @@ async function handleResume() {
   }
 }
 
-async function handleSkip() {
+async function handleSkip(date: string) {
   const confirmed = await confirm({
-    title:        'Skip today\'s workout?',
-    message:      'This will mark today as skipped and ask AI to recalculate the rest of your week.',
+    title:        'Skip this workout?',
+    message:      'This will mark the day as skipped and ask AI to recalculate the rest of your week.',
     confirmLabel: 'Skip workout',
     danger:       true,
   })
   if (!confirmed) return
 
-  const result = await recStore.skipToday()
+  const result = await recStore.skipToday(date)
   if (result === 'ok') {
     show('success', 'Workout skipped', 'Plan updated by AI.')
   } else if (result === 'skipped') {
