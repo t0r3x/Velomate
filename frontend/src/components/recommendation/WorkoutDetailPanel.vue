@@ -42,13 +42,13 @@
 
     <!-- Action buttons -->
     <div v-if="canSkip || canMove" class="wdp-actions">
-      <button v-if="canSkip" class="btn btn-secondary btn-sm" @click="emit('skip-today')">
+      <button v-if="canSkip" class="btn btn-secondary btn-sm" @click="emit('skip', entry.date)">
         <i class="fa-solid fa-forward-step"></i>
-        <span>Skip today</span>
+        <span>Skip</span>
       </button>
       <button v-if="canMove" class="btn btn-secondary btn-sm" @click="emit('reschedule', entry.date)">
         <i class="fa-solid fa-calendar-day"></i>
-        <span>Move to day</span>
+        <span>Move</span>
       </button>
     </div>
   </div>
@@ -61,7 +61,7 @@ import { workoutTypeIcon as iconMap, workoutTypeLabel as labelMap, DAY_NAMES, is
 
 const props = defineProps<{ entry: PlanEntry; priority?: string }>()
 const emit  = defineEmits<{
-  'skip-today': []
+  skip: [date: string]
   reschedule: [date: string]
 }>()
 
@@ -83,7 +83,7 @@ const durationText = computed(() =>
 )
 
 const canSkip = computed(() =>
-  props.entry.date === isoDate() && props.entry.status === 'planned'
+  props.entry.status === 'planned'
 )
 const canMove = computed(() =>
   props.entry.date >= isoDate() && props.entry.status === 'planned'
