@@ -99,7 +99,6 @@
         <span>{{ syncing ? 'Syncing Workouts…' : 'Sync &amp; Schedule Workouts' }}</span>
         <i class="fa-solid" :class="syncing ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'"></i>
       </button>
-w
       <!-- Sync result -->
       <SyncResult :result="syncResult" />
     </div>
