@@ -96,6 +96,25 @@
             ></textarea>
             <p class="helper-text" style="margin-top: 0.35rem">Share your goals, events, or constraints. The AI uses this as secondary input alongside your training data.</p>
 
+            <!-- ── Auto-pause ── -->
+            <div class="tp-section-label tp-section-divider">
+              <i class="fa-solid fa-clock"></i>
+              Auto-pause
+            </div>
+            <div class="hr-stats-row" style="align-items:center;gap:0.75rem">
+              <label for="ps-inactivity-days" class="helper-text" style="margin:0;flex:1">Pause training after this many consecutive days without a recorded workout:</label>
+              <input
+                type="number"
+                id="ps-inactivity-days"
+                v-model.number="inactivityPauseDays"
+                min="1"
+                max="365"
+                step="1"
+                class="stat-value-input"
+                style="width:72px;text-align:center"
+              >
+            </div>
+
           </template>
         </div>
 
@@ -144,8 +163,9 @@ const { show }       = useToast()
 // Form state
 const maxHr        = ref(profileStore.profile?.maxHr ?? 190)
 const lthr         = ref(profileStore.profile?.lthr  ?? 165)
-const selectedDays = ref<string[]>([...settingsStore.preferredLongRideDays])
-const goals        = ref('')
+const selectedDays        = ref<string[]>([...settingsStore.preferredLongRideDays])
+const goals               = ref('')
+const inactivityPauseDays = ref(settingsStore.inactivityPauseDays)
 
 // Suggestion state
 type LoadState = 'loading' | 'form'
@@ -220,6 +240,7 @@ async function handleConfirm() {
     const [ok] = await Promise.all([
       profileStore.save(profile),
       settingsStore.savePreferredDays(selectedDays.value),
+      settingsStore.saveInactivityPauseDays(inactivityPauseDays.value),
       postTrainingGoals(goals.value).catch(() => {})
     ])
     if (!ok) {
