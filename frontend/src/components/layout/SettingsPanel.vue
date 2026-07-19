@@ -138,25 +138,36 @@
             </p>
           </div>
 
-          <div class="input-group" style="margin-top:0.85rem">
-            <label for="panel-inactivity-days">Auto-pause after inactivity (days)</label>
-            <div class="input-wrapper">
-              <i class="fa-solid fa-clock input-icon"></i>
-              <input
-                type="number"
-                id="panel-inactivity-days"
-                v-model.number="inactivityPauseDays"
-                min="1"
-                max="365"
-                step="1"
-                style="width:100%"
-              >
-            </div>
-            <p class="helper-text" style="margin-top:0.35rem">
-              Training is automatically paused when no workout is recorded for this many consecutive days. Default: 14.
-            </p>
-          </div>
         </form>
+      </div>
+
+      <div class="panel-divider"></div>
+
+      <!-- ── Training Section ── -->
+      <div class="panel-section">
+        <div class="panel-section-label">
+          <i class="fa-solid fa-person-biking"></i>
+          <span>Training</span>
+        </div>
+
+        <div class="input-group">
+          <label for="panel-inactivity-days">Auto-pause after inactivity (days)</label>
+          <div class="input-wrapper">
+            <i class="fa-solid fa-clock input-icon"></i>
+            <input
+              type="number"
+              id="panel-inactivity-days"
+              v-model.number="inactivityPauseDays"
+              min="1"
+              max="365"
+              step="1"
+              style="width:100%"
+            >
+          </div>
+          <p class="helper-text" style="margin-top:0.35rem">
+            Training is automatically paused when no workout is recorded for this many consecutive days. Default: 14.
+          </p>
+        </div>
       </div>
 
     </div><!-- /settings-panel-body -->
