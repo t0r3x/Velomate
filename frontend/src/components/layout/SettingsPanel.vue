@@ -141,34 +141,6 @@
         </form>
       </div>
 
-      <div class="panel-divider"></div>
-
-      <!-- ── Training Section ── -->
-      <div class="panel-section">
-        <div class="panel-section-label">
-          <i class="fa-solid fa-person-biking"></i>
-          <span>Training</span>
-        </div>
-
-        <div class="input-group">
-          <label for="panel-inactivity-days">Auto-pause after inactivity (days)</label>
-          <div class="input-wrapper">
-            <i class="fa-solid fa-clock input-icon"></i>
-            <input
-              type="number"
-              id="panel-inactivity-days"
-              v-model.number="inactivityPauseDays"
-              min="1"
-              max="365"
-              step="1"
-              style="width:100%"
-            >
-          </div>
-          <p class="helper-text" style="margin-top:0.35rem">
-            Training is automatically paused when no workout is recorded for this many consecutive days. Default: 14.
-          </p>
-        </div>
-      </div>
 
     </div><!-- /settings-panel-body -->
 
@@ -203,18 +175,16 @@ const mfaCode  = ref('')
 const loginBusy = ref(false)
 
 // AI settings form state
-const apiKey              = ref('')
-const selectedModel       = ref('gemini-3.5-flash')
-const inactivityPauseDays = ref(14)
-const saveBusy            = ref(false)
+const apiKey        = ref('')
+const selectedModel = ref('gemini-3.5-flash')
+const saveBusy      = ref(false)
 
 // Sync form state from store when panel opens
 watch(() => props.open, (isOpen) => {
   if (isOpen) {
-    selectedModel.value       = settingsStore.geminiModel
-    inactivityPauseDays.value = settingsStore.inactivityPauseDays
-    apiKey.value              = ''
-    mfaCode.value             = ''
+    selectedModel.value = settingsStore.geminiModel
+    apiKey.value        = ''
+    mfaCode.value       = ''
   }
 })
 
@@ -265,7 +235,7 @@ async function handleSave() {
   saveBusy.value = true
   try {
     const onSetup = router.currentRoute.value.name === 'setup'
-    const success = await settingsStore.saveAll(apiKey.value, selectedModel.value, inactivityPauseDays.value)
+    const success = await settingsStore.saveAll(apiKey.value, selectedModel.value)
     if (!success) {
       show('error', 'Save Failed', 'Could not save settings.')
       return

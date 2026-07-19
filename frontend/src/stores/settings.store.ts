@@ -51,12 +51,9 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  async function saveAll(apiKey: string, model: string, inactivityDays: number): Promise<boolean> {
+  async function saveAll(apiKey: string, model: string): Promise<boolean> {
     try {
-      await Promise.all([
-        postGeminiModel(model),
-        postInactivityPauseDays(inactivityDays),
-      ])
+      await postGeminiModel(model)
       if (apiKey.trim()) {
         await postGeminiKey(apiKey.trim())
       }
@@ -64,6 +61,17 @@ export const useSettingsStore = defineStore('settings', () => {
       return true
     } catch (err) {
       console.error('[Settings] saveAll failed:', err)
+      return false
+    }
+  }
+
+  async function saveInactivityPauseDays(days: number): Promise<boolean> {
+    try {
+      await postInactivityPauseDays(days)
+      inactivityPauseDays.value = days
+      return true
+    } catch (err) {
+      console.error('[Settings] saveInactivityPauseDays failed:', err)
       return false
     }
   }
@@ -113,6 +121,7 @@ export const useSettingsStore = defineStore('settings', () => {
     saveAll,
     disconnectGemini,
     savePreferredDays,
+    saveInactivityPauseDays,
     markSetupComplete
   }
 })
