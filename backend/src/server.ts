@@ -367,12 +367,15 @@ app.get('/api/settings/gemini-key', (_req: Request, res: Response) => {
     ? rawDays.split(',').map((d: string) => d.trim()).filter(Boolean)
     : [];
 
+  const inactivityPauseDays = parseInt(getSetting('inactivity_pause_days') || '14', 10) || 14;
+
   res.json({
     hasKey:               !!key,
     maskedKey:            key ? maskKey(key) : null,
     setupComplete,
     preferredLongRideDays,
-    geminiModel
+    geminiModel,
+    inactivityPauseDays
   });
 });
 
@@ -389,6 +392,17 @@ app.post('/api/settings/preferred-long-ride-days', (req: Request, res: Response)
   const value = (days as string[]).join(',');
   setSetting('preferred_long_ride_days', value);
   logger.info(`[Settings] Preferred long ride days set to: ${value || '(none)'}`);
+  res.json({ saved: true });
+});
+
+app.post('/api/settings/inactivity-pause-days', (req: Request, res: Response) => {
+  const { days } = req.body;
+  const parsed = parseInt(days, 10);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 365) {
+    return res.status(400).json({ error: 'days must be an integer between 1 and 365.' });
+  }
+  setSetting('inactivity_pause_days', String(parsed));
+  logger.info(`[Settings] Inactivity pause threshold set to: ${parsed} days`);
   res.json({ saved: true });
 });
 
@@ -752,18 +766,19 @@ const runGeminiAutoCheck = async () => {
       }
     }
 
-    // Auto-pause after 14 consecutive days without any completed workout.
+    // Auto-pause after N consecutive days without any completed workout (default 14, user-configurable).
     // Reference date: last completed workout, or if never, the plan creation date.
-    // This naturally handles "plan not yet started" — a brand-new plan won't reach 14 days yet.
+    // This naturally handles "plan not yet started" — a brand-new plan won't reach N days yet.
+    const inactivityThreshold = parseInt(getSetting('inactivity_pause_days') || '14', 10) || 14;
     const lastActivity = getSetting('last_plan_activity_date');
     const refDate      = lastActivity ?? getSetting('gemini_last_generated');
     if (refDate && refDate !== '0') {
       const daysSince = Math.floor((Date.now() - new Date(refDate).getTime()) / 86_400_000);
-      if (daysSince >= 14) {
+      if (daysSince >= inactivityThreshold) {
         setSetting('training_paused', '1');
         setSetting('paused_since', new Date().toISOString());
-        setSetting('pause_reason', 'Automatically paused after 14 days without any training activity.');
-        logger.info(`[Gemini] Auto-check: auto-pausing — ${daysSince} days without activity (ref: ${refDate})`);
+        setSetting('pause_reason', `Automatically paused after ${inactivityThreshold} days without any training activity.`);
+        logger.info(`[Gemini] Auto-check: auto-pausing — ${daysSince} days without activity (threshold: ${inactivityThreshold}, ref: ${refDate})`);
         return;
       }
     }
