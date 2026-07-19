@@ -6,6 +6,7 @@ import {
   deleteGeminiKey,
   postGeminiModel,
   postPreferredDays,
+  postInactivityPauseDays,
   postSetupComplete
 } from '@/api/client'
 
@@ -16,6 +17,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const maskedKey           = ref<string | null>(null)
   const preferredLongRideDays = ref<string[]>([])
   const geminiModel         = ref('gemini-3.5-flash')
+  const inactivityPauseDays = ref(14)
 
   async function init() {
     if (loaded.value) return
@@ -26,6 +28,7 @@ export const useSettingsStore = defineStore('settings', () => {
       maskedKey.value             = data.hasKey ? data.maskedKey : null
       preferredLongRideDays.value = Array.isArray(data.preferredLongRideDays) ? data.preferredLongRideDays : []
       geminiModel.value           = data.geminiModel || 'gemini-3.5-flash'
+      inactivityPauseDays.value   = data.inactivityPauseDays ?? 14
     } catch (err) {
       console.warn('[Settings] init failed (backend offline?):', err)
     } finally {
@@ -42,14 +45,18 @@ export const useSettingsStore = defineStore('settings', () => {
       maskedKey.value             = data.hasKey ? data.maskedKey : null
       preferredLongRideDays.value = Array.isArray(data.preferredLongRideDays) ? data.preferredLongRideDays : []
       geminiModel.value           = data.geminiModel || 'gemini-3.5-flash'
+      inactivityPauseDays.value   = data.inactivityPauseDays ?? 14
     } catch (err) {
       console.warn('[Settings] reload failed:', err)
     }
   }
 
-  async function saveAll(apiKey: string, model: string): Promise<boolean> {
+  async function saveAll(apiKey: string, model: string, inactivityDays: number): Promise<boolean> {
     try {
-      await postGeminiModel(model)
+      await Promise.all([
+        postGeminiModel(model),
+        postInactivityPauseDays(inactivityDays),
+      ])
       if (apiKey.trim()) {
         await postGeminiKey(apiKey.trim())
       }
@@ -100,6 +107,7 @@ export const useSettingsStore = defineStore('settings', () => {
     maskedKey,
     preferredLongRideDays,
     geminiModel,
+    inactivityPauseDays,
     init,
     reload,
     saveAll,

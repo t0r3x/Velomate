@@ -110,6 +110,12 @@ export const postPreferredDays = (days: string[]) =>
     body: JSON.stringify({ days })
   })
 
+export const postInactivityPauseDays = (days: number) =>
+  request<void>('/api/settings/inactivity-pause-days', {
+    method: 'POST',
+    body: JSON.stringify({ days })
+  })
+
 export const postSetupComplete = () =>
   request<void>('/api/settings/setup-complete', { method: 'POST' })
 
