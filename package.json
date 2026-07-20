@@ -1,16 +1,27 @@
 {
   "name": "velomate-root",
+  "productName": "Velomate",
   "version": "1.0.0",
   "description": "Velomate — AI cycling training dashboard",
+  "main": "electron-main.js",
   "scripts": {
     "install-all": "npm install --prefix backend && npm install --prefix frontend",
     "dev": "concurrently --names \"backend,frontend\" --prefix-colors \"cyan,magenta\" --kill-others-on-fail \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
     "dev:backend": "npm run dev --prefix backend",
     "dev:frontend": "npm run dev --prefix frontend",
     "build": "npm run build --prefix frontend && npm run build --prefix backend",
-    "start": "npm run start --prefix backend"
+    "start": "npm run start --prefix backend",
+    "electron:dev": "npm run build --prefix backend && concurrently --names \"frontend,electron\" --prefix-colors \"magenta,green\" --kill-others \"npm run dev --prefix frontend\" \"npm run electron:launch-dev\"",
+    "electron:launch-dev": "wait-on tcp:5173 && cross-env ELECTRON_DEV_URL=http://localhost:5173 electron .",
+    "electron:rebuild": "electron-rebuild -f -w better-sqlite3 -m backend",
+    "electron:build": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "@electron/rebuild": "^3.7.2",
+    "concurrently": "^9.2.1",
+    "cross-env": "^7.0.3",
+    "electron": "^32.0.0",
+    "electron-builder": "^25.0.0",
+    "wait-on": "^8.0.1"
   }
 }

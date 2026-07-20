@@ -1,0 +1,39 @@
+appId: com.velomate.app
+productName: Velomate
+
+directories:
+  output: dist-electron
+
+# Files to include in the package.
+# String patterns respect electron-builder default exclusions (blocks node_modules).
+# Object { from/to } syntax forces inclusion regardless.
+files:
+  - electron-main.js
+  - electron/**
+  - backend/dist/**
+  - frontend/dist/**
+  - from: backend/node_modules
+    to: backend/node_modules
+
+# better-sqlite3 native .node binary cannot live inside an asar archive
+asarUnpack:
+  - backend/node_modules/better-sqlite3/**
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  sign: false
+  # icon: build/icon.ico   # add a 256x256 .ico and uncomment once available
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  category: public.app-category.health-fitness
+  hardenedRuntime: false
+  # icon: build/icon.icns  # add a 1024x1024 .icns and uncomment once available
