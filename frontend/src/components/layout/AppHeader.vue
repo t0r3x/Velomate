@@ -1,14 +1,5 @@
 <template>
   <header class="main-header">
-    <div class="logo-section">
-      <img v-if="!active" class="logo-header" :src="veloImg" alt="" />
-      <img v-else class="logo-header" :src="mbcImg" alt="" />
-      <div class="logo-text">
-        <h1>Velo<span>mate</span></h1>
-        <p class="logo-tagline">The adaptive AI cycling coach for Garmin Connect</p>
-      </div>
-    </div>
-
     <div class="header-menu-wrapper" ref="wrapperRef">
       <button class="garmin-status-btn" @click="toggleDropdown">
         <StatusDot :state="dotState" />
@@ -38,9 +29,6 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuthStore }    from '@/stores/auth.store'
 import { useProfileStore } from '@/stores/profile.store'
 import StatusDot           from '@/components/ui/StatusDot.vue'
-import { useShablagoo }    from '@/composables/useShablagoo'
-import veloImg            from '@/assets/velomate.png'
-import mbcImg            from '@/assets/mbc.png'
 
 const emit = defineEmits<{ 'open-settings': []; 'open-profile': [] }>()
 
@@ -79,7 +67,4 @@ function onClickOutside(e: MouseEvent) {
 
 onMounted(() => document.addEventListener('mousedown', onClickOutside))
 onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
-
-// Shablagoo easter egg
-const { active } = useShablagoo()
 </script>

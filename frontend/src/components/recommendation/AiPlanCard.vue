@@ -12,7 +12,7 @@
         </button>
       </div>
     </div>
-    <div class="card-body">
+    <div class="card-body scroll-panel">
 
       <!-- State: not-configured -->
       <div v-show="recStore.state === 'not-configured'" class="ai-rec-state">
