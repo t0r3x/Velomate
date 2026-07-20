@@ -2,8 +2,8 @@
 
 :root {
   --bg-color: #080b14;
-  --panel-bg: rgba(14, 18, 32, 0.55);
-  --panel-border: rgba(255, 255, 255, 0.07);
+  --panel-bg: #10141f;
+  --panel-border: rgba(255, 255, 255, 0.09);
 
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
@@ -15,10 +15,6 @@
   --primary-hover: #2563eb;
   --primary-glow: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
 
-  /* Derived variables that use --primary-rgb */
-  --panel-hover-border: rgba(var(--primary-rgb), 0.3);
-  --shadow-glow: 0 0 20px rgba(var(--primary-rgb), 0.25);
-
   --secondary-color: #1e293b;
   --secondary-hover: #334155;
 
@@ -28,9 +24,6 @@
   --z3-color: #06b6d4; /* Cyan/Tempo */
   --z4-color: #f59e0b; /* Orange/Threshold */
   --z5-color: #ef4444; /* Red/Anaerobic */
-
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.15);
-  --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.3);
 
   --font-main: 'Outfit', sans-serif;
   --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -71,32 +64,6 @@ body.is-electron .dashboard-layout {
   min-height: 0;
 }
 
-/* Background Glow Effects — fixed so they never add scroll height */
-.bg-glow-1 {
-  position: fixed;
-  top: -10%;
-  left: -10%;
-  width: 50%;
-  height: 50%;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(var(--primary-rgb), 0.10) 0%, transparent 70%);
-  filter: blur(80px);
-  z-index: -1;
-  pointer-events: none;
-}
-
-.bg-glow-2 {
-  position: fixed;
-  bottom: -10%;
-  right: -10%;
-  width: 50%;
-  height: 50%;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(234, 88, 12, 0.08) 0%, transparent 70%);
-  filter: blur(80px);
-  z-index: -1;
-  pointer-events: none;
-}
 
 /* Scrollbar Customization */
 ::-webkit-scrollbar {
@@ -168,6 +135,15 @@ body.is-electron .dashboard-layout {
 }
 .header-chip-hr-icon { color: var(--z5-color); font-size: 0.95rem; }
 
+.header-chip-icon {
+  padding: 0.4rem;
+  width: 30px;
+  height: 30px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.header-chip-icon:hover { color: var(--text-primary); }
+
 .status-dot {
   width: 8px;
   height: 8px;
@@ -178,11 +154,9 @@ body.is-electron .dashboard-layout {
 .status-dot.pulsing { animation: pulse-dot 1.5s infinite; }
 .status-dot.connected {
   background-color: var(--z2-color);
-  box-shadow: 0 0 8px var(--z2-color);
 }
 .status-dot.disconnected {
   background-color: var(--z4-color);
-  box-shadow: 0 0 8px var(--z4-color);
 }
 @keyframes pulse-dot {
   0%   { transform: scale(0.95); opacity: 0.5; }
@@ -512,17 +486,8 @@ body.is-electron .dashboard-layout {
 /* Glassmorphism Cards */
 .glass-panel {
   background: var(--panel-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--panel-border);
-  border-radius: 1rem;
-  box-shadow: var(--shadow-md);
-  transition: border-color var(--transition-normal), box-shadow var(--transition-normal);
-}
-
-.glass-panel:hover {
-  border-color: var(--panel-hover-border);
-  box-shadow: 0 12px 40px rgba(var(--primary-rgb), 0.08);
+  border-radius: 0.5rem;
 }
 
 .dashboard-card {
@@ -647,7 +612,6 @@ body.is-electron .dashboard-layout {
 .input-wrapper input:focus {
   outline: none;
   border-color: var(--primary-color);
-  box-shadow: 0 0 8px rgba(var(--primary-rgb), 0.25);
 }
 
 .input-icon {
@@ -712,20 +676,6 @@ body.is-electron .dashboard-layout {
   padding: 0.5rem 1rem;
   font-size: 0.85rem;
   border-radius: 0.4rem;
-}
-
-.btn-glow:not(:disabled) {
-  animation: glow-pulse 3s infinite alternate;
-}
-
-.btn-glow:not(:disabled):hover {
-  animation-play-state: paused;
-  box-shadow: 0 0 18px rgba(var(--primary-rgb), 0.5);
-}
-
-@keyframes glow-pulse {
-  0% { box-shadow: 0 0 8px rgba(var(--primary-rgb), 0.25); }
-  100% { box-shadow: 0 0 22px rgba(var(--primary-rgb), 0.55); }
 }
 
 /* Success Indicator */
@@ -1198,17 +1148,6 @@ body.is-electron .dashboard-layout {
   line-height: 1.4;
 }
 
-/* Footer styling */
-.main-footer {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  margin-top: 2rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid var(--panel-border);
-  flex-shrink: 0;
-}
-
 .device-status-box {
   display: flex;
   align-items: center;
@@ -1245,11 +1184,6 @@ body.is-electron .dashboard-layout {
 .device-discovered-name {
   font-size: 0.75rem;
   color: var(--text-secondary);
-}
-
-.copyright {
-  font-size: 0.75rem;
-  color: var(--text-muted);
 }
 
 .hidden {
@@ -2610,7 +2544,6 @@ body:has(#shablagoo-toggle:checked) .bg-glow-2 {
 .input-wrapper--select select:focus {
   outline: none;
   border-color: var(--primary-color);
-  box-shadow: 0 0 8px rgba(var(--primary-rgb), 0.25);
 }
 .input-wrapper--select select option {
   background: #1e293b;

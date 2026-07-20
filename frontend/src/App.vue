@@ -1,7 +1,5 @@
 <template>
   <TitleBar />
-  <div class="bg-glow-1"></div>
-  <div class="bg-glow-2"></div>
   <ToastContainer />
   <ConfirmDialog />
   <PauseDialog />

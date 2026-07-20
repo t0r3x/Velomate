@@ -9,16 +9,25 @@
       <i class="fa-solid fa-heart-pulse header-chip-hr-icon"></i>
       <span>{{ profileStore.hrLabel }}</span>
     </button>
+
+    <button class="header-chip header-chip-icon" title="About Velomate" @click="aboutOpen = true">
+      <i class="fa-solid fa-circle-info"></i>
+    </button>
   </header>
+
+  <AboutDialog :open="aboutOpen" @close="aboutOpen = false" />
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useAuthStore }    from '@/stores/auth.store'
 import { useProfileStore } from '@/stores/profile.store'
 import StatusDot           from '@/components/ui/StatusDot.vue'
+import AboutDialog         from '@/components/layout/AboutDialog.vue'
 
 const emit = defineEmits<{ 'open-settings': []; 'open-profile': [] }>()
+
+const aboutOpen = ref(false)
 
 const authStore    = useAuthStore()
 const profileStore = useProfileStore()

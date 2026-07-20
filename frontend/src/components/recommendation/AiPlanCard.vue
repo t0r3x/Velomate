@@ -94,7 +94,7 @@
     <!-- Pinned action bar — always visible, never scrolled out of view -->
     <div class="card-pinned-footer">
       <button
-        class="btn btn-primary btn-glow"
+        class="btn btn-primary"
         :disabled="!recStore.canSync || syncing"
         @click="handleSync"
       >
