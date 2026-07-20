@@ -20,15 +20,9 @@ export const maskKey = (key: string): string =>
 
 // ── Zone helpers ──────────────────────────────────────────────────────────────
 
-/** Parse timeInZones from a stored activity row (stored as JSON string or already an array). */
-const parseZones = (raw: any): number[] | null => {
-  if (!raw) return null;
-  if (Array.isArray(raw)) return raw.length >= 5 ? raw : null;
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length >= 5 ? parsed : null;
-  } catch { return null; }
-};
+/** Guard against short/malformed zone arrays from a stored activity row. */
+const parseZones = (raw: any): number[] | null =>
+  Array.isArray(raw) && raw.length >= 5 ? raw : null;
 
 /** Format zone seconds array as a readable string for the prompt, e.g. "z1=8m z2=32m z3=6m z4=14m z5=3m" */
 const fmtZones = (zones: number[]): string =>
