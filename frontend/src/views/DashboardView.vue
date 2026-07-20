@@ -10,8 +10,6 @@
         <AiPlanCard @open-settings="panelOpen = true" />
       </div>
     </main>
-
-    <AppFooter />
   </div>
 
   <SettingsPanel v-model:open="panelOpen" />
@@ -34,7 +32,6 @@ import { useRecommendationStore } from '@/stores/recommendation.store'
 import { useAuthStore }          from '@/stores/auth.store'
 
 import AppHeader      from '@/components/layout/AppHeader.vue'
-import AppFooter      from '@/components/layout/AppFooter.vue'
 import SettingsPanel  from '@/components/layout/SettingsPanel.vue'
 import ActivitiesCard from '@/components/activities/ActivitiesCard.vue'
 import AiPlanCard     from '@/components/recommendation/AiPlanCard.vue'

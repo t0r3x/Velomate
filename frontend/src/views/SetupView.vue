@@ -23,7 +23,7 @@
         </li>
       </ul>
 
-      <button class="btn btn-primary btn-glow setup-configure-btn" @click="panelOpen = true">
+      <button class="btn btn-primary setup-configure-btn" @click="panelOpen = true">
         <span>Configure</span>
         <i class="fa-solid fa-sliders"></i>
       </button>
