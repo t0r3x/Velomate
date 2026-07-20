@@ -20,6 +20,21 @@ const db = new Database(dbFilePath);
 // WAL mode — better concurrent read performance
 db.pragma('journal_mode = WAL');
 
+// ── Schema migration: drop tables carrying the old JSON-blob shape ────────────
+// Zones (profile/analysis) and per-activity zone seconds are fixed-shape data
+// (5 zones × min/max, 5 zones × seconds) — normalized into real columns below
+// instead of TEXT-encoded JSON. `devices` was dead (no reads/writes anywhere,
+// no route) and is dropped outright. Old data is disposable, so a one-time
+// DROP + recreate is simpler than an in-place ALTER migration.
+const hasColumn = (table: string, column: string): boolean => {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return cols.some(c => c.name === column);
+};
+if (hasColumn('activities', 'timeInZones')) db.exec('DROP TABLE activities');
+if (hasColumn('analysis', 'suggestedZones')) db.exec('DROP TABLE analysis');
+if (hasColumn('profile', 'zones')) db.exec('DROP TABLE profile');
+db.exec('DROP TABLE IF EXISTS devices');
+
 // ── Schema ────────────────────────────────────────────────────────────────────
 db.exec(`
   CREATE TABLE IF NOT EXISTS activities (
@@ -33,6 +48,13 @@ db.exec(`
     maxHr         INTEGER DEFAULT 0,
     averagePower  INTEGER DEFAULT 0,
     maxPower      INTEGER DEFAULT 0,
+    z1Sec         INTEGER DEFAULT NULL,
+    z2Sec         INTEGER DEFAULT NULL,
+    z3Sec         INTEGER DEFAULT NULL,
+    z4Sec         INTEGER DEFAULT NULL,
+    z5Sec         INTEGER DEFAULT NULL,
+    perceivedExertion     INTEGER DEFAULT NULL,
+    feelingAfterExercise  INTEGER DEFAULT NULL,
     fetchedAt     TEXT    DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -43,7 +65,11 @@ db.exec(`
     estimatedMaxHr            INTEGER,
     estimatedLthr             INTEGER,
     averageRideDurationMinutes INTEGER,
-    suggestedZones            TEXT,
+    z1min INTEGER, z1max INTEGER,
+    z2min INTEGER, z2max INTEGER,
+    z3min INTEGER, z3max INTEGER,
+    z4min INTEGER, z4max INTEGER,
+    z5min INTEGER, z5max INTEGER,
     updatedAt                 TEXT    DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -51,17 +77,13 @@ db.exec(`
     id               INTEGER PRIMARY KEY CHECK (id = 1),
     maxHr            INTEGER,
     lthr             INTEGER,
-    zones            TEXT,
+    z1min INTEGER, z1max INTEGER,
+    z2min INTEGER, z2max INTEGER,
+    z3min INTEGER, z3max INTEGER,
+    z4min INTEGER, z4max INTEGER,
+    z5min INTEGER, z5max INTEGER,
     hasCustomOverrides INTEGER DEFAULT 0,
     lastUpdated      TEXT    DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS devices (
-    deviceId    TEXT PRIMARY KEY,
-    displayName TEXT,
-    activityTypes TEXT,
-    rawData     TEXT,
-    fetchedAt   TEXT DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS settings (
@@ -81,16 +103,6 @@ db.exec(`
   );
 `);
 
-// ── Migrations (safe — ignore if column already exists) ───────────────────────
-const _migrations: Array<[string, string]> = [
-  [`ALTER TABLE activities ADD COLUMN timeInZones TEXT DEFAULT NULL`,         '[DB] Migration: added timeInZones column'],
-  [`ALTER TABLE activities ADD COLUMN perceivedExertion INTEGER DEFAULT NULL`, '[DB] Migration: added perceivedExertion column'],
-  [`ALTER TABLE activities ADD COLUMN feelingAfterExercise INTEGER DEFAULT NULL`, '[DB] Migration: added feelingAfterExercise column'],
-];
-for (const [sql, msg] of _migrations) {
-  try { db.exec(sql); logger.info(msg); } catch { /* column already exists */ }
-}
-
 // ── Activities ────────────────────────────────────────────────────────────────
 // UPSERT: on conflict, update all fields EXCEPT perceivedExertion/feelingAfterExercise —
 // those are fetched via the detail endpoint separately and must not be overwritten by the
@@ -98,9 +110,10 @@ for (const [sql, msg] of _migrations) {
 const stmtUpsertActivity = db.prepare(`
   INSERT INTO activities
     (activityId, name, type, startTime, distanceKm, durationMinutes,
-     averageHr, maxHr, averagePower, maxPower, timeInZones,
+     averageHr, maxHr, averagePower, maxPower,
+     z1Sec, z2Sec, z3Sec, z4Sec, z5Sec,
      perceivedExertion, feelingAfterExercise, fetchedAt)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
   ON CONFLICT(activityId) DO UPDATE SET
     name                = excluded.name,
     type                = excluded.type,
@@ -111,7 +124,11 @@ const stmtUpsertActivity = db.prepare(`
     maxHr               = excluded.maxHr,
     averagePower        = excluded.averagePower,
     maxPower            = excluded.maxPower,
-    timeInZones         = excluded.timeInZones,
+    z1Sec               = excluded.z1Sec,
+    z2Sec               = excluded.z2Sec,
+    z3Sec               = excluded.z3Sec,
+    z4Sec               = excluded.z4Sec,
+    z5Sec               = excluded.z5Sec,
     fetchedAt           = excluded.fetchedAt
     -- perceivedExertion and feelingAfterExercise intentionally NOT updated here;
     -- they are set exclusively by updateActivityFeedback() after a detail fetch.
@@ -123,6 +140,7 @@ const upsertManyActivities = db.transaction((activities: any[]) => {
   // causing JavaScript to misparse it as local time instead of UTC).
   const now = new Date().toISOString();
   for (const a of activities) {
+    const z = a.timeInZones;
     stmtUpsertActivity.run(
       String(a.activityId),
       a.name,
@@ -134,7 +152,11 @@ const upsertManyActivities = db.transaction((activities: any[]) => {
       a.maxHr,
       a.averagePower || 0,
       a.maxPower || 0,
-      a.timeInZones != null ? JSON.stringify(a.timeInZones) : null,
+      z?.[0] ?? null,
+      z?.[1] ?? null,
+      z?.[2] ?? null,
+      z?.[3] ?? null,
+      z?.[4] ?? null,
       now
     );
   }
@@ -161,7 +183,11 @@ export const upsertActivities = (activities: any[]): void => {
 };
 
 export const getStoredActivities = (): any[] => {
-  return db.prepare('SELECT * FROM activities ORDER BY startTime DESC').all();
+  const rows = db.prepare('SELECT * FROM activities ORDER BY startTime DESC').all() as any[];
+  return rows.map(({ z1Sec, z2Sec, z3Sec, z4Sec, z5Sec, ...rest }) => ({
+    ...rest,
+    timeInZones: z1Sec != null ? [z1Sec, z2Sec, z3Sec, z4Sec, z5Sec] : null
+  }));
 };
 
 export const getActivityCount = (): number => {
@@ -169,20 +195,41 @@ export const getActivityCount = (): number => {
   return row.count;
 };
 
+// ── HR zones (shared shape: z1..z5, each {min, max}) ───────────────────────────
+// Both `profile` and `analysis` store the same fixed 5-zone structure as flat
+// z{n}min/z{n}max columns — flattened for writes, reconstructed for reads.
+const flattenZones = (zones: any): number[] => {
+  const zs = zones || {};
+  return ['z1', 'z2', 'z3', 'z4', 'z5'].flatMap(z => [zs[z]?.min ?? null, zs[z]?.max ?? null]);
+};
+
+const zonesFromRow = (row: any): Record<string, { min: number; max: number }> | null => {
+  if (row.z1min == null) return null;
+  return {
+    z1: { min: row.z1min, max: row.z1max },
+    z2: { min: row.z2min, max: row.z2max },
+    z3: { min: row.z3min, max: row.z3max },
+    z4: { min: row.z4min, max: row.z4max },
+    z5: { min: row.z5min, max: row.z5max }
+  };
+};
+
 // ── Analysis ──────────────────────────────────────────────────────────────────
 export const upsertAnalysis = (analysis: any): void => {
   db.prepare(`
     INSERT OR REPLACE INTO analysis
       (id, totalCyclingRides, maxRecordedHr, estimatedMaxHr, estimatedLthr,
-       averageRideDurationMinutes, suggestedZones, updatedAt)
-    VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+       averageRideDurationMinutes,
+       z1min, z1max, z2min, z2max, z3min, z3max, z4min, z4max, z5min, z5max,
+       updatedAt)
+    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     analysis.totalCyclingRides,
     analysis.maxRecordedHr,
     analysis.estimatedMaxHr,
     analysis.estimatedLthr,
     analysis.averageRideDurationMinutes,
-    JSON.stringify(analysis.suggestedZones),
+    ...flattenZones(analysis.suggestedZones),
     new Date().toISOString()
   );
 };
@@ -190,17 +237,13 @@ export const upsertAnalysis = (analysis: any): void => {
 export const getStoredAnalysis = (): any | null => {
   const row = db.prepare('SELECT * FROM analysis WHERE id = 1').get() as any;
   if (!row) return null;
-  let suggestedZones = null;
-  try { suggestedZones = JSON.parse(row.suggestedZones || 'null'); } catch {
-    logger.warn('[DB] getStoredAnalysis: failed to parse suggestedZones');
-  }
   return {
     totalCyclingRides: row.totalCyclingRides,
     maxRecordedHr: row.maxRecordedHr,
     estimatedMaxHr: row.estimatedMaxHr,
     estimatedLthr: row.estimatedLthr,
     averageRideDurationMinutes: row.averageRideDurationMinutes,
-    suggestedZones,
+    suggestedZones: zonesFromRow(row),
     updatedAt: row.updatedAt
   };
 };
@@ -209,12 +252,14 @@ export const getStoredAnalysis = (): any | null => {
 export const upsertProfileDB = (profile: any): void => {
   db.prepare(`
     INSERT OR REPLACE INTO profile
-      (id, maxHr, lthr, zones, hasCustomOverrides, lastUpdated)
-    VALUES (1, ?, ?, ?, ?, ?)
+      (id, maxHr, lthr,
+       z1min, z1max, z2min, z2max, z3min, z3max, z4min, z4max, z5min, z5max,
+       hasCustomOverrides, lastUpdated)
+    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     profile.maxHr,
     profile.lthr,
-    JSON.stringify(profile.zones),
+    ...flattenZones(profile.zones),
     profile.hasCustomOverrides ? 1 : 0,
     new Date().toISOString()
   );
@@ -223,14 +268,10 @@ export const upsertProfileDB = (profile: any): void => {
 export const getStoredProfile = (): any | null => {
   const row = db.prepare('SELECT * FROM profile WHERE id = 1').get() as any;
   if (!row) return null;
-  let zones = null;
-  try { zones = JSON.parse(row.zones || 'null'); } catch {
-    logger.warn('[DB] getStoredProfile: failed to parse zones');
-  }
   return {
     maxHr: row.maxHr,
     lthr: row.lthr,
-    zones,
+    zones: zonesFromRow(row),
     hasCustomOverrides: !!row.hasCustomOverrides,
     lastUpdated: row.lastUpdated
   };
