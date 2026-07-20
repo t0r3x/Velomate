@@ -12,7 +12,8 @@
         </button>
       </div>
     </div>
-    <div class="card-body scroll-panel">
+    <div class="card-body">
+      <div class="card-body-scroll scroll-panel">
 
       <!-- State: not-configured -->
       <div v-show="recStore.state === 'not-configured'" class="ai-rec-state">
@@ -88,9 +89,10 @@
         </div>
       </div>
 
-      <div class="ai-sync-divider"></div>
+    </div>
 
-      <!-- Sync button -->
+    <!-- Pinned action bar — always visible, never scrolled out of view -->
+    <div class="card-pinned-footer">
       <button
         class="btn btn-primary btn-glow"
         :disabled="!recStore.canSync || syncing"
@@ -99,8 +101,8 @@
         <span>{{ syncing ? 'Syncing Workouts…' : 'Sync &amp; Schedule Workouts' }}</span>
         <i class="fa-solid" :class="syncing ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'"></i>
       </button>
-      <!-- Sync result -->
-      <SyncResult :result="syncResult" />
+      <SyncResult :result="syncResult" @close="syncResult = null" />
+    </div>
     </div>
   </section>
 </template>
