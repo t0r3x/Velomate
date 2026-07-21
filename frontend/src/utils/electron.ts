@@ -1,9 +1,16 @@
+export interface UpdateStatus {
+  state: 'downloading' | 'ready'
+  version: string
+}
+
 export interface ElectronAPI {
   platform: string
   minimize: () => void
   toggleMaximize: () => void
   close: () => void
   onMaximizedChange: (callback: (isMaximized: boolean) => void) => void
+  onUpdateStatus: (callback: (status: UpdateStatus) => void) => void
+  restartAndInstallUpdate: () => void
 }
 
 declare global {

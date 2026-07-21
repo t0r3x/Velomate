@@ -9,5 +9,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   close: () => ipcRenderer.send('window:close'),
   onMaximizedChange: (callback) => {
     ipcRenderer.on('window:maximized-change', (_event, isMaximized) => callback(isMaximized))
-  }
+  },
+  onUpdateStatus: (callback) => {
+    ipcRenderer.on('update:status', (_event, status) => callback(status))
+  },
+  restartAndInstallUpdate: () => ipcRenderer.send('update:restart-and-install')
 })

@@ -6,9 +6,12 @@
 if (process.type !== 'browser') return
 
 const { app, BrowserWindow, Menu, ipcMain } = require('electron')
+const { autoUpdater } = require('electron-updater')
 const path = require('path')
 const http = require('http')
 const net = require('net')
+
+const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000 // 4h — mirrors the app's other periodic-check patterns
 
 const isMac = process.platform === 'darwin'
 
@@ -68,6 +71,7 @@ function createWindow() {
     winOptions.titleBarStyle = 'hiddenInset'
   } else {
     winOptions.frame = false
+    winOptions.icon = path.join(__dirname, 'build', 'icon.ico') // matches electron-builder's win.icon; no .icns yet for mac
   }
 
   const win = new BrowserWindow(winOptions)
@@ -83,6 +87,30 @@ function createWindow() {
   win.on('unmaximize', () => win.webContents.send('window:maximized-change', false))
 
   return win
+}
+
+// GitHub Releases-based auto-update: downloads silently in the background once an
+// update is found, then waits for the user to restart — never installs on its own
+// while the app is running.
+function setupAutoUpdater(win) {
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+
+  autoUpdater.on('update-available', (info) => {
+    win.webContents.send('update:status', { state: 'downloading', version: info.version })
+  })
+  autoUpdater.on('update-downloaded', (info) => {
+    win.webContents.send('update:status', { state: 'ready', version: info.version })
+  })
+  autoUpdater.on('error', (err) => {
+    console.error('[AutoUpdater] Error:', err == null ? 'unknown' : (err.stack || err).toString())
+  })
+
+  ipcMain.on('update:restart-and-install', () => autoUpdater.quitAndInstall())
+
+  const check = () => autoUpdater.checkForUpdates().catch(err => console.error('[AutoUpdater] Check failed:', err))
+  check()
+  setInterval(check, UPDATE_CHECK_INTERVAL_MS)
 }
 
 app.whenReady().then(async () => {
@@ -113,6 +141,7 @@ app.whenReady().then(async () => {
       win.webContents.openDevTools({ mode: 'detach' })
     } else {
       win.loadURL(`http://127.0.0.1:${backendPort}`)
+      if (app.isPackaged) setupAutoUpdater(win)
     }
   } catch (err) {
     console.error('[Electron] Startup failed:', err)

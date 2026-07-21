@@ -3,7 +3,8 @@ node_modules/
 
 # Production Build
 dist/
-build/
+# Note: no bare "build/" entry — electron-builder's icon assets (build/icon.ico)
+# live there and must be tracked. Actual build output goes to dist/ and dist-electron/.
 
 # Environment Variables
 .env
