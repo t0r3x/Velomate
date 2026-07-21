@@ -4,12 +4,22 @@ productName: Velomate
 directories:
   output: dist-electron
 
+# GitHub Releases is both the update feed electron-updater polls and the place
+# built installers get uploaded to. `npm run electron:build` never publishes
+# (--publish never); use `npm run electron:publish` (with a GH_TOKEN env var
+# that has `repo` scope) once you're ready to ship a release.
+publish:
+  provider: github
+  owner: t0r3x
+  repo: Velomate
+
 # Files to include in the package.
 # String patterns respect electron-builder default exclusions (blocks node_modules).
 # Object { from/to } syntax forces inclusion regardless.
 files:
   - electron-main.js
   - electron/**
+  - build/icon.ico
   - backend/dist/**
   - frontend/dist/**
   - from: backend/node_modules
@@ -24,7 +34,7 @@ win:
     - target: nsis
       arch: [x64]
   sign: false
-  # icon: build/icon.ico   # add a 256x256 .ico and uncomment once available
+  icon: build/icon.ico
 
 nsis:
   oneClick: false

@@ -54,14 +54,11 @@ body.is-electron {
   padding-top: 38px;
 }
 
-/* .dashboard-layout's height:100dvh doesn't know about body's padding-top above —
+/* .app-shell's height:100dvh doesn't know about body's padding-top above —
    without this it claims a full 100dvh box starting 38px down, running 38px past
-   the real window bottom and clipping whatever is anchored there (e.g. the footer).
-   min-height is reset too — .app-container's min-height:100vh otherwise wins over
-   the smaller `height` here (per spec, min-height always overrides a smaller height). */
-body.is-electron .dashboard-layout {
+   the real window bottom and clipping whatever is anchored there (e.g. the grid). */
+body.is-electron .app-shell {
   height: calc(100dvh - 38px);
-  min-height: 0;
 }
 
 
@@ -90,13 +87,26 @@ body.is-electron .dashboard-layout {
   margin: 0 auto;
 }
 
-/* Header — a slim toolbar, left-aligned, no outer frame */
-.main-header {
+/* Global shell (in App.vue) wraps the UpdateBanner + routed view — spans the
+   full window (minus the Electron title bar) so a view never needs to know
+   whether the banner is currently taking up space above it. */
+.app-shell {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.85rem;
-  flex-shrink: 0;
+  flex-direction: column;
+  height: 100dvh;
+}
+
+/* Shell wraps the menu bar + the (padded, max-width) app content. In Electron
+   the menu bar teleports into the title bar (see MenuBar.vue) and takes up no
+   space here; outside Electron it renders inline as its own edge-to-edge row
+   above the dashboard content. Fills whatever height .app-shell has left
+   after the (optional) update banner. */
+.dashboard-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .logo-icon {
@@ -113,36 +123,47 @@ body.is-electron .dashboard-layout {
   width: auto;
 }
 
-/* ── Header chips (connection status, HR profile) — separate, direct-action toolbar buttons ── */
-.header-chip {
+/* ── Menu bar — real menu items (Connection, Training Profile, About) ──
+   In Electron this is teleported into the title bar row (no background/border
+   of its own — the title bar already provides that). Outside Electron there's
+   no title bar, so .menu-bar-standalone gives it back its own edge-to-edge row. */
+.menu-bar {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+}
+
+.menu-bar-standalone {
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.menu-item {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  padding: 0.4rem 0.9rem;
-  border-radius: 9999px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid var(--panel-border);
+  padding: 0.7rem 1.15rem;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--panel-border);
   color: var(--text-primary);
   font-family: var(--font-main);
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
-.header-chip:hover {
-  background: rgba(255,255,255,0.07);
-  border-color: rgba(var(--primary-rgb),0.35);
+.menu-item:hover {
+  background: rgba(255, 255, 255, 0.05);
 }
-.header-chip-hr-icon { color: var(--z5-color); font-size: 0.95rem; }
+.menu-item-hr-icon { color: var(--z5-color); font-size: 0.95rem; }
 
-.header-chip-icon {
-  padding: 0.4rem;
-  width: 30px;
-  height: 30px;
-  font-size: 0.85rem;
+.menu-item-icon {
+  padding: 0.7rem 1rem;
   color: var(--text-muted);
+  margin-left: auto;
 }
-.header-chip-icon:hover { color: var(--text-primary); }
+.menu-item-icon:hover { color: var(--text-primary); }
 
 .status-dot {
   width: 8px;
@@ -284,7 +305,8 @@ body.is-electron .dashboard-layout {
 
 /* ── Grid Layout ── */
 .dashboard-layout {
-  height: 100dvh;
+  flex: 1;
+  min-height: 0; /* .app-container's min-height:100vh otherwise wins over this smaller flex-basis */
   overflow: hidden;
 }
 
@@ -311,7 +333,8 @@ body.is-electron .dashboard-layout {
 }
 
 @media (max-width: 1024px) {
-  .dashboard-layout { height: auto; overflow: visible; }
+  .dashboard-shell { flex: none; height: auto; overflow: visible; }
+  .dashboard-layout { flex: none; min-height: 0; overflow: visible; }
   .dashboard-grid { grid-template-columns: 1fr; grid-template-rows: auto; overflow: visible; }
   .col-assessment { align-self: auto; min-height: unset; order: 2; }
   .col-schedule { align-self: auto; min-height: unset; order: 1; }
@@ -342,14 +365,16 @@ body.is-electron .dashboard-layout {
     min-width: 308px; /* 7 × 44px */
   }
 
-  /* Header: let the chips wrap instead of overflowing narrow screens */
-  .main-header {
+  /* Menu bar: let items wrap instead of overflowing narrow screens */
+  .menu-bar {
     flex-wrap: wrap;
-    margin-bottom: 1rem;
   }
-  .header-chip {
-    padding: 0.35rem 0.75rem;
+  .menu-item {
+    padding: 0.5rem 0.85rem;
     font-size: 0.8rem;
+  }
+  .menu-item-icon {
+    margin-left: 0;
   }
 
   /* Cards: tighter padding so content fits */
@@ -1504,6 +1529,28 @@ body.is-electron #toast-container {
   top: 54px;
 }
 
+/* Same fixed-positioning gap affects every modal overlay (.confirm-overlay is
+   shared, scoped, across ConfirmDialog/PauseDialog/MoveDayDialog/AboutDialog/
+   SyncResult) — without this, taller dialogs can end up flush against or
+   under the title bar. Push the centering box down by the title bar height. */
+body.is-electron .confirm-overlay {
+  padding-top: 54px;
+}
+
+/* .settings-panel centers on the full viewport (top: 50%), which sits 19px
+   too high once the title bar claims the top 38px — recenter within the
+   remaining visible area instead. */
+body.is-electron .settings-panel {
+  top: calc(50% + 19px);
+}
+
+/* The Training Profile modal (.tp-backdrop.tp-modal-mode) is the same
+   fixed + centered-flex pattern as .confirm-overlay above, just under its
+   own class name — needs the same title bar clearance. */
+body.is-electron .tp-backdrop.tp-modal-mode {
+  padding-top: 54px;
+}
+
 .toast {
   display: flex;
   align-items: flex-start;
@@ -1578,13 +1625,13 @@ body.is-electron #toast-container {
   text-shadow: 0 0 10px rgba(46, 213, 115, 0.6);
 }
 
-body:has(#shablagoo-toggle:checked) .shablagoo-label {
+body.shablagoo-active .shablagoo-label {
   color: #ff4757;
   text-shadow: 0 0 10px rgba(255, 71, 87, 0.6);
 }
 
 /* 🍦 Mintberry Crunch easter egg — logo transforms when shablagoo is active */
-body:has(#shablagoo-toggle:checked) .logo-icon {
+body.shablagoo-active .logo-icon {
   background: linear-gradient(135deg, #34d399 0%, #f472b6 100%);
   -webkit-background-clip: text;
   background-clip: text;
@@ -1595,20 +1642,20 @@ body:has(#shablagoo-toggle:checked) .logo-icon {
 }
 
 
-body:has(#shablagoo-toggle:checked) .logo-section h1,
-body:has(#shablagoo-toggle:checked) .setup-logo h1 {
+body.shablagoo-active .logo-section h1,
+body.shablagoo-active .setup-logo h1 {
   color: #34d399;
 }
 
-body:has(#shablagoo-toggle:checked) .logo-section h1 span,
-body:has(#shablagoo-toggle:checked) .setup-logo h1 span {
+body.shablagoo-active .logo-section h1 span,
+body.shablagoo-active .setup-logo h1 span {
   background: none;
   -webkit-text-fill-color: #f472b6;
   color: #f472b6;
 }
 
 /* 🍦 Shablagoo full theme — primary → pink, secondary → green */
-body:has(#shablagoo-toggle:checked) {
+body.shablagoo-active {
   --primary-rgb: 244, 114, 182;
   --primary-color: #f472b6;
   --primary-hover: #db2777;
@@ -1617,11 +1664,11 @@ body:has(#shablagoo-toggle:checked) {
   --secondary-hover: #163324;
 }
 
-body:has(#shablagoo-toggle:checked) .bg-glow-1 {
+body.shablagoo-active .bg-glow-1 {
   background: radial-gradient(circle, rgba(244, 114, 182, 0.10) 0%, transparent 70%);
 }
 
-body:has(#shablagoo-toggle:checked) .bg-glow-2 {
+body.shablagoo-active .bg-glow-2 {
   background: radial-gradient(circle, rgba(52, 211, 153, 0.10) 0%, transparent 70%);
 }
 

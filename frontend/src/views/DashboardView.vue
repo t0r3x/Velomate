@@ -1,15 +1,17 @@
 <template>
-  <div class="app-container dashboard-layout">
-    <AppHeader @open-settings="panelOpen = true" @open-profile="profileModalOpen = true" />
+  <div class="dashboard-shell">
+    <MenuBar @open-settings="panelOpen = true" @open-profile="profileModalOpen = true" />
 
-    <main class="dashboard-grid">
-      <div class="col-assessment">
-        <ActivitiesCard />
-      </div>
-      <div class="col-schedule">
-        <AiPlanCard @open-settings="panelOpen = true" />
-      </div>
-    </main>
+    <div class="app-container dashboard-layout">
+      <main class="dashboard-grid">
+        <div class="col-assessment">
+          <ActivitiesCard />
+        </div>
+        <div class="col-schedule">
+          <AiPlanCard @open-settings="panelOpen = true" />
+        </div>
+      </main>
+    </div>
   </div>
 
   <SettingsPanel v-model:open="panelOpen" />
@@ -31,7 +33,7 @@ import { useActivitiesStore }    from '@/stores/activities.store'
 import { useRecommendationStore } from '@/stores/recommendation.store'
 import { useAuthStore }          from '@/stores/auth.store'
 
-import AppHeader      from '@/components/layout/AppHeader.vue'
+import MenuBar        from '@/components/layout/MenuBar.vue'
 import SettingsPanel  from '@/components/layout/SettingsPanel.vue'
 import ActivitiesCard from '@/components/activities/ActivitiesCard.vue'
 import AiPlanCard     from '@/components/recommendation/AiPlanCard.vue'
@@ -43,10 +45,19 @@ const activitiesStore    = useActivitiesStore()
 const recommendationStore = useRecommendationStore()
 const authStore          = useAuthStore()
 
-onMounted(() => {
+onMounted(async () => {
   activitiesStore.loadFromDb()
-  recommendationStore.fetchCached()
   authStore.startPolling()
+
+  await recommendationStore.fetchCached()
+  // The app only runs its startup plan-freshness check (Garmin sync + possible
+  // AI regen) while this window is open, so it's now racing the dashboard's own
+  // initial load on every launch — silently poll for a bit in case that
+  // background check produces a newer plan than what we just fetched.
+  const knownGeneratedAt = recommendationStore.recommendation?.generatedAt
+  if (knownGeneratedAt) {
+    recommendationStore.pollForUpdate(knownGeneratedAt)
+  }
 })
 
 onUnmounted(() => {

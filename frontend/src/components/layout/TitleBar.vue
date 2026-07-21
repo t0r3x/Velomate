@@ -1,8 +1,13 @@
 <template>
   <div v-if="showTitleBar" class="app-titlebar" :class="{ 'is-mac': isMac }">
     <div class="titlebar-drag">
+      <img :src="veloIcon" alt="" class="titlebar-icon" />
       <span class="titlebar-title">Velomate</span>
     </div>
+
+    <div id="titlebar-menu-slot" class="titlebar-menu-slot"></div>
+
+    <div class="titlebar-spacer"></div>
 
     <div v-if="!isMac" class="titlebar-controls">
       <button class="tb-btn" @click="api?.minimize()" aria-label="Minimize">
@@ -21,6 +26,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { isElectron, isMacElectron, electronAPI } from '@/utils/electron'
+import veloIcon from '@/assets/velomate_icon.png'
 
 const showTitleBar = isElectron()
 const isMac = isMacElectron()
@@ -41,7 +47,6 @@ onMounted(() => {
   height: 38px;
   display: flex;
   align-items: stretch;
-  justify-content: space-between;
   background: rgba(8, 11, 20, 0.92);
   border-bottom: 1px solid var(--panel-border);
   z-index: 10000;
@@ -52,14 +57,21 @@ onMounted(() => {
 .titlebar-drag {
   display: flex;
   align-items: center;
+  gap: 8px;
   padding-left: 14px;
-  flex: 1;
-  min-width: 0;
+  padding-right: 10px;
+  flex-shrink: 0;
 }
 
 .app-titlebar.is-mac .titlebar-drag {
   padding-left: 78px; /* clear the native traffic-light buttons */
-  justify-content: center;
+}
+
+.titlebar-icon {
+  height: 15px;
+  width: 15px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .titlebar-title {
@@ -69,6 +81,20 @@ onMounted(() => {
   letter-spacing: 0.04em;
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+/* Real content (MenuBar, teleported here in Electron) renders inline in the
+   same row as the title — this is the non-draggable pocket it lands in. */
+.titlebar-menu-slot {
+  display: flex;
+  -webkit-app-region: no-drag;
+}
+
+/* Everything between the menu items and the window controls stays draggable. */
+.titlebar-spacer {
+  flex: 1;
+  min-width: 0;
+  -webkit-app-region: drag;
 }
 
 .titlebar-controls {
