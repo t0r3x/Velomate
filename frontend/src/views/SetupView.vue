@@ -2,7 +2,8 @@
   <div id="view-setup">
     <div class="setup-card glass-panel">
       <div class="setup-logo">
-        <img class="logo-header" :src="veloImg" alt="Velomate" />
+        <img class="logo-header" :src="veloImg" alt="" />
+        <h1>Velo<span>mate</span></h1>
       </div>
       <ul class="setup-steps">
         <li :class="{ 'step-done': authStore.isLoggedIn }">
@@ -38,7 +39,7 @@ import { ref } from 'vue'
 import { useAuthStore }     from '@/stores/auth.store'
 import { useSettingsStore } from '@/stores/settings.store'
 import SettingsPanel from '@/components/layout/SettingsPanel.vue'
-import veloImg from '@/assets/velomate.png'
+import veloImg from '@/assets/velomate_icon.png'
 
 const authStore     = useAuthStore()
 const settingsStore = useSettingsStore()
