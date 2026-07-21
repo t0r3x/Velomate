@@ -18,12 +18,14 @@
 
   <!-- HR profile modal overlay -->
   <Teleport to="body">
-    <ProfileSetupView
-      v-if="profileModalOpen"
-      :modalMode="true"
-      @confirmed="profileModalOpen = false"
-      @cancelled="profileModalOpen = false"
-    />
+    <Transition name="confirm-fade">
+      <ProfileSetupView
+        v-if="profileModalOpen"
+        :modalMode="true"
+        @confirmed="profileModalOpen = false"
+        @cancelled="profileModalOpen = false"
+      />
+    </Transition>
   </Teleport>
 </template>
 

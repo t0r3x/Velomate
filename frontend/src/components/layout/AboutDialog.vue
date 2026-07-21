@@ -3,6 +3,7 @@
     <Transition name="confirm-fade">
       <div v-if="open" class="confirm-overlay" @mousedown.self="emit('close')">
         <div class="confirm-dialog about-dialog glass-panel" role="dialog" aria-modal="true">
+
           <div class="confirm-header">
             <i class="fa-solid fa-circle-info" style="color: var(--primary-color);"></i>
             <span>About Velomate</span>
@@ -10,6 +11,7 @@
               <i class="fa-solid fa-xmark"></i>
             </button>
           </div>
+          <img :src="active ? mbcImg : veloIcon" alt="" class="about-dialog-logo" />
           <p class="confirm-message">
             Velomate v1.0 — the adaptive AI cycling coach for Garmin Connect.
           </p>
@@ -25,6 +27,8 @@
 
 <script setup lang="ts">
 import { useShablagoo } from '@/composables/useShablagoo'
+import veloIcon from '@/assets/velomate_icon.png'
+import mbcImg   from '@/assets/mbc.png'
 
 defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -52,6 +56,14 @@ const { active } = useShablagoo()
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.about-dialog-logo {
+  height: 64px;
+  width: auto;
+  align-self: center;
+  margin: 1.5rem;
+  object-fit: contain;
 }
 
 .confirm-header {

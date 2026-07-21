@@ -1546,9 +1546,17 @@ body.is-electron .settings-panel {
 
 /* The Training Profile modal (.tp-backdrop.tp-modal-mode) is the same
    fixed + centered-flex pattern as .confirm-overlay above, just under its
-   own class name — needs the same title bar clearance. */
+   own class name — but its content is tall enough to regularly approach/
+   exceed the available height, so a padding nudge isn't enough: centering
+   an item that overflows its box leaves it pinned to the top regardless of
+   padding. Shrink the box itself to the true visible area (inset:0's top:0
+   ignores the title bar, so override it directly) and cap the panel to that
+   same reduced height so it always has real breathing room top and bottom. */
 body.is-electron .tp-backdrop.tp-modal-mode {
-  padding-top: 54px;
+  top: 38px;
+}
+body.is-electron .tp-backdrop.tp-modal-mode .tp-panel {
+  max-height: min(calc(92vh - 38px), 960px);
 }
 
 .toast {
@@ -1704,11 +1712,24 @@ body.shablagoo-active .bg-glow-2 {
   display: flex;
   justify-content: center;
   align-items: center;
+  gap: 0.75rem;
 }
 
 .setup-logo .logo-header {
-  height: 8rem;
+  height: 2.75rem;
   width: auto;
+}
+
+.setup-logo h1 {
+  font-family: var(--font-main);
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.setup-logo h1 span {
+  color: var(--primary-color);
 }
 
 .setup-tagline {
@@ -1823,6 +1844,29 @@ body.shablagoo-active .bg-glow-2 {
   flex-direction: column;
   border-radius: 1.25rem;
   box-shadow: 0 0 0 1px rgba(var(--primary-rgb), 0.2), 0 24px 60px rgba(0,0,0,0.5);
+}
+
+/* Fade+scale transition — same "confirm-fade" convention as the other popup
+   dialogs (ConfirmDialog/PauseDialog/MoveDayDialog/AboutDialog/SyncResult).
+   Only applies when opened as a modal: DashboardView wraps the v-if with
+   <Transition name="confirm-fade">; the full-page /profile-setup route isn't
+   wrapped in a Transition, so these classes never get added there. */
+.confirm-fade-enter-active,
+.confirm-fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+.confirm-fade-enter-from,
+.confirm-fade-leave-to {
+  opacity: 0;
+}
+.confirm-fade-enter-active .tp-panel,
+.confirm-fade-leave-active .tp-panel {
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+.confirm-fade-enter-from .tp-panel,
+.confirm-fade-leave-to .tp-panel {
+  transform: scale(0.95);
+  opacity: 0;
 }
 
 .tp-header {
