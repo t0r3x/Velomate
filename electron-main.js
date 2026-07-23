@@ -5,7 +5,7 @@
 // (process.type = 'browser'). Only act in the real main process.
 if (process.type !== 'browser') return
 
-const { app, BrowserWindow, Menu, ipcMain } = require('electron')
+const { app, BrowserWindow, Menu, ipcMain, shell, dialog } = require('electron')
 const { autoUpdater } = require('electron-updater')
 const path = require('path')
 const http = require('http')
@@ -14,6 +14,21 @@ const net = require('net')
 const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000 // 4h — mirrors the app's other periodic-check patterns
 
 const isMac = process.platform === 'darwin'
+
+let mainWindow = null
+
+// A second launch (e.g. double-clicking the desktop shortcut again) would otherwise spin up
+// its own backend + DB connection alongside the first, racing the same Garmin session — make
+// the second launch just focus the existing window instead.
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+  return
+}
+app.on('second-instance', () => {
+  if (!mainWindow) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.focus()
+})
 
 function findFreePort() {
   return new Promise((resolve, reject) => {
@@ -75,7 +90,16 @@ function createWindow() {
   }
 
   const win = new BrowserWindow(winOptions)
+  mainWindow = win
   win.once('ready-to-show', () => win.show())
+
+  // Electron denies window.open/target="_blank" by default — without this, the
+  // external links in Settings/SyncResult (aistudio.google.com, connect.garmin.com)
+  // silently do nothing instead of opening in the user's default browser.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url)
+    return { action: 'deny' }
+  })
 
   ipcMain.on('window:minimize', () => win.minimize())
   ipcMain.on('window:toggle-maximize', () => {
@@ -145,6 +169,9 @@ app.whenReady().then(async () => {
     }
   } catch (err) {
     console.error('[Electron] Startup failed:', err)
+    // console.error alone is invisible in a packaged app (no attached terminal) — without a
+    // visible dialog, a startup failure just makes the app silently vanish with no clue why.
+    dialog.showErrorBox('Velomate failed to start', (err && (err.stack || err.message)) || String(err))
     app.quit()
   }
 })
