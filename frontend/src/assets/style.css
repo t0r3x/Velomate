@@ -61,7 +61,6 @@ body.is-electron .app-shell {
   height: calc(100dvh - 38px);
 }
 
-
 /* Scrollbar Customization */
 ::-webkit-scrollbar {
   width: 6px;
@@ -284,7 +283,6 @@ body.is-electron .app-shell {
   justify-content: center;
 }
 
-.panel-section { padding: 0 0 2rem; }
 .panel-divider {
   height: 1px;
   background: var(--panel-border);
@@ -1683,8 +1681,13 @@ body.shablagoo-active .bg-glow-2 {
 
 /* ── Views ───────────────────────────────────────────────────────────────── */
 
+/* Rendered via router-view as a flex child of .app-shell, which already has
+   the correct height (viewport minus the Electron title bar, see
+   body.is-electron .app-shell above) — fill that instead of assuming a full
+   100vh box of its own, or the centered content drifts off in Electron. */
 #view-setup {
-  min-height: 100vh;
+  flex: 1;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1935,8 +1938,11 @@ body.shablagoo-active .bg-glow-2 {
 
 /* ── Profile Setup View (Step 2) — legacy selectors kept for router ──────── */
 
+/* Same reasoning as #view-setup above: fill the flex space .app-shell already
+   sized correctly, instead of a self-assumed 100vh box. */
 #view-profile-setup {
-  min-height: 100vh;
+  flex: 1;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
