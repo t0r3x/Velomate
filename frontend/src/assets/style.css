@@ -125,7 +125,10 @@ body.is-electron .app-shell {
 /* ── Menu bar — real menu items (Connection, Training Profile, About) ──
    In Electron this is teleported into the title bar row (no background/border
    of its own — the title bar already provides that). Outside Electron there's
-   no title bar, so .menu-bar-standalone gives it back its own edge-to-edge row. */
+   no title bar, so .menu-bar-standalone renders it as its own rounded bar,
+   sized/centered to match .app-container's *content* width (its max-width
+   minus its own left+right padding) so the bar lines up edge-to-edge with the
+   cards below it instead of hanging over them. */
 .menu-bar {
   display: flex;
   align-items: stretch;
@@ -133,8 +136,12 @@ body.is-electron .app-shell {
 }
 
 .menu-bar-standalone {
-  background: rgba(255, 255, 255, 0.02);
-  border-bottom: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.5rem;
+  max-width: calc(1600px - 3rem);
+  margin: 1.5rem auto 0;
+  overflow: hidden;
 }
 
 .menu-item {
