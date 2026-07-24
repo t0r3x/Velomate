@@ -15,7 +15,27 @@ const dbFilePath = process.env.VELOMATE_DB_PATH
 
 const dataDir = path.dirname(dbFilePath);
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-const db = new Database(dbFilePath);
+
+// better-sqlite3's .node binary is built against one specific Node ABI at a time.
+// Switching between `npm run dev`/`npm start` (system Node) and `npm run electron:dev`/
+// `electron:build` (Electron's bundled Node) without rebuilding in between fails here
+// with a cryptic ERR_DLOPEN_FAILED — turn it into an actionable message instead.
+let db: Database.Database;
+try {
+  db = new Database(dbFilePath);
+} catch (err: any) {
+  if (err?.code === 'ERR_DLOPEN_FAILED' && /NODE_MODULE_VERSION/.test(err.message ?? '')) {
+    console.error(
+      '\n❌ better-sqlite3 was built for a different Node runtime than the one now running it.\n' +
+      '   Fix depends on how you just started the app:\n' +
+      '     • Plain Node (`npm run dev` / `npm run build` / `npm start`)      → run `npm rebuild better-sqlite3` inside backend/\n' +
+      '     • Electron   (`npm run electron:dev` / `npm run electron:build`) → run `npm run electron:rebuild` from the repo root\n' +
+      '   See the "better-sqlite3" gotcha in CLAUDE.md for details.\n'
+    );
+    process.exit(1);
+  }
+  throw err;
+}
 
 // WAL mode — better concurrent read performance
 db.pragma('journal_mode = WAL');
