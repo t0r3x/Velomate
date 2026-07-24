@@ -160,6 +160,14 @@ npm run electron:publish  # build + upload installers as a GitHub Release (requi
 
 ---
 
+## ☕ Support the project
+
+If Velomate helps you train smarter, consider supporting its development:
+
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?style=for-the-badge&logo=github)](https://github.com/sponsors/t0r3x)
+
+---
+
 ## License
 
 MIT
