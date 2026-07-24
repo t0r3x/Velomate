@@ -6,6 +6,7 @@ A cycling training dashboard that connects to **Garmin Connect** and uses **Goog
 ![Vue](https://img.shields.io/badge/vue-3-41b883)
 ![TypeScript](https://img.shields.io/badge/typescript-5-blue)
 ![Electron](https://img.shields.io/badge/electron-32-47848F)
+
 [![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?style=for-the-badge&logo=github)](https://github.com/sponsors/t0r3x)
 
 ## About this project
