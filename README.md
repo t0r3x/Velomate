@@ -1,3 +1,12 @@
+# Velomate — AI Cycling Training Dashboard
+
+A cycling training dashboard that connects to **Garmin Connect** and uses **Google Gemini** to generate personalised, adaptive weekly training plans based on your actual ride data. Ships as a **Windows/macOS desktop app** with silent background auto-updates.
+
+![Node](https://img.shields.io/badge/node-20+-green)
+![Vue](https://img.shields.io/badge/vue-3-41b883)
+![TypeScript](https://img.shields.io/badge/typescript-5-blue)
+![Electron](https://img.shields.io/badge/electron-32-47848F)
+
 ## About this project
 
 Velomate started out as a personal tool to solve a specific problem: I wanted a flexible, adaptive training plan that actually listens to my Garmin data and adjusts to real life, without paying for another expensive subscription.
@@ -12,17 +21,6 @@ It was built with a clear purpose:
 Whether you run it as a lightweight desktop app or self-host it via Docker on your home server, I hope Velomate makes your training a bit smarter and your rides a bit better.
 
 Feedback, bug reports, and contributions are always welcome!
-
----
-
-# Velomate — AI Cycling Training Dashboard
-
-A cycling training dashboard that connects to **Garmin Connect** and uses **Google Gemini** to generate personalised, adaptive weekly training plans based on your actual ride data. Ships as a **Windows/macOS desktop app** with silent background auto-updates.
-
-![Node](https://img.shields.io/badge/node-20+-green)
-![Vue](https://img.shields.io/badge/vue-3-41b883)
-![TypeScript](https://img.shields.io/badge/typescript-5-blue)
-![Electron](https://img.shields.io/badge/electron-32-47848F)
 
 ---
 
