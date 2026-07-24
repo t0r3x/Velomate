@@ -1,10 +1,11 @@
 # Velomate — AI Cycling Training Dashboard
 
-A self-hosted cycling training dashboard that connects to **Garmin Connect** and uses **Google Gemini** to generate personalised, adaptive weekly training plans based on your actual ride data.
+A cycling training dashboard that connects to **Garmin Connect** and uses **Google Gemini** to generate personalised, adaptive weekly training plans based on your actual ride data. Ships as a **Windows/macOS desktop app** with silent background auto-updates.
 
 ![Node](https://img.shields.io/badge/node-20+-green)
 ![Vue](https://img.shields.io/badge/vue-3-41b883)
 ![TypeScript](https://img.shields.io/badge/typescript-5-blue)
+![Electron](https://img.shields.io/badge/electron-32-47848F)
 
 ---
 
@@ -15,116 +16,70 @@ A self-hosted cycling training dashboard that connects to **Garmin Connect** and
 - **HR zone analysis** — calculates your personal zones from LTHR/max HR with Garmin data as a starting point
 - **Execution scoring** — AI reviews completed workouts and scores them 0–100 based on zone data, RPE and feeling
 - **Week grid** — visual overview of planned, completed, skipped and auto-skipped days
+- **Training pause/resume** — pause the plan (illness, travel, ...) and auto-pause detection after prolonged inactivity
 - **Garmin workout sync** — uploads structured workouts directly to your Garmin device
-- **Self-hosted** — all data stays on your machine; nothing is stored externally
+- **Self-hosted data** — your Garmin/AI credentials and ride history stay in a local SQLite database; nothing is sent anywhere except Garmin and Gemini's own APIs
 
 ---
 
-## Prerequisites
+## Install (desktop app)
 
-| Requirement | Notes |
+This is the recommended way to run Velomate.
+
+1. Go to the [Releases page](https://github.com/t0r3x/Velomate/releases) and download the latest installer for your OS:
+   - **Windows** — `Velomate-Setup-x.y.z.exe`
+   - **macOS** — `Velomate-x.y.z.dmg` (Intel or Apple Silicon)
+2. Run the installer.
+   - **Windows note**: the installer isn't code-signed yet, so SmartScreen will show an *"Windows protected your PC"* warning. Click **More info → Run anyway**.
+3. Launch **Velomate**. On first launch you'll be guided through setup:
+   1. **Connect Garmin** — enter your Garmin Connect credentials
+   2. **Add AI API key** — paste your Gemini key from [aistudio.google.com](https://aistudio.google.com/apikey) (free tier)
+   3. **Confirm training profile** — review suggested HR zones from your ride history
+   4. **Generate your first plan** — one click
+
+### Updates
+
+Velomate checks for updates automatically in the background (every few hours) and downloads them silently. When a new version is ready, a banner appears at the top of the app — click **Restart & Install** whenever it's convenient. No manual download needed after the first install.
+
+### Your data
+
+All data (Garmin activities, AI plans, HR profile, settings) lives in a local SQLite database in your OS user-data folder — it is never touched by an update:
+
+| OS | Location |
 |---|---|
-| **Docker + Docker Compose** | See installation below |
-| **Garmin Connect account** | Regular login credentials (not SSO/social login) |
-| **Google Gemini API key** | Free tier at [aistudio.google.com](https://aistudio.google.com/apikey) |
+| Windows | `%APPDATA%\velomate\velomate.db` |
+| macOS/Linux | `~/.velomate/velomate.db` |
 
-### Installing Docker
-
-**Windows (without WSL)**
-
-Docker Desktop can run on Windows using Hyper-V — no WSL required. Hyper-V is available on Windows 10/11 Pro, Enterprise and Education.
-
-1. Enable Hyper-V via PowerShell (run as Administrator):
-   ```powershell
-   Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All
-   ```
-   Restart when prompted.
-
-2. Download and install [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/).
-
-3. During setup (or in Settings → General afterwards), select **"Use Hyper-V instead of WSL 2"**.
-
-> **Windows Home?** Hyper-V is not available on Home edition. Either upgrade to Pro, or use the [Node.js method](#without-docker) below.
-
-**Linux (Ubuntu / Debian)**
-
-```bash
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER   # run without sudo — re-login to apply
-```
-
-For other distros: [docs.docker.com/engine/install](https://docs.docker.com/engine/install/).
-
-**Verify**
-
-```bash
-docker --version          # 24.x or higher
-docker compose version    # v2.x or higher
-```
+Logs live alongside it in a `logs/` subfolder there.
 
 ---
 
-### Without Docker
+## Alternative: self-hosted (Docker)
 
-If Docker is not an option, install [Node.js 20+](https://nodejs.org) (LTS) and run:
-
-```powershell
-npm run install-all   # install dependencies (run once)
-npm run build         # build frontend + backend (run once, and after updates)
-npm start             # start the server
-```
-
-Open **http://localhost:2012**.
-
-To keep it running in the background on Windows, use [NSSM](https://nssm.cc) or Windows Task Scheduler pointing to `node backend\dist\server.js`.
-
----
-
-## Quick Start
+If you'd rather run Velomate as a headless service on a home server / NAS instead of a desktop app, a Docker setup is included:
 
 ```bash
-git clone https://github.com/t0r3x/velomate.git
-cd velomate
+git clone https://github.com/t0r3x/Velomate.git
+cd Velomate
 docker compose up -d
 ```
 
-Open **http://localhost:2012** — on first launch you'll be guided through setup:
+Open **http://localhost:2012** and go through the same setup flow as above.
 
-1. **Connect Garmin** — enter your Garmin Connect credentials
-2. **Add Gemini API key** — paste your key from [aistudio.google.com](https://aistudio.google.com/apikey)
-3. **Confirm training profile** — review suggested HR zones from your ride history
-4. **Generate your first plan** — one click
-
----
-
-## Updating
-
+**Updating:**
 ```bash
 git pull
 docker compose up -d --build
 ```
+Your data is preserved — `./data` is mounted as a volume and survives rebuilds.
 
-Your data is preserved — the `./data` directory is mounted as a volume and survives rebuilds.
-
----
-
-## Configuration
-
-Everything is configured through the in-app settings. No environment variables or config files required.
-
-### Custom port
-
-Edit `docker-compose.yml`:
-
+**Custom port** — edit `docker-compose.yml`:
 ```yaml
 ports:
   - "8080:2012"   # access on localhost:8080
 ```
 
-### Logs
-
-By default, logs rotate daily and are kept for 30 days in `./logs/`. To change:
-
+**Logs** — rotate daily, kept for 30 days in `./logs/` by default:
 ```yaml
 # docker-compose.yml
 environment:
@@ -132,16 +87,26 @@ environment:
   - LOG_LEVEL=info   # debug / info / warn / error
 ```
 
----
-
-## Data
-
-All data (activities, plans, settings, HR profile) is stored in a SQLite database at `./data/velomate.db`. It survives container restarts and updates.
-
+**Backup:**
 ```bash
-# Backup
 cp -r data/ velomate-backup-$(date +%Y%m%d)/
 ```
+
+### Without Docker
+
+Install [Node.js 20+](https://nodejs.org) (LTS) and run:
+```powershell
+npm run install-all   # install dependencies (run once)
+npm run build         # build frontend + backend (run once, and after updates)
+npm start             # start the server
+```
+Open **http://localhost:2012**. To keep it running in the background on Windows, use [NSSM](https://nssm.cc) or Windows Task Scheduler pointing to `node backend\dist\server.js`.
+
+---
+
+## Configuration
+
+Everything is configured through the in-app settings. No environment variables or config files required for the desktop app.
 
 ---
 
@@ -150,9 +115,19 @@ cp -r data/ velomate-backup-$(date +%Y%m%d)/
 Requires **Node.js 20+**.
 
 ```bash
-npm run install-all   # install frontend + backend deps
-npm run dev           # frontend on :5173, backend on :2012
+npm run install-all      # install frontend + backend deps
+npm run dev               # backend on :2012, frontend on :5173 (browser mode, no Electron)
+npm run electron:dev      # same, but launches inside the Electron shell instead of a browser
 ```
+
+### Building & publishing the desktop app
+
+```bash
+npm run electron:build    # build installers into dist-electron/, no publish (use to test locally)
+npm run electron:publish  # build + upload installers as a GitHub Release (requires GH_TOKEN with `repo` scope)
+```
+
+`electron-builder.yml` targets GitHub Releases as both the publish destination and the update feed (`t0r3x/Velomate`). Bump the `version` in [package.json](package.json) before every publish — that's what both the release tag and electron-updater's version check are based on.
 
 ---
 
@@ -160,6 +135,7 @@ npm run dev           # frontend on :5173, backend on :2012
 
 | Layer | Technology |
 |---|---|
+| Desktop shell | Electron 32, electron-builder, electron-updater (GitHub Releases) |
 | Frontend | Vue 3, Pinia, Vue Router, Vite, TypeScript |
 | Backend | Express, TypeScript, better-sqlite3 |
 | Database | SQLite (WAL mode) |
