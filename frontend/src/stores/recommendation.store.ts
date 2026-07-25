@@ -99,7 +99,7 @@ export const useRecommendationStore = defineStore('recommendation', () => {
    * changes. Called after an activity sync triggers a non-blocking AI regen so
    * execution scores appear automatically once the AI response arrives.
    */
-  async function pollForUpdate(knownGeneratedAt: string | undefined, maxAttempts = 10) {
+  async function pollForUpdate(knownGeneratedAt: string | undefined, maxAttempts = 20) {
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise<void>(r => setTimeout(r, 4000))
       try {
