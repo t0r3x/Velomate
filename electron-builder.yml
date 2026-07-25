@@ -43,7 +43,7 @@ nsis:
 mac:
   target:
     - target: dmg
-      arch: [x64, arm64]
+      arch: [arm64]
   category: public.app-category.health-fitness
   hardenedRuntime: false
   # icon: build/icon.icns  # add a 1024x1024 .icns and uncomment once available

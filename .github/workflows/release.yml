@@ -1,0 +1,41 @@
+name: Release
+
+# Builds the Electron installers and uploads them to the GitHub Release matching
+# the version in package.json. Windows -> nsis (x64). macOS -> dmg (Apple Silicon
+# only, unsigned — Gatekeeper shows an "app is damaged" warning until it's notarized).
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix backend
+          npm ci --prefix frontend
+
+      - name: Rebuild native modules for Electron
+        run: npm run electron:rebuild
+
+      - name: Build and publish
+        run: npm run electron:publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

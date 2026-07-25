@@ -45,9 +45,10 @@ This is the recommended way to run Velomate.
 
 1. Go to the [Releases page](https://github.com/t0r3x/Velomate/releases) and download the latest installer for your OS:
    - **Windows** — `Velomate-Setup-x.y.z.exe`
-   - **macOS** — `Velomate-x.y.z.dmg` (Intel or Apple Silicon)
+   - **macOS** — `Velomate-x.y.z-arm64.dmg` (Apple Silicon only — Intel Macs aren't built)
 2. Run the installer.
    - **Windows note**: the installer isn't code-signed yet, so SmartScreen will show an *"Windows protected your PC"* warning. Click **More info → Run anyway**.
+   - **macOS note**: the app isn't code-signed/notarized yet, so Gatekeeper will block it as *"damaged"* — right-click the app → **Open** to bypass this once.
 3. Launch **Velomate**. On first launch you'll be guided through setup:
    1. **Connect Garmin** — enter your Garmin Connect credentials
    2. **Add AI API key** — paste your Gemini key from [aistudio.google.com](https://aistudio.google.com/apikey) (free tier)
