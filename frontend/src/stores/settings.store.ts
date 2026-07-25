@@ -7,6 +7,7 @@ import {
   postGeminiModel,
   postPreferredDays,
   postInactivityPauseDays,
+  postInstantScoreOnNewActivity,
   postSetupComplete
 } from '@/api/client'
 
@@ -18,6 +19,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const preferredLongRideDays = ref<string[]>([])
   const geminiModel         = ref('gemini-3.5-flash')
   const inactivityPauseDays = ref(14)
+  const instantScoreOnNewActivity = ref(true)
 
   async function init() {
     if (loaded.value) return
@@ -29,6 +31,7 @@ export const useSettingsStore = defineStore('settings', () => {
       preferredLongRideDays.value = Array.isArray(data.preferredLongRideDays) ? data.preferredLongRideDays : []
       geminiModel.value           = data.geminiModel || 'gemini-3.5-flash'
       inactivityPauseDays.value   = data.inactivityPauseDays ?? 14
+      instantScoreOnNewActivity.value = data.instantScoreOnNewActivity ?? true
     } catch (err) {
       console.warn('[Settings] init failed (backend offline?):', err)
     } finally {
@@ -46,6 +49,7 @@ export const useSettingsStore = defineStore('settings', () => {
       preferredLongRideDays.value = Array.isArray(data.preferredLongRideDays) ? data.preferredLongRideDays : []
       geminiModel.value           = data.geminiModel || 'gemini-3.5-flash'
       inactivityPauseDays.value   = data.inactivityPauseDays ?? 14
+      instantScoreOnNewActivity.value = data.instantScoreOnNewActivity ?? true
     } catch (err) {
       console.warn('[Settings] reload failed:', err)
     }
@@ -72,6 +76,17 @@ export const useSettingsStore = defineStore('settings', () => {
       return true
     } catch (err) {
       console.error('[Settings] saveInactivityPauseDays failed:', err)
+      return false
+    }
+  }
+
+  async function saveInstantScoreOnNewActivity(enabled: boolean): Promise<boolean> {
+    try {
+      await postInstantScoreOnNewActivity(enabled)
+      instantScoreOnNewActivity.value = enabled
+      return true
+    } catch (err) {
+      console.error('[Settings] saveInstantScoreOnNewActivity failed:', err)
       return false
     }
   }
@@ -116,12 +131,14 @@ export const useSettingsStore = defineStore('settings', () => {
     preferredLongRideDays,
     geminiModel,
     inactivityPauseDays,
+    instantScoreOnNewActivity,
     init,
     reload,
     saveAll,
     disconnectGemini,
     savePreferredDays,
     saveInactivityPauseDays,
+    saveInstantScoreOnNewActivity,
     markSetupComplete
   }
 })

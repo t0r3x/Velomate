@@ -305,18 +305,22 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
     await syncActivitiesFromGarmin();
 
     // Non-blocking: trigger AI regen if any previously-planned dates are now 'completed'
+    // (gated by 'instant_score_on_new_activity', default on)
     let planRegenTriggered = false;
     const stored = getStoredRecommendation();
+    const instantScoringEnabled = getSetting('instant_score_on_new_activity') !== '0';
     if (stored?.weeklyPlan && prePlannedDates.size > 0) {
       const newlyCompleted = stored.weeklyPlan.filter(
         (e: any) => e.status === 'completed' && prePlannedDates.has(e.date)
       );
-      if (newlyCompleted.length > 0) {
+      if (newlyCompleted.length > 0 && instantScoringEnabled) {
         logger.info(`[Gemini] ${newlyCompleted.length} newly completed workout(s) (${newlyCompleted.map((e: any) => e.date).join(', ')}) — triggering AI re-evaluation`);
         generateRecommendation(stored.weeklyPlan).catch((err: any) =>
           logger.warn(`[Gemini] Auto-regen after activity sync failed: ${err.message}`)
         );
         planRegenTriggered = true;
+      } else if (newlyCompleted.length > 0) {
+        logger.info(`[Gemini] ${newlyCompleted.length} newly completed workout(s) detected but instant scoring is disabled — skipping immediate regen`);
       } else {
         logger.info('[Gemini] Activity sync: no newly completed workouts detected in current plan');
       }
@@ -368,6 +372,7 @@ app.get('/api/settings/gemini-key', (_req: Request, res: Response) => {
     : [];
 
   const inactivityPauseDays = parseInt(getSetting('inactivity_pause_days') || '14', 10) || 14;
+  const instantScoreOnNewActivity = getSetting('instant_score_on_new_activity') !== '0';
 
   res.json({
     hasKey:               !!key,
@@ -375,7 +380,8 @@ app.get('/api/settings/gemini-key', (_req: Request, res: Response) => {
     setupComplete,
     preferredLongRideDays,
     geminiModel,
-    inactivityPauseDays
+    inactivityPauseDays,
+    instantScoreOnNewActivity
   });
 });
 
@@ -403,6 +409,16 @@ app.post('/api/settings/inactivity-pause-days', (req: Request, res: Response) =>
   }
   setSetting('inactivity_pause_days', String(parsed));
   logger.info(`[Settings] Inactivity pause threshold set to: ${parsed} days`);
+  res.json({ saved: true });
+});
+
+app.post('/api/settings/instant-score-on-new-activity', (req: Request, res: Response) => {
+  const { enabled } = req.body;
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: 'enabled must be a boolean.' });
+  }
+  setSetting('instant_score_on_new_activity', enabled ? '1' : '0');
+  logger.info(`[Settings] Instant score-on-new-activity: ${enabled ? 'enabled' : 'disabled'}`);
   res.json({ saved: true });
 });
 
@@ -745,20 +761,39 @@ const runGeminiAutoCheck = async () => {
       return;
     }
 
+    // Capture which dates were 'planned' BEFORE syncing, same as /api/activities/refresh,
+    // so a newly-completed ride can be detected after the sync below.
+    const preSyncPlan    = getStoredRecommendation()?.weeklyPlan || [];
+    const prePlannedDates = new Set(
+      preSyncPlan.filter((e: any) => e.status === 'planned').map((e: any) => e.date)
+    );
+
     // Sync activities first — auto-skip detection depends on having current ride data
     logger.info('[Gemini] Auto-check: syncing activities from Garmin before evaluation…');
     await syncActivitiesFromGarmin();
 
-    // Detect auto-skips (planned days that passed with no activity)
+    // Detect auto-skips (planned days that passed with no activity) and newly-completed rides
     const stored = getStoredRecommendation();
     if (stored?.weeklyPlan) {
       // Don't auto-skip dates that fall within a completed pause period
       const pausedSince = getSetting('paused_since') || '';
       const autoSkips = detectAutoSkippedEntries(stored.weeklyPlan)
         .filter(date => !pausedSince || date < pausedSince.slice(0, 10));
+
+      const instantScoringEnabled = getSetting('instant_score_on_new_activity') !== '0';
+      const newlyCompleted = prePlannedDates.size > 0
+        ? stored.weeklyPlan.filter((e: any) => e.status === 'completed' && prePlannedDates.has(e.date))
+        : [];
+      const shouldRegenForNewActivity = instantScoringEnabled && newlyCompleted.length > 0;
+
       if (autoSkips.length > 0) {
         logger.info(`[Gemini] Auto-check: ${autoSkips.length} auto-skip(s) detected (${autoSkips.join(', ')}) — marking and regenerating`);
         autoSkips.forEach(date => updatePlanEntryStatus(date, 'auto-skipped'));
+      }
+      if (shouldRegenForNewActivity) {
+        logger.info(`[Gemini] Auto-check: ${newlyCompleted.length} newly completed workout(s) (${newlyCompleted.map((e: any) => e.date).join(', ')}) — triggering instant AI re-evaluation`);
+      }
+      if (autoSkips.length > 0 || shouldRegenForNewActivity) {
         const updated = getStoredRecommendation();
         await generateRecommendation(updated?.weeklyPlan);
         setSetting('gemini_last_generated', new Date().toISOString());

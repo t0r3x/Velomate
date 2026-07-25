@@ -153,12 +153,15 @@ The **first plan** is ONLY generated when the user explicitly clicks **"Generate
 ### Auto-check (`runGeminiAutoCheck()` in `server.ts`, not in `gemini.service.ts`)
 Runs once at startup, then `setInterval(..., 60 * 60 * 1000)` (hourly):
 1. No API key, or training paused → skip
-2. Sync activities, detect auto-skips (`detectAutoSkippedEntries()`, excludes dates inside a completed pause window) → regenerate if any found
+2. Sync activities, detect auto-skips (`detectAutoSkippedEntries()`, excludes dates inside a completed pause window) → regenerate if any found. Also detects newly-completed rides (a `planned` entry that flipped to `completed` during this sync, same logic as `/api/activities/refresh`) and regenerates for that too — but only when `instant_score_on_new_activity` is enabled (default on)
 3. Auto-pause training after `inactivityPauseDays` (default 14, user-configurable) consecutive days with no completed workout
 4. Otherwise regenerate only if plan is >23h stale
 5. On Gemini 429 → stamp `gemini_last_generated` to back off for 23h
 
 The first plan is never created here — only steps 2-4 ever fire, and they all require an existing plan.
+
+### Instant execution scoring (`instant_score_on_new_activity` setting)
+`executionScore`/`executionNote` are only produced by a full `generateRecommendation()` call (there's no standalone scoring function — see "Execution scoring" above). Both activity-sync paths — the manual `POST /api/activities/refresh` and the hourly `runGeminiAutoCheck()` — detect newly-completed rides (a `planned` entry that just flipped to `completed`) and, when `instant_score_on_new_activity` is enabled (default **on**), immediately trigger a regen so the score shows up right away instead of waiting for the next 23h-staleness regen. Turning it off saves AI calls at the cost of a delayed score.
 
 ### `generateRecommendation(previousPlan?, pauseContext?, pinnedTodayType?)`
 - Retries with a shrinking activity window (`ACTIVITY_WINDOWS = [21, 14, 10]` days) if Gemini's response is truncated (`finishReason === 'MAX_TOKENS'`)
@@ -186,6 +189,7 @@ today's date/day-of-week, athlete preferences (preferred long-ride days, free-te
 | `paused_since` / `pause_reason` | Set on pause, read on resume |
 | `last_plan_activity_date` | Used by auto-pause inactivity detection |
 | `setup_complete` | `'1'` when user confirmed HR profile |
+| `instant_score_on_new_activity` | `'0'` disables instant regen-on-newly-completed-ride (default on, i.e. unset or `'1'`) |
 
 ---
 
@@ -204,16 +208,20 @@ POST   /api/profile                         ← { maxHr, lthr, zones } → saves
 GET    /api/activities                      ← same as dashboard
 POST   /api/activities/refresh              ← fetch from Garmin, upsert DB, re-run analysis
                                                → also classifies completed plan entries (non-blocking)
+                                               → triggers instant AI regen on newly-completed rides
+                                                 (non-blocking, gated by instant_score_on_new_activity)
 
 POST   /api/sync-workouts                   ← { scheduleDate } → upload to Garmin + schedule Threshold
 
 GET    /api/settings/gemini-key             ← { hasKey, maskedKey, setupComplete,
-                                                preferredLongRideDays, geminiModel, inactivityPauseDays }
+                                                preferredLongRideDays, geminiModel, inactivityPauseDays,
+                                                instantScoreOnNewActivity }
 POST   /api/settings/gemini-key             ← { apiKey } → forces regen on next check
 DELETE /api/settings/gemini-key             ← removes the API key
 POST   /api/settings/gemini-model           ← { model }
 POST   /api/settings/preferred-long-ride-days  ← { days: string[] }
 POST   /api/settings/inactivity-pause-days  ← { days: number } (1-365)
+POST   /api/settings/instant-score-on-new-activity  ← { enabled: boolean }
 GET    /api/settings/training-goals         ← { goals }
 POST   /api/settings/training-goals         ← { goals } (max 500 chars)
 POST   /api/settings/setup-complete         ← marks setup as done

@@ -119,6 +119,12 @@ export const postInactivityPauseDays = (days: number) =>
 export const postSetupComplete = () =>
   request<void>('/api/settings/setup-complete', { method: 'POST' })
 
+export const postInstantScoreOnNewActivity = (enabled: boolean) =>
+  request<void>('/api/settings/instant-score-on-new-activity', {
+    method: 'POST',
+    body: JSON.stringify({ enabled })
+  })
+
 export const getTrainingGoals = () =>
   request<{ goals: string }>('/api/settings/training-goals')
 
