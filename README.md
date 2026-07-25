@@ -11,16 +11,19 @@ A cycling training dashboard that connects to **Garmin Connect** and uses **Goog
 
 ## About this project
 
-Velomate started out as a personal tool to solve a specific problem: I wanted a flexible, adaptive training plan that actually listens to my Garmin data and adjusts to real life, without paying for another expensive subscription.
+Velomate started out as a personal tool to solve a specific problem: I wanted a flexible, adaptive training plan that adjusted to my life. During a period in my life when things were tough and my energy levels were low, I still wanted to keep riding, but I couldn't bring myself to commit to expensive monthly subscriptions like JOIN, TrainerRoad, or Zwift. When you're struggling with energy or when you're just having trouble finding the time, paying a steep monthly fee creates uncomfortable pressure; you constantly worry whether you'll even be able to follow through on the commitment, turning what should be a healthy outlet into an extra burden.
 
-**Yes, this project is roughly 95% "vibecoded" using AI.** But it wasn't just built on a whim, it took a clear vision, lots of tweaking and countless testing iterations to turn it into a reliable, functional application. 
+To be fair, commercial platforms back their products with dedicated teams, extensive sports science, and deep professional engineering. But for my day-to-day needs, Velomate proved to work surprisingly well in practice. I strongly believe that incorporating smart AI into an application should be just as seamless, natural, and accessible as having a quick chat with an LLM. AI has become such a fundamental part of our lives, and leveraging adaptive training guidance shouldn't require complex overhead or a recurring monthly paywall.
+
+**Yes, this project is roughly 95% "vibecoded" using AI.** But it wasn't just built on a whim, it took a clear vision, lots of tweaking and testing to turn it into a reliable, functional application. 
 
 It was built with a clear purpose:
-- **Practical:** Direct sync back and forth with Garmin Connect.
-- **Adaptive:** Real-time execution scoring and fatigue adjustments via Gemini.
-- **Privacy-first:** Your keys and data stay on your machine (local SQLite database).
+- **Heart Rate-Focused:** Train based on true physiological fatigue and internal load, not rigid power numbers.
+- **No Subscriptions & Open Source:** Free to use, modify, and self-host forever, a pressure-free alternative to paid cycling apps.
+- **Accessible AI:** Powered by Google Gemini's free tier, bringing intelligent training guidance to everyone without monthly fees.
+- **Privacy-First:** Your credentials, API keys, and ride data stay strictly on your machine.
 
-Whether you run it as a lightweight desktop app or self-host it via Docker on your home server, I hope Velomate makes your training a bit smarter and your rides a bit better.
+Whether you run it as a lightweight desktop app or self-host it via Docker on your home server, I hope Velomate makes your training a bit smarter and your rides a bit better, entirely on your own terms.
 
 Feedback, bug reports, and contributions are always welcome!
 
@@ -51,7 +54,7 @@ This is the recommended way to run Velomate.
    - **macOS note**: the app isn't code-signed/notarized yet, so Gatekeeper will block it as *"damaged"* — right-click the app → **Open** to bypass this once.
 3. Launch **Velomate**. On first launch you'll be guided through setup:
    1. **Connect Garmin** — enter your Garmin Connect credentials
-   2. **Add AI API key** — paste your Gemini key from [aistudio.google.com](https://aistudio.google.com/apikey) (free tier)
+   2. **Add AI API key** — generate a 100% free Gemini API key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) using any regular Google account (no credit card or subscription required)
    3. **Confirm training profile** — review suggested HR zones from your ride history
    4. **Generate your first plan** — one click
 
@@ -61,14 +64,14 @@ Velomate checks for updates automatically in the background (every few hours) an
 
 ### Your data
 
-All data (Garmin activities, AI plans, HR profile, settings) lives in a local SQLite database in your OS user-data folder — it is never touched by an update:
+All data (Garmin activities, AI plans, HR profile, settings) lives in a local SQLite database in your OS user-data folder, it is never touched by an update:
 
 | OS | Location |
 |---|---|
 | Windows | `%APPDATA%\velomate\velomate.db` |
 | macOS/Linux | `~/.velomate/velomate.db` |
 
-Logs live alongside it in a `logs/` subfolder there.
+Logs live alongside it in a `logs/` subfolder there. They are useful for debugging and other insights.
 
 ---
 
@@ -149,23 +152,9 @@ npm run electron:publish  # build + upload installers as a GitHub Release (requi
 
 ---
 
-## Tech stack
-
-| Layer | Technology |
-|---|---|
-| Desktop shell | Electron 32, electron-builder, electron-updater (GitHub Releases) |
-| Frontend | Vue 3, Pinia, Vue Router, Vite, TypeScript |
-| Backend | Express, TypeScript, better-sqlite3 |
-| Database | SQLite (WAL mode) |
-| AI | Google Gemini API |
-| Garmin | Garmin Connect web API (session-based) |
-| Logging | Winston + daily log rotation |
-
----
-
 ## ☕ Support the project
 
-If Velomate helps you train smarter, consider supporting its development:
+If Velomate helps you train smarter on your own terms and you'd like to support its ongoing development (or buy me a coffee for the late-night prompt engineering), any support is deeply appreciated!
 
 [![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?style=for-the-badge&logo=github)](https://github.com/sponsors/t0r3x)
 
