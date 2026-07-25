@@ -47,17 +47,18 @@ const emit  = defineEmits<{
 const todayStr = isoDate()
 
 const displayPlan = computed((): PlanEntry[] => {
-  // Build Mon–Sun of the current week, filling missing days with synthetic Rest entries
+  // Show the actual rolling 7-day window the backend generates (today .. today+6),
+  // filling any missing day with a synthetic Rest entry. This must NOT be a fixed
+  // Mon–Sun calendar week — the backend's weeklyPlan starts from today regardless
+  // of weekday, and also has extra scored history entries prepended before today
+  // which this window intentionally excludes.
   const today = new Date(todayStr + 'T12:00:00')
-  const dow = today.getDay() // 0=Sun … 6=Sat
-  const monday = new Date(today)
-  monday.setDate(today.getDate() + (dow === 0 ? -6 : 1 - dow))
 
   const planMap = new Map(props.plan.map(e => [e.date, e]))
 
   return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday)
-    d.setDate(monday.getDate() + i)
+    const d = new Date(today)
+    d.setDate(today.getDate() + i)
     const dateStr = isoDate(d)
     return planMap.get(dateStr) ?? {
       date:   dateStr,
