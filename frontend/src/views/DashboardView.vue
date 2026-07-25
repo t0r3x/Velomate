@@ -52,13 +52,19 @@ onMounted(async () => {
   authStore.startPolling()
 
   await recommendationStore.fetchCached()
-  // The app only runs its startup plan-freshness check (Garmin sync + possible
-  // AI regen) while this window is open, so it's now racing the dashboard's own
-  // initial load on every launch — silently poll for a bit in case that
-  // background check produces a newer plan than what we just fetched.
-  const knownGeneratedAt = recommendationStore.recommendation?.generatedAt
-  if (knownGeneratedAt) {
-    recommendationStore.pollForUpdate(knownGeneratedAt)
+
+  // Sync fresh Garmin data as soon as the dashboard opens, instead of only
+  // showing whatever was cached at the last sync — mirrors ActivitiesCard's
+  // manual "Sync from Garmin" flow so a ride from just before launch is picked
+  // up immediately (including an instant execution score, if enabled).
+  try {
+    const { planRegenTriggered } = await activitiesStore.syncFromGarmin()
+    await recommendationStore.fetchCached()
+    if (planRegenTriggered) {
+      recommendationStore.pollForUpdate(recommendationStore.recommendation?.generatedAt)
+    }
+  } catch {
+    // Not authenticated with Garmin, or unreachable — keep showing cached data
   }
 })
 
