@@ -138,6 +138,17 @@
             </p>
           </div>
 
+          <div class="input-group" style="margin-top:0.85rem">
+            <label class="checkbox-label" for="panel-instant-scoring">
+              <input type="checkbox" id="panel-instant-scoring" v-model="instantScoring">
+              <span>Score new rides immediately</span>
+            </label>
+            <p class="helper-text" style="margin-top:0.35rem">
+              Regenerates your AI plan as soon as a new ride is synced, so its execution score shows up right away.
+              Turning this off saves AI calls — your score will instead appear at the next scheduled plan refresh.
+            </p>
+          </div>
+
         </form>
       </div>
 
@@ -175,16 +186,18 @@ const mfaCode  = ref('')
 const loginBusy = ref(false)
 
 // AI settings form state
-const apiKey        = ref('')
-const selectedModel = ref('gemini-3.5-flash')
-const saveBusy      = ref(false)
+const apiKey         = ref('')
+const selectedModel  = ref('gemini-3.5-flash')
+const instantScoring = ref(true)
+const saveBusy       = ref(false)
 
 // Sync form state from store when panel opens
 watch(() => props.open, (isOpen) => {
   if (isOpen) {
-    selectedModel.value = settingsStore.geminiModel
-    apiKey.value        = ''
-    mfaCode.value       = ''
+    selectedModel.value  = settingsStore.geminiModel
+    instantScoring.value = settingsStore.instantScoreOnNewActivity
+    apiKey.value         = ''
+    mfaCode.value        = ''
   }
 })
 
@@ -240,6 +253,7 @@ async function handleSave() {
       show('error', 'Save Failed', 'Could not save settings.')
       return
     }
+    await settingsStore.saveInstantScoreOnNewActivity(instantScoring.value)
     apiKey.value = ''
     if (!onSetup) {
       show('success', 'Settings Saved', 'API key and preferences updated.')

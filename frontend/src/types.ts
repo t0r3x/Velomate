@@ -144,6 +144,7 @@ export interface GeminiKeyStatus {
   preferredLongRideDays: string[]
   geminiModel: string
   inactivityPauseDays: number
+  instantScoreOnNewActivity: boolean
 }
 
 export interface DashboardResponse {

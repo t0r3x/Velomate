@@ -622,6 +622,24 @@ body.is-electron .app-shell {
   color: var(--text-secondary);
 }
 
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: var(--primary-color);
+  cursor: pointer;
+}
+
 .input-wrapper {
   position: relative;
   width: 100%;
