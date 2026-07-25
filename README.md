@@ -7,6 +7,23 @@ A cycling training dashboard that connects to **Garmin Connect** and uses **Goog
 ![TypeScript](https://img.shields.io/badge/typescript-5-blue)
 ![Electron](https://img.shields.io/badge/electron-32-47848F)
 
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?style=for-the-badge&logo=github)](https://github.com/sponsors/t0r3x)
+
+## About this project
+
+Velomate started out as a personal tool to solve a specific problem: I wanted a flexible, adaptive training plan that actually listens to my Garmin data and adjusts to real life, without paying for another expensive subscription.
+
+**Yes, this project is roughly 95% "vibecoded" using AI.** But it wasn't just built on a whim, it took a clear vision, lots of tweaking and countless testing iterations to turn it into a reliable, functional application. 
+
+It was built with a clear purpose:
+- **Practical:** Direct sync back and forth with Garmin Connect.
+- **Adaptive:** Real-time execution scoring and fatigue adjustments via Gemini.
+- **Privacy-first:** Your keys and data stay on your machine (local SQLite database).
+
+Whether you run it as a lightweight desktop app or self-host it via Docker on your home server, I hope Velomate makes your training a bit smarter and your rides a bit better.
+
+Feedback, bug reports, and contributions are always welcome!
+
 ---
 
 ## What it does
@@ -142,6 +159,14 @@ npm run electron:publish  # build + upload installers as a GitHub Release (requi
 | AI | Google Gemini API |
 | Garmin | Garmin Connect web API (session-based) |
 | Logging | Winston + daily log rotation |
+
+---
+
+## ☕ Support the project
+
+If Velomate helps you train smarter, consider supporting its development:
+
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?style=for-the-badge&logo=github)](https://github.com/sponsors/t0r3x)
 
 ---
 
