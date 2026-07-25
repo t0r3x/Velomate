@@ -12,6 +12,10 @@ publish:
   provider: github
   owner: t0r3x
   repo: Velomate
+  # Without this, electron-builder defaults to creating a draft release and refuses
+  # to touch an existing non-draft release (fails with "existing type not compatible
+  # with publishing type"). Our releases are published immediately, so match that.
+  releaseType: release
 
 # Files to include in the package.
 # String patterns respect electron-builder default exclusions (blocks node_modules).
