@@ -95,11 +95,16 @@ settings      -- key/value store (generic — see "Settings stored in DB" below 
 
 recommendation -- id=1 singleton: current AI training plan
   id=1, workoutType, reason, priority TEXT,
-  weeklyPlan TEXT (JSON PlanEntry[7], entries carry executionScore/executionNote),
-  nextWeekOverview TEXT (JSON), loadAssessment TEXT (JSON), generatedAt TEXT
+  weeklyPlan TEXT (JSON PlanEntry[14], entries carry executionScore/executionNote),
+  nextWeekOverview TEXT (legacy, unused — see below), nextWeekFocus TEXT,
+  loadAssessment TEXT (JSON), generatedAt TEXT
 ```
 
 **The `devices` table is gone** — it was dead code (no reads/writes, no route) and was dropped along with `GET/POST /api/devices*`.
+
+**`nextWeekOverview` is legacy/unused** — the forward `weeklyPlan` window is 14 real days (previously 7, with a separate AI-guessed `nextWeekOverview` summary `{summary, sessions[], emphasis}` standing in for the second week). Now that the second week is real planned data, that guess was redundant and was removed from the prompt/schema and the frontend. The DB column still exists so old rows keep parsing, but `upsertRecommendation()` always writes `NULL` to it — don't resurrect it.
+
+**`nextWeekFocus` (TEXT, nullable) replaces the "why" part of the old `nextWeekOverview`** — a 1-2 sentence AI-written rationale for the training theme of the second week (`weeklyPlan[7..13]`) as a whole, e.g. "Introduce structured Tempo intervals to build fatigue resistance while keeping overall volume low." Unlike the old `nextWeekOverview`, this isn't a forward guess — it's generated in the same call as the real days it describes, so it explains decisions already made rather than speculating. Added via an idempotent `ALTER TABLE ... ADD COLUMN` migration (`hasColumn()` check in `database.service.ts`) since existing `recommendation` rows must be preserved, unlike the disposable zone/`devices` migrations above.
 
 `perceivedExertion`/`feelingAfterExercise` are populated by a separate per-activity detail fetch and are **excluded from the bulk-upsert `ON CONFLICT` clause** so a routine activity-list sync never clobbers them.
 
@@ -167,8 +172,8 @@ The first plan is never created here — only steps 2-4 ever fire, and they all 
 - Retries with a shrinking activity window (`ACTIVITY_WINDOWS = [21, 14, 10]` days) if Gemini's response is truncated (`finishReason === 'MAX_TOKENS'`)
 - POSTs to `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`, retries up to 3× on HTTP 429 with backoff
 - `responseMimeType: "application/json"`, joins all parts: `parts.map(p => p.text ?? '').join('')` — avoids truncation
-- Validates: `today.type` in the valid set, `weeklyPlan` is exactly 7 entries
-- Merges statuses/scores with the previous plan — never re-scores an already-scored entry; keeps a rolling 14-day scored history prepended to the new 7-day window
+- Validates: `today.type` in the valid set, `weeklyPlan` is exactly 14 entries (`PLAN_WINDOW_DAYS`)
+- Merges statuses/scores with the previous plan — never re-scores an already-scored entry; keeps a rolling 14-day window of ALL past entries (any status — completed, skipped, auto-skipped, or still-planned Rest days) prepended to the new 14-day window. This must NOT be filtered to `status === 'completed'` only — Rest days never reach 'completed' (no Garmin activity to match), so that filter would silently drop every past Rest day, which is invisible with a rolling "today onwards" display but breaks a fixed calendar-week display that renders days before today.
 - Recomputes `structure.totalMinutes` from steps (corrects AI rounding)
 - Always returns `getStoredRecommendation()` (i.e., what was just saved to DB)
 
@@ -266,6 +271,7 @@ The old vanilla-JS `setView()`/`currentView`/hidden-class toggling and `setRecSt
 ### Key helpers
 - `useTimeAgo()` composable (`composables/useTimeAgo.ts`) — same logic as the old vanilla `timeAgo()` helper, used in `ActivitiesCard.vue`/`LoadAssessment.vue`
 - `isElectron()` / `electronAPI()` (`utils/electron.ts`) — feature-detect the Electron preload bridge
+- `buildWeekWindow(plan, startOffset)` (`utils.ts`) — shared by `WeekGrid.vue` and `NextWeekSummary.vue`: slices a real 7-day window out of `weeklyPlan`, rolling from today (`This Week` = offset 0, `Next Week` = offset 7 — NOT a fixed Mon–Sun calendar week; that was tried and reverted because it shows fewer of the imminent days in full detail the later in the week "today" falls, worst case a Sunday start showing only today). Any date missing from `weeklyPlan` becomes a placeholder (`isPlaceholder: true`) — **never** a fabricated real rest day. A placeholder dated before today is additionally flagged `isPastPlaceholder: true` and rendered as quiet "No data" (`WeekDayCell.vue`/`WorkoutDetailPanel.vue`) rather than the actionable "Not planned yet" — dead code with the current rolling-only offsets (0 and 7 never produce a past date), kept as a harmless safety net in case a non-zero-or-positive offset is ever reintroduced. `describeCoverageGaps()` only counts non-past placeholders toward its "refresh to extend it" note for the same reason.
 
 ---
 

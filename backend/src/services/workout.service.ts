@@ -157,32 +157,36 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
   const results: { type: string; workoutId: any; name: string; scheduledDate: string; scheduleError: string }[] = [];
   const usingFallback: string[] = [];   // tracks which types had no AI structure
 
-  // ── Derive which workout types to sync from the plan ──────────────────────────
-  // Only sync types that are actually planned — never upload workouts for types not in the plan.
+  // ── Derive which workouts to sync from the plan ────────────────────────────────
+  // Only sync the visible "This Week" window (today..today+6) — matches what WeekGrid.vue
+  // actually displays as the current, actionable week (the AI plan window is 14 days, so
+  // without this bound the loop below would reach into next week too). Every planned
+  // syncable day gets its own upload+schedule — do NOT dedupe by type, since a single week
+  // can legitimately contain more than one day of the same type (e.g. two Long Rides for a
+  // high-volume athlete), and each needs its own scheduled entry on Garmin.
   const SYNCABLE_TYPES = ['Sprint', 'VO2Max', 'Threshold', 'Tempo', 'LongRide'] as const;
   type SyncType = typeof SYNCABLE_TYPES[number];
 
-  // Build a map: type → first planned entry with that type (AI structure preferred)
-  const plannedEntryByType = new Map<string, PlanEntry>();
-  for (const entry of (planEntries || [])) {
-    if (entry.status === 'planned' && SYNCABLE_TYPES.includes(entry.type as SyncType)) {
-      if (!plannedEntryByType.has(entry.type)) {
-        plannedEntryByType.set(entry.type, entry);
-      }
-    }
+  const today = localDate();
+  const weekEnd = new Date(today + 'T12:00:00');
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  const weekEndStr = localDate(weekEnd);
+
+  let entriesToSync: PlanEntry[] = (planEntries || []).filter(
+    e => e.status === 'planned'
+      && SYNCABLE_TYPES.includes(e.type as SyncType)
+      && e.date >= today
+      && e.date <= weekEndStr
+  );
+
+  // If this week has no syncable entries, fall back to all five so the button is never
+  // a no-op (e.g. first-time sync before plan is generated).
+  if (entriesToSync.length === 0) {
+    logger.warn('[Sync] No planned syncable entries in this week — falling back to all five types');
+    entriesToSync = SYNCABLE_TYPES.map(type => ({ date: dateStr, type, reason: '', status: 'planned' as const, structure: null }));
   }
 
-  // If the plan is empty or has no syncable types, fall back to all three so the button
-  // is never a no-op (e.g. first-time sync before plan is generated).
-  if (plannedEntryByType.size === 0) {
-    logger.warn('[Sync] No planned syncable entries found — falling back to all three types');
-    for (const type of SYNCABLE_TYPES) {
-      plannedEntryByType.set(type, { date: dateStr, type, reason: '', status: 'planned', structure: null });
-    }
-  }
-
-  const typesToSync = [...plannedEntryByType.keys()];
-  logger.info(`[Sync] Syncing ${typesToSync.length} workout type(s) from plan: ${typesToSync.join(', ')}`);
+  logger.info(`[Sync] Syncing ${entriesToSync.length} workout(s) from this week: ${entriesToSync.map(e => `${e.date}:${e.type}`).join(', ')}`);
 
   // ── Remove existing Velomate workouts before re-uploading ────────────────────
   // Prevents duplicates in the Garmin library and calendar when syncing multiple times.
@@ -209,12 +213,11 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
     logger.warn(`[Sync] Could not clean up existing workouts (continuing anyway): ${err.message}`);
   }
 
-  // ── Build and upload each planned type ───────────────────────────────────────
+  // ── Build and upload each planned entry ──────────────────────────────────────
   const devDump: Record<string, any> = {};
-  let scheduledWorkoutId: any = null;
 
-  for (const type of typesToSync) {
-    const entry = plannedEntryByType.get(type)!;
+  for (const entry of entriesToSync) {
+    const type = entry.type;
 
     // Resolve structure: AI-generated is always preferred.
     // Fallback only fires if the plan has the type but no structure (shouldn't normally happen).
@@ -262,7 +265,7 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
     }
 
     const def = buildFromStructure(workoutName, workoutDesc, structure, type);
-    devDump[type.toLowerCase()] = def;
+    devDump[`${entryDate}_${type.toLowerCase()}`] = def;
 
     // Upload the workout definition
     logger.info(`[Sync] Uploading ${type} workout…`);
@@ -286,7 +289,6 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
         scheduledDate: '',
         scheduleError: `Could not schedule for ${entryDate} — schedule manually in Garmin Connect`
       });
-      if (type === 'Threshold') scheduledWorkoutId = uploaded.workoutId;
       continue;
     }
 
@@ -297,8 +299,6 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
       scheduledDate: entryDate,
       scheduleError: ''
     });
-
-    if (type === 'Threshold') scheduledWorkoutId = uploaded.workoutId;
   }
 
   devDumpWorkouts(devDump, dateStr);
@@ -307,7 +307,6 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
   if (usingFallback.length) logger.warn(`[Sync] Fallback structures used for: ${usingFallback.join(', ')}`);
 
   return {
-    scheduledWorkoutId,
     scheduledDate:  dateStr,
     workouts:       results,
     usingFallback,           // non-empty → frontend should warn user to regenerate plan
