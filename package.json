@@ -1,7 +1,7 @@
 {
   "name": "velomate-root",
   "productName": "Velomate",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Velomate — AI cycling training dashboard",
   "main": "electron-main.js",
   "scripts": {
