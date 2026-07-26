@@ -2,11 +2,14 @@
   <div>
     <div class="week-preview-header">
       <i class="fa-solid fa-calendar-week"></i>
-      <span>This Week</span>
+      <span>{{ title }}</span>
       <span class="week-label">{{ weekLabel }}</span>
     </div>
+    <p v-if="coverageNote" class="week-coverage-note">
+      <i class="fa-solid fa-circle-info"></i> {{ coverageNote }}
+    </p>
     <div class="week-grid-scroll">
-      <div class="week-grid" id="ai-week-grid">
+      <div class="week-grid">
         <WeekDayCell
           v-for="entry in displayPlan"
           :key="entry.date"
@@ -33,12 +36,18 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { PlanEntry, PlanEntryStatus } from '@/types'
-import { isoDate } from '@/utils'
+import type { PlanEntry } from '@/types'
+import { isoDate, buildWeekWindow, describeCoverageGaps } from '@/utils'
 import WeekDayCell       from './WeekDayCell.vue'
 import WorkoutDetailPanel from './WorkoutDetailPanel.vue'
 
-const props = defineProps<{ plan: PlanEntry[]; todayPriority?: string }>()
+const props = defineProps<{
+  plan: PlanEntry[]
+  todayPriority?: string
+  /** Days to shift the displayed 7-day window forward from today (e.g. 7 for "next week"). */
+  startOffset?: number
+  title: string
+}>()
 const emit  = defineEmits<{
   reschedule: [date: string]
   skip:       [date: string]
@@ -46,28 +55,16 @@ const emit  = defineEmits<{
 
 const todayStr = isoDate()
 
-const displayPlan = computed((): PlanEntry[] => {
-  // Show the actual rolling 7-day window the backend generates (today .. today+6),
-  // filling any missing day with a synthetic Rest entry. This must NOT be a fixed
-  // Mon–Sun calendar week — the backend's weeklyPlan starts from today regardless
-  // of weekday, and also has extra scored history entries prepended before today
-  // which this window intentionally excludes.
-  const today = new Date(todayStr + 'T12:00:00')
+// Show the actual rolling 7-day window the backend generates (today+offset .. today+offset+6),
+// filling any missing day with a placeholder — never fabricate a real AI-planned rest day for
+// a date the backend hasn't covered. This must NOT be a fixed Mon–Sun calendar week — anchoring
+// to today means the next 7 days are always shown in full detail regardless of what weekday it
+// is (a fixed calendar week would show fewer of the imminent days once today is past Monday).
+const displayPlan = computed((): PlanEntry[] => buildWeekWindow(props.plan, props.startOffset ?? 0))
 
-  const planMap = new Map(props.plan.map(e => [e.date, e]))
-
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(today)
-    d.setDate(today.getDate() + i)
-    const dateStr = isoDate(d)
-    return planMap.get(dateStr) ?? {
-      date:   dateStr,
-      type:   'Rest',
-      reason: '',
-      status: 'planned' as PlanEntryStatus,
-    }
-  })
-})
+// Days shown in the grid that the backend hasn't actually planned yet — surfaced
+// explicitly so a coverage gap never looks like a real AI-planned rest day.
+const coverageNote = computed(() => describeCoverageGaps(displayPlan.value))
 
 const weekLabel = computed(() => {
   if (displayPlan.value.length === 0) return ''

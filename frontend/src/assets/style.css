@@ -1293,6 +1293,22 @@ body.is-electron .app-shell {
   letter-spacing: 0;
 }
 
+.week-coverage-note {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: -0.25rem 0 0.5rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #f59e0b;
+  background: rgba(245,158,11,0.1);
+  border: 1px solid rgba(245,158,11,0.25);
+  border-radius: 6px;
+}
+
 /* 7-column day grid */
 .week-grid {
   display: grid;
@@ -1347,6 +1363,25 @@ body.is-electron .app-shell {
   gap: 4px;
 }
 .wdc-rest i { font-size: 0.95rem; opacity: 0.4; }
+
+/* Placeholder — a day the backend hasn't planned yet; must read as distinct from a real Rest day */
+.week-day-cell.placeholder { opacity: 0.55; }
+.wdc-placeholder {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  font-style: italic;
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.wdc-placeholder i { font-size: 0.95rem; opacity: 0.4; }
+
+/* Past placeholder — before today, with no history. Quieter than a future gap: there's
+   nothing to refresh, so this must not look like it's awaiting an action. */
+.week-day-cell.past-placeholder { opacity: 0.35; }
+.wdc-past-placeholder i { opacity: 0.3; }
 
 .wdc-workout-chip {
   display: flex;
@@ -2370,27 +2405,7 @@ body.shablagoo-active .bg-glow-2 {
   transform: scale(1.1);
 }
 
-/* Next week overview */
-.ai-next-week {
-  background: rgba(255,255,255,0.02);
-  border: 1px solid var(--panel-border);
-  border-radius: 12px;
-  padding: 0.75rem;
-  margin-bottom: 1rem;
-}
-
-.ai-next-week-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
-  margin-bottom: 0.5rem;
-}
-
+/* Next week summary — compact, real-data-backed */
 .ai-next-week-summary {
   font-size: 0.82rem;
   color: var(--text-secondary);
@@ -2401,7 +2416,6 @@ body.shablagoo-active .bg-glow-2 {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
-  margin-bottom: 0.5rem;
 }
 
 .ai-next-week-chip {
@@ -2419,6 +2433,7 @@ body.shablagoo-active .bg-glow-2 {
   font-size: 0.78rem;
   color: var(--text-muted);
   font-style: italic;
+  margin-top: 0.5rem;
 }
 
 /* Load assessment — lives inside ai-week-section */

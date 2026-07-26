@@ -118,10 +118,17 @@ db.exec(`
     priority         TEXT,
     weeklyPlan       TEXT,
     nextWeekOverview TEXT,
+    nextWeekFocus    TEXT,
     loadAssessment   TEXT,
     generatedAt      TEXT
   );
 `);
+
+// Additive migration for installs whose `recommendation` table predates `nextWeekFocus` —
+// existing plan data (weeklyPlan, etc.) must be preserved, so ALTER rather than drop+recreate.
+if (!hasColumn('recommendation', 'nextWeekFocus')) {
+  db.exec('ALTER TABLE recommendation ADD COLUMN nextWeekFocus TEXT');
+}
 
 // ── Activities ────────────────────────────────────────────────────────────────
 // UPSERT: on conflict, update all fields EXCEPT perceivedExertion/feelingAfterExercise —
@@ -335,19 +342,20 @@ export const upsertRecommendation = (rec: {
   reason: string;
   priority: string;
   weeklyPlan: PlanEntry[];
-  nextWeekOverview: object;
+  nextWeekFocus: string | null;
   loadAssessment: object;
 }): void => {
   db.prepare(`
     INSERT OR REPLACE INTO recommendation
-      (id, workoutType, reason, priority, weeklyPlan, nextWeekOverview, loadAssessment, generatedAt)
-    VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+      (id, workoutType, reason, priority, weeklyPlan, nextWeekOverview, nextWeekFocus, loadAssessment, generatedAt)
+    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     rec.workoutType,
     rec.reason,
     rec.priority,
     JSON.stringify(rec.weeklyPlan),
-    JSON.stringify(rec.nextWeekOverview),
+    null,
+    rec.nextWeekFocus,
     JSON.stringify(rec.loadAssessment),
     new Date().toISOString()
   );
@@ -358,13 +366,13 @@ export const getStoredRecommendation = (): any | null => {
   if (!row) return null;
   try {
     return {
-      workoutType:      row.workoutType,
-      reason:           row.reason,
-      priority:         row.priority,
-      weeklyPlan:       JSON.parse(row.weeklyPlan       || '[]'),
-      nextWeekOverview: JSON.parse(row.nextWeekOverview || 'null'),
-      loadAssessment:   JSON.parse(row.loadAssessment   || 'null'),
-      generatedAt:      row.generatedAt
+      workoutType:    row.workoutType,
+      reason:         row.reason,
+      priority:       row.priority,
+      weeklyPlan:     JSON.parse(row.weeklyPlan     || '[]'),
+      nextWeekFocus:  row.nextWeekFocus ?? null,
+      loadAssessment: JSON.parse(row.loadAssessment || 'null'),
+      generatedAt:    row.generatedAt
     };
   } catch (e) {
     logger.warn('[DB] getStoredRecommendation: JSON parse failed — returning null ' + JSON.stringify(e));

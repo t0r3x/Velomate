@@ -38,7 +38,13 @@
     </div>
 
     <!-- Reason -->
-    <p v-if="entry.reason" class="wdp-reason">{{ entry.reason }}</p>
+    <p v-if="isPastPlaceholder" class="wdp-reason wdp-placeholder-note">
+      No plan data exists for this day — it's before the AI plan's history began, so there's nothing to refresh.
+    </p>
+    <p v-else-if="isPlaceholder" class="wdp-reason wdp-placeholder-note">
+      This day isn't in the AI's current plan yet — refresh the plan to extend its coverage.
+    </p>
+    <p v-else-if="entry.reason" class="wdp-reason">{{ entry.reason }}</p>
 
     <!-- Action buttons -->
     <div v-if="canSkip || canMove" class="wdp-actions">
@@ -75,18 +81,20 @@ const priorityLabel = computed(() =>
 const d            = computed(() => new Date(props.entry.date + 'T12:00:00'))
 const dayLabel     = computed(() => DAY_NAMES[d.value.getDay()])
 const dayOfMonth   = computed(() => d.value.getDate())
-const typeIcon     = computed(() => iconMap[props.entry.type]  ?? 'fa-dumbbell')
-const typeLabel    = computed(() => labelMap[props.entry.type] ?? props.entry.type)
+const isPlaceholder     = computed(() => !!props.entry.isPlaceholder)
+const isPastPlaceholder = computed(() => !!props.entry.isPastPlaceholder)
+const typeIcon     = computed(() => isPastPlaceholder.value ? 'fa-minus' : isPlaceholder.value ? 'fa-hourglass-half' : (iconMap[props.entry.type]  ?? 'fa-dumbbell'))
+const typeLabel    = computed(() => isPastPlaceholder.value ? 'No data' : isPlaceholder.value ? 'Not planned' : (labelMap[props.entry.type] ?? props.entry.type))
 const steps        = computed(() => props.entry.structure?.steps ?? [])
 const durationText = computed(() =>
   props.entry.structure?.totalMinutes ? `${props.entry.structure.totalMinutes} min` : ''
 )
 
 const canSkip = computed(() =>
-  props.entry.status === 'planned'
+  !isPlaceholder.value && props.entry.status === 'planned'
 )
 const canMove = computed(() =>
-  props.entry.date >= isoDate() && props.entry.status === 'planned'
+  !isPlaceholder.value && props.entry.date >= isoDate() && props.entry.status === 'planned'
 )
 
 function fmtDur(sec: number): string {
@@ -211,6 +219,11 @@ function fmtDur(sec: number): string {
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   padding-top: 8px;
   margin: 0;
+}
+
+.wdp-placeholder-note {
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 /* Action buttons */

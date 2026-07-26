@@ -13,6 +13,9 @@ import logger from '../logger';
 
 // ── Key helpers ───────────────────────────────────────────────────────────────
 
+/** Forward-looking plan length in days — kept wide enough that a lagged regen still covers "next week" with real data. */
+const PLAN_WINDOW_DAYS = 14;
+
 export const getGeminiKey = (): string | null => getSetting('gemini_api_key') || null;
 
 export const maskKey = (key: string): string =>
@@ -373,13 +376,7 @@ OUTPUT: Respond ONLY with this exact JSON schema:
       }
     }
   ],
-  "nextWeekOverview": {
-    "summary": "e.g. '3 sessions: 1 Sprint, 1 Threshold, 1 Long Ride'",
-    "sessions": [
-      { "type": "Threshold", "estimatedDay": "Tuesday" }
-    ],
-    "emphasis": "1 sentence"
-  },
+  "nextWeekFocus": "1-2 sentences on the training theme of the SECOND week (weeklyPlan[7..13]) — what ties its sessions together and why, e.g. 'Introduce structured Tempo intervals to build fatigue resistance while keeping overall volume low.'",
   "loadAssessment": {
     "fatigue": "low|moderate|high",
     "weeklyLoadTrend": "increasing|stable|decreasing",
@@ -402,7 +399,8 @@ STRICT RULES:
 - stepType MUST be one of: WarmUp, Run, Recovery, Cooldown
 - zone MUST be one of: z1, z2, z3, z4, z5
 - durationSec MUST be a positive integer (minimum 20 for sprint intervals)
-- weeklyPlan MUST contain exactly 7 entries starting from TODAY (${today})
+- weeklyPlan MUST contain exactly ${PLAN_WINDOW_DAYS} entries starting from TODAY (${today})
+- nextWeekFocus describes weeklyPlan[7..13] AS A WHOLE (the training theme/rationale) — it is not a day-by-day recap, those already have their own "reason"
 - totalMinutes MUST equal Math.round(sum(durationSec) / 60)
 - COMPACT STRUCTURES: Sprint max 6 interval sets, Threshold max 3 sets, VO2Max max 4 sets. Step labels must be ≤ 4 words. reason fields: 1 short sentence only.${pinnedTodayType ? `\n- PINNED TODAY: A "CRITICAL — USER RESCHEDULED TODAY" block is present above. You MUST output "${pinnedTodayType}" for today.type and weeklyPlan[0].type. No exceptions — not fatigue, not load assessment.` : ''}`;
 };
@@ -460,7 +458,7 @@ const _attemptGeneration = async (
           generationConfig: {
             responseMimeType: 'application/json',
             temperature: 0.4,
-            maxOutputTokens: 8192
+            maxOutputTokens: 16384
           }
         }
       );
@@ -509,8 +507,8 @@ const _attemptGeneration = async (
   if (!validTypes.includes(parsed?.today?.type)) {
     throw new Error(`Invalid today.type: ${parsed?.today?.type}`);
   }
-  if (!Array.isArray(parsed?.weeklyPlan) || parsed.weeklyPlan.length !== 7) {
-    throw new Error(`weeklyPlan must be an array of 7 entries, got ${parsed?.weeklyPlan?.length}`);
+  if (!Array.isArray(parsed?.weeklyPlan) || parsed.weeklyPlan.length !== PLAN_WINDOW_DAYS) {
+    throw new Error(`weeklyPlan must be an array of ${PLAN_WINDOW_DAYS} entries, got ${parsed?.weeklyPlan?.length}`);
   }
 
   // Build a lookup of the previous plan for status + score preservation
@@ -519,7 +517,7 @@ const _attemptGeneration = async (
     previousPlan.forEach(e => prevEntryMap.set(e.date, e));
   }
 
-  // Merge into the new 7-day plan:
+  // Merge into the new plan window:
   //  - Preserve non-planned statuses (completed/skipped/auto-skipped)
   //  - Preserve existing executionScores (never re-score an already-scored entry)
   //  - Apply new AI-generated scores for entries that just became completed (today's dates in new plan)
@@ -552,7 +550,7 @@ const _attemptGeneration = async (
 
   // ── Merge AI execution scores with past entries (scored history) ───────────
   // The AI returns executionScores[] for entries marked "NEEDS SCORING" in the compliance block.
-  // Those dates are BEFORE today and NOT in the new 7-day weeklyPlan — we keep them as
+  // Those dates are BEFORE today and NOT in the new weeklyPlan window — we keep them as
   // scored history prepended to the plan so that future AI calls have full execution context.
   const newPlanDates = new Set(weeklyPlan.map(e => e.date));
   const scoredMap    = new Map<string, { score: number; note: string }>();
@@ -567,13 +565,18 @@ const _attemptGeneration = async (
     logger.info(`[Gemini] executionScores received for: ${[...scoredMap.keys()].join(', ')}`);
   }
 
-  // Keep past completed entries from the last 14 days, with AI scores applied
+  // Keep ALL past entries from the last 14 days (any status), with AI scores applied where
+  // scored. Rest days never reach 'completed' (no Garmin activity to match against a rest
+  // day), so filtering to status === 'completed' here would silently drop every past Rest
+  // day once it scrolls out of the forward window — invisible with a rolling "today onwards"
+  // display, but a permanent, refresh-proof gap once the frontend renders a fixed calendar
+  // week that includes days before today.
   const histCutoff = new Date();
   histCutoff.setDate(histCutoff.getDate() - 14);
   const histCutoffStr = localDate(histCutoff);
 
-  const scoredHistory: PlanEntry[] = (previousPlan || [])
-    .filter(e => !newPlanDates.has(e.date) && e.date >= histCutoffStr && e.status === 'completed')
+  const pastEntries: PlanEntry[] = (previousPlan || [])
+    .filter(e => !newPlanDates.has(e.date) && e.date >= histCutoffStr)
     .map(e => {
       const s = scoredMap.get(e.date);
       return {
@@ -595,19 +598,19 @@ const _attemptGeneration = async (
     }
   }
 
-  // Full plan = scored history (past completed) + new 7-day window (today onwards)
-  const fullPlan = [...scoredHistory, ...weeklyPlan];
+  // Full plan = past entries (any status, last 14 days) + new forward window (today onwards)
+  const fullPlan = [...pastEntries, ...weeklyPlan];
 
   // weeklyPlan[0] is the authoritative source for today — always sync root fields to it
   // so the "Today's Recommendation" chip never diverges from the week grid.
   const todayEntry = weeklyPlan[0];
   upsertRecommendation({
-    workoutType:      todayEntry?.type    ?? parsed.today.type,
-    reason:           todayEntry?.reason  ?? parsed.today.reason,
-    priority:         parsed.today.priority,
-    weeklyPlan:       fullPlan,
-    nextWeekOverview: parsed.nextWeekOverview,
-    loadAssessment:   parsed.loadAssessment
+    workoutType:   todayEntry?.type    ?? parsed.today.type,
+    reason:        todayEntry?.reason  ?? parsed.today.reason,
+    priority:      parsed.today.priority,
+    weeklyPlan:    fullPlan,
+    nextWeekFocus: typeof parsed.nextWeekFocus === 'string' ? parsed.nextWeekFocus : null,
+    loadAssessment: parsed.loadAssessment
   });
 
   // ── Log parsed result summary ─────────────────────────────────────────────────
@@ -616,17 +619,17 @@ const _attemptGeneration = async (
   logger.info(`  Reason:   ${parsed.today.reason}`);
   logger.info(`  Fatigue:  ${parsed.loadAssessment?.fatigue}  |  Trend: ${parsed.loadAssessment?.weeklyLoadTrend}`);
   logger.info(`  Insight:  ${parsed.loadAssessment?.insight}`);
-  if (scoredHistory.length > 0) {
-    logger.info(`  Scored history (${scoredHistory.length} past entries):`);
-    scoredHistory.forEach(e =>
+  if (pastEntries.length > 0) {
+    logger.info(`  Past entries (${pastEntries.length}):`);
+    pastEntries.forEach(e =>
       logger.info(`    ${e.date}  ${e.type.padEnd(10)}  [${e.status}]  score=${e.executionScore ?? 'null'}  ${e.executionNote ?? ''}`)
     );
   }
-  logger.info(`  New 7-day plan (${weeklyPlan.length} entries):`);
+  logger.info(`  New plan (${weeklyPlan.length} entries):`);
   weeklyPlan.forEach(e =>
     logger.info(`    ${e.date}  ${e.type.padEnd(10)}  [${e.status}]  ${e.reason}`)
   );
-  logger.info(`  Next week: ${parsed.nextWeekOverview?.summary}`);
+  logger.info(`  Next week focus: ${parsed.nextWeekFocus ?? '(none)'}`);
   logger.info('═'.repeat(72) + '\n');
 
   return { truncated: false, value: getStoredRecommendation() };

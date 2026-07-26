@@ -29,7 +29,7 @@
       <!-- State: no-plan -->
       <div v-show="recStore.state === 'no-plan'" class="ai-rec-state">
         <div class="ai-rec-empty ai-rec-intro">
-          <p class="ai-rec-intro-lead">AI analyses your ride history, heart rate zones and training load to build a continuously adaptive training plan — for as long as you want to train. It always shows the next 7 days ahead, but the plan has no end date: it rolls forward every day and adjusts to what you actually did.</p>
+          <p class="ai-rec-intro-lead">AI analyses your ride history, heart rate zones and training load to build a continuously adaptive training plan — for as long as you want to train. It always shows the next 14 days ahead, but the plan has no end date: it rolls forward every day and adjusts to what you actually did.</p>
           <ul class="ai-rec-intro-list">
             <li><i class="fa-solid fa-rotate"></i><span><strong>Rolls forward every day.</strong> The plan always starts from today. Each morning a fresh window is generated in the background — no action needed.</span></li>
             <li><i class="fa-solid fa-circle-check"></i><span><strong>Detects what you actually did.</strong> After a Garmin sync, completed workouts are matched to the plan. Zone data shows whether intervals were fully executed, partially done, or the intensity didn't match.</span></li>
@@ -67,14 +67,15 @@
       <!-- State: loaded -->
       <div v-show="recStore.state === 'loaded'" class="ai-rec-state">
         <template v-if="rec">
-          <!-- Week grid + load assessment -->
+          <!-- This week: rolling "today onwards" window — always shows the next 7 days in
+               full detail regardless of what weekday today is, grid + load assessment -->
           <div class="ai-week-section">
-            <WeekGrid :plan="rec.weeklyPlan" :todayPriority="rec.priority" @reschedule="handleReschedule" @skip="handleSkip" />
+            <WeekGrid :plan="rec.weeklyPlan" :todayPriority="rec.priority" title="This Week" @reschedule="handleReschedule" @skip="handleSkip" />
             <LoadAssessment v-if="rec.loadAssessment" :assessment="rec.loadAssessment" :generatedAt="rec.generatedAt" />
           </div>
 
-          <!-- Next week -->
-          <NextWeekOverview v-if="rec.nextWeekOverview" :overview="rec.nextWeekOverview" />
+          <!-- Next week: rolling days 8-14, compact summary backed by real plan data -->
+          <NextWeekSummary :plan="rec.weeklyPlan" :startOffset="7" :nextWeekFocus="rec.nextWeekFocus" />
         </template>
       </div>
 
@@ -118,7 +119,7 @@ import { useMoveDayDialog }       from '@/composables/useMoveDayDialog'
 import type { SyncResult as SyncResultType } from '@/types'
 
 import WeekGrid         from './WeekGrid.vue'
-import NextWeekOverview from './NextWeekOverview.vue'
+import NextWeekSummary  from './NextWeekSummary.vue'
 import LoadAssessment   from './LoadAssessment.vue'
 import SyncResult       from './SyncResult.vue'
 
