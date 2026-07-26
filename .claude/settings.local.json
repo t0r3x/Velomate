@@ -2,7 +2,6 @@
   "permissions": {
     "allow": [
       "Bash(Get-ChildItem *)",
-      "Bash(mkdir -p \"e:\\\\Marcel\\\\Documents\\\\VS Code Projects\\\\Unbound\\\\frontend\\\\src\\\\assets\")",
       "Bash(git show *)",
       "Bash(npx vue-tsc *)"
     ]
