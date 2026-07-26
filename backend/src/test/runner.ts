@@ -199,7 +199,7 @@ function athleteSection(r: AthleteResult): string {
   const today = new Date().toISOString().slice(0, 10);
   const planEntries: PlanEntry[] = (r.recommendation?.weeklyPlan ?? [])
     .filter((e: PlanEntry) => e.date >= today)
-    .slice(0, 7);
+    .slice(0, 14);
 
   const loadAssessment = r.recommendation?.loadAssessment;
   const loadHtml = loadAssessment ? `
@@ -208,13 +208,6 @@ function athleteSection(r: AthleteResult): string {
       Fatigue <em>${loadAssessment.fatigue}</em> ·
       Trend <em>${loadAssessment.weeklyLoadTrend}</em><br>
       <span style="color:#555">${(loadAssessment.insight || '').replace(/</g, '&lt;')}</span>
-    </div>` : '';
-
-  const nextWeek = r.recommendation?.nextWeekOverview;
-  const nextWeekHtml = nextWeek ? `
-    <div style="margin-top:12px;padding:10px 14px;background:#f0f4ff;border-radius:6px;font-size:13px">
-      <strong>Next week:</strong> ${(nextWeek.summary || '').replace(/</g, '&lt;')}<br>
-      <span style="color:#555;font-style:italic">${(nextWeek.emphasis || '').replace(/</g, '&lt;')}</span>
     </div>` : '';
 
   const phase = r.trainingPhase || 'unknown';
@@ -239,7 +232,7 @@ function athleteSection(r: AthleteResult): string {
     </div>
 
     <div style="padding:20px">
-      <h3 style="margin:0 0 10px;font-size:15px">7-Day Training Plan</h3>
+      <h3 style="margin:0 0 10px;font-size:15px">14-Day Training Plan</h3>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead><tr style="background:#f0f0f0;font-size:11px;text-transform:uppercase;letter-spacing:.4px">
           <th style="padding:6px 8px;text-align:left">Date</th>
@@ -250,7 +243,6 @@ function athleteSection(r: AthleteResult): string {
         <tbody>${planEntries.map(planRow).join('')}</tbody>
       </table>
       ${loadHtml}
-      ${nextWeekHtml}
     </div>
   </section>`;
 }
