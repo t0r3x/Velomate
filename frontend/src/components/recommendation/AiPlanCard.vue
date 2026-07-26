@@ -31,9 +31,9 @@
         <div class="ai-rec-empty ai-rec-intro">
           <p class="ai-rec-intro-lead">AI analyses your ride history, heart rate zones and training load to build a continuously adaptive training plan — for as long as you want to train. It always shows the next 14 days ahead, but the plan has no end date: it rolls forward every day and adjusts to what you actually did.</p>
           <ul class="ai-rec-intro-list">
-            <li><i class="fa-solid fa-rotate"></i><span><strong>Rolls forward every day.</strong> The plan always starts from today. Each morning a fresh window is generated in the background — no action needed.</span></li>
+            <li><i class="fa-solid fa-rotate"></i><span><strong>Rolls forward every day.</strong> The plan always starts from today and regenerates automatically as your rides come in or the plan goes stale — open the app, or hit Refresh, to see the latest.</span></li>
             <li><i class="fa-solid fa-circle-check"></i><span><strong>Detects what you actually did.</strong> After a Garmin sync, completed workouts are matched to the plan. Zone data shows whether intervals were fully executed, partially done, or the intensity didn't match.</span></li>
-            <li><i class="fa-solid fa-forward-step"></i><span><strong>Adapts to skips and changes.</strong> Missed a session? The plan recalculates. Want to move a workout to today? Use the calendar button on any future day.</span></li>
+            <li><i class="fa-solid fa-forward-step"></i><span><strong>Adapts to skips and changes.</strong> Missed a session? The plan recalculates. Want to move a workout to today? Use the calendar button on any day in This Week.</span></li>
             <li><i class="fa-solid fa-chart-line"></i><span><strong>Builds progression over time.</strong> The AI tracks your compliance and fatigue across weeks, gradually increasing load when you're ready and backing off when you need recovery.</span></li>
           </ul>
           <button class="btn btn-primary" :disabled="generating" @click="handleGenerateFirst">
