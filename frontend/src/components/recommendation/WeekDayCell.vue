@@ -2,7 +2,7 @@
   <div
     class="week-day-cell"
     :class="[
-      isRest ? 'rest' : `has-workout wt-${entry.type.toLowerCase()}`,
+      isPastPlaceholder ? 'past-placeholder' : isPlaceholder ? 'placeholder' : isRest ? 'rest' : `has-workout wt-${entry.type.toLowerCase()}`,
       {
         'is-today':     isToday,
         'is-completed': isCompleted,
@@ -18,8 +18,24 @@
       <span class="wdc-date">{{ dayOfMonth }}</span>
     </div>
 
+    <!-- Before today, with no history — refreshing can never fill this in, so it's a
+         quiet "no data" note, not an actionable warning -->
+    <template v-if="isPastPlaceholder">
+      <div class="wdc-placeholder wdc-past-placeholder">
+        <i class="fa-solid fa-minus"></i> No data
+      </div>
+    </template>
+
+    <!-- Not covered by the backend's plan yet, but still ahead of today — refreshing
+         can genuinely close this gap -->
+    <template v-else-if="isPlaceholder">
+      <div class="wdc-placeholder">
+        <i class="fa-solid fa-hourglass-half"></i> Not planned yet
+      </div>
+    </template>
+
     <!-- Rest day -->
-    <template v-if="isRest">
+    <template v-else-if="isRest">
       <div class="wdc-rest">
         <i class="fa-solid fa-bed"></i> Rest
       </div>
@@ -57,6 +73,8 @@ const d          = computed(() => new Date(props.entry.date + 'T12:00:00'))
 const dayLabel   = computed(() => DAY_NAMES[d.value.getDay()])
 const dayOfMonth = computed(() => d.value.getDate())
 
+const isPlaceholder     = computed(() => !!props.entry.isPlaceholder)
+const isPastPlaceholder = computed(() => !!props.entry.isPastPlaceholder)
 const isRest      = computed(() => props.entry.type === 'Rest')
 const isCompleted = computed(() => props.entry.status === 'completed' || props.entry.status === 'completed-partial' || props.entry.status === 'completed-mismatch')
 const isSkipped   = computed(() => props.entry.status === 'skipped' || props.entry.status === 'auto-skipped')

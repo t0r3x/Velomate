@@ -92,6 +92,13 @@ const getActiveProfile = async (): Promise<UserHRProfile> => {
 const ssoClients = new Map<string, GarminSSOClient>();
 
 app.get('/api/status', async (req: Request, res: Response) => {
+  // Dev-only: lets scripts/dev-with-athlete.js open the dashboard straight into a
+  // synthetic test athlete's plan, which has no real Garmin session to check against.
+  // Only ever set by that script — never touched by electron:build/electron:publish.
+  if (process.env.VELOMATE_SKIP_AUTH === '1') {
+    res.json({ loggedIn: true });
+    return;
+  }
   try {
     const sessionValid = await trySessionAuth();
     res.json({ loggedIn: sessionValid });
