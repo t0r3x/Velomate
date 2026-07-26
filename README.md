@@ -39,6 +39,8 @@ Feedback, bug reports, and contributions are always welcome!
 - **Training pause/resume** — pause the plan (illness, travel, ...) and auto-pause detection after prolonged inactivity
 - **Garmin workout sync** — uploads structured workouts directly to your Garmin device
 - **Self-hosted data** — your Garmin/AI credentials and ride history stay in a local SQLite database; nothing is sent anywhere except Garmin and Gemini's own APIs
+  
+<img width="1400" height="900" alt="velomate" src="https://github.com/user-attachments/assets/89733e88-6dc9-458e-a03a-83dbaa32199a" />
 
 ---
 
