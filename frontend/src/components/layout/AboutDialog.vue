@@ -13,7 +13,7 @@
           </div>
           <img :src="active ? mbcImg : veloIcon" alt="" class="about-dialog-logo" />
           <p class="confirm-message">
-            Velomate v1.0 — the adaptive AI cycling coach for Garmin Connect.
+            Velomate v{{ appVersion }} — the adaptive AI cycling coach for Garmin Connect.
           </p>
           <p class="confirm-message about-credit">
             <input type="checkbox" id="shablagoo-toggle" class="sr-only" v-model="active">
@@ -34,6 +34,7 @@ defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
 const { active } = useShablagoo()
+const appVersion = __APP_VERSION__
 </script>
 
 <style scoped>

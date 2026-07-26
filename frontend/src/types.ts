@@ -53,17 +53,12 @@ export interface PlanEntry {
   structure?: WorkoutStructure | null
   executionScore?: number | null
   executionNote?: string | null
-}
-
-export interface NextWeekSession {
-  type: WorkoutType
-  estimatedDay: string
-}
-
-export interface NextWeekOverview {
-  summary: string
-  emphasis: string
-  sessions: NextWeekSession[]
+  /** Client-only: true when this entry was synthesized because the backend's
+   *  weeklyPlan has no data for this date (not a real AI-planned rest day). */
+  isPlaceholder?: boolean
+  /** Client-only: true when a placeholder's date is before today — refreshing can
+   *  never fill this in, since generation only ever plans forward, never retroactively. */
+  isPastPlaceholder?: boolean
 }
 
 export interface LoadAssessment {
@@ -77,7 +72,7 @@ export interface Recommendation {
   reason: string
   priority: string
   weeklyPlan: PlanEntry[]
-  nextWeekOverview: NextWeekOverview
+  nextWeekFocus: string | null
   loadAssessment: LoadAssessment
   generatedAt: string
   stale?: boolean
