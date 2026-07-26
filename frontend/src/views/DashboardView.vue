@@ -53,16 +53,19 @@ onMounted(async () => {
 
   await recommendationStore.fetchCached()
 
+  // Watch for a plan regenerated in the background — not just by our own Garmin sync
+  // below, but also independently by the backend's startup/hourly auto-check
+  // (runGeminiAutoCheck), which runs the moment the server process starts and has no
+  // other way to signal the frontend if it finishes after this initial fetch.
+  recommendationStore.pollForUpdate(recommendationStore.recommendation?.generatedAt)
+
   // Sync fresh Garmin data as soon as the dashboard opens, instead of only
   // showing whatever was cached at the last sync — mirrors ActivitiesCard's
   // manual "Sync from Garmin" flow so a ride from just before launch is picked
   // up immediately (including an instant execution score, if enabled).
   try {
-    const { planRegenTriggered } = await activitiesStore.syncFromGarmin()
+    await activitiesStore.syncFromGarmin()
     await recommendationStore.fetchCached()
-    if (planRegenTriggered) {
-      recommendationStore.pollForUpdate(recommendationStore.recommendation?.generatedAt)
-    }
   } catch {
     // Not authenticated with Garmin, or unreachable — keep showing cached data
   }

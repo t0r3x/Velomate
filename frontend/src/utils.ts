@@ -42,9 +42,7 @@ export const buildWeekWindow = (plan: PlanEntry[], startOffset = 0): PlanEntry[]
 export const describeCoverageGaps = (entries: PlanEntry[]): string => {
   const gaps = entries.filter(e => e.isPlaceholder && !e.isPastPlaceholder).length
   if (gaps === 0) return ''
-  return gaps === 1
-    ? 'The AI plan doesn’t cover 1 of these days yet — refresh to extend it.'
-    : `The AI plan doesn’t cover ${gaps} of these days yet — refresh to extend it.`
+  return `The AI plan doesn’t cover ${gaps} of these days yet, refresh to extend it.`
 }
 
 /**
