@@ -890,11 +890,32 @@ body.is-electron .app-shell {
 }
 
 .zones-stacked-bar {
+  position: relative;
   display: flex;
   height: 58px;
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid rgba(0,0,0,0.3);
+}
+
+.zone-drag-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 18px;
+  margin-left: -9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ew-resize;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  z-index: 2;
+  touch-action: none;
+}
+.zone-drag-handle:hover,
+.zone-drag-handle.dragging {
+  color: var(--text-primary);
 }
 
 .zone-bar-segment {
@@ -910,6 +931,10 @@ body.is-electron .app-shell {
 }
 
 .zone-bar-segment:hover { opacity: 1; }
+/* Not :first-child/:last-child — the drag-handle divs render after the segments in
+   the DOM, so z5 is never the container's actual last child. Target by zone instead. */
+.zone-bar-segment.z1 { border-radius: 7px 0 0 7px; }
+.zone-bar-segment.z5 { border-radius: 0 7px 7px 0; }
 
 .zbs-name {
   font-size: 0.72rem;
@@ -2082,6 +2107,7 @@ body.shablagoo-active .bg-glow-2 {
   border: 1px solid rgba(var(--primary-rgb), 0.2);
   border-radius: 0.5rem;
   width: 100%;
+  margin-bottom: 0.5rem;
   flex-wrap: wrap;
 }
 .ps-suggestion-label {

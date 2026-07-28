@@ -61,6 +61,20 @@ const garminApi = async (apiPath: string) => {
   return response.data;
 };
 
+// Garmin's own detected LTHR (userprofile-service) — real per-account data, when available,
+// instead of Velomate's ×0.88-of-maxHR guess. Confirmed via /api/debug/garmin-hr-data that
+// Garmin does populate this (thresholdHeartRateAutoDetected: true) for at least some accounts.
+const fetchGarminLthr = async (): Promise<number | null> => {
+  if (!getBearerToken()) return null;
+  try {
+    const settings = await garminApi('/userprofile-service/userprofile/user-settings/');
+    const lthr = settings?.userData?.lactateThresholdHeartRate;
+    return typeof lthr === 'number' && lthr > 100 && lthr < 250 ? lthr : null;
+  } catch {
+    return null; // non-fatal — caller falls back to the estimate
+  }
+};
+
 // Returns the active HR profile: DB → config.json fallback → defaults
 const getActiveProfile = async (): Promise<UserHRProfile> => {
   const dbProfile = getStoredProfile();
@@ -183,14 +197,28 @@ app.get('/api/profile', async (req: Request, res: Response) => {
     // If not customised yet, try to enrich from Garmin user settings
     if (!profile.hasCustomOverrides && getBearerToken()) {
       try {
-        const settings   = await garminApi('/userprofile-service/userprofile/user-settings/');
+        const settings    = await garminApi('/userprofile-service/userprofile/user-settings/');
         const garminMaxHr = settings?.userData?.maxHrBpm;
+        const garminLthr  = settings?.userData?.lactateThresholdHeartRate;
+
+        let changed = false;
         if (garminMaxHr && garminMaxHr > 100) {
           profile.maxHr = garminMaxHr;
-          profile.lthr  = Math.round(garminMaxHr * 0.87);
+          changed = true;
+        }
+        // Prefer Garmin's own detected LTHR over the ×0.87 estimate — independent of
+        // whether maxHr itself changed (some accounts expose one field but not the other).
+        if (typeof garminLthr === 'number' && garminLthr > 100 && garminLthr < profile.maxHr) {
+          profile.lthr = garminLthr;
+          changed = true;
+        } else if (garminMaxHr && garminMaxHr > 100) {
+          profile.lthr = Math.round(garminMaxHr * 0.87);
+        }
+
+        if (changed) {
           profile.zones = calculateDefaultZones(profile.lthr, profile.maxHr);
           upsertProfileDB(profile);
-          logger.info(`[Profile] Synced maxHR=${garminMaxHr} from Garmin.`);
+          logger.info(`[Profile] Synced from Garmin — maxHR=${profile.maxHr}, LTHR=${profile.lthr}${typeof garminLthr === 'number' ? ' (real)' : ' (estimated)'}`);
         }
       } catch { /* non-fatal */ }
     }
@@ -269,9 +297,10 @@ const syncActivitiesFromGarmin = async (): Promise<boolean> => {
     const recentForAnalysis = allStored.filter(a =>
       a.startTime ? new Date(a.startTime) >= cutoff : true
     );
-    const analysis = assessProgression(recentForAnalysis);
+    const realLthr = await fetchGarminLthr();
+    const analysis = assessProgression(recentForAnalysis, realLthr);
     upsertAnalysis(analysis);
-    logger.info(`[Sync] Analysis: ${analysis.totalCyclingRides} rides (90d), peak HR ${analysis.maxRecordedHr} bpm, est. LTHR ${analysis.estimatedLthr} bpm, avg ${analysis.averageRideDurationMinutes} min`);
+    logger.info(`[Sync] Analysis: ${analysis.totalCyclingRides} rides (90d), peak HR ${analysis.maxRecordedHr} bpm, est. LTHR ${analysis.estimatedLthr} bpm${realLthr ? ' (from Garmin)' : ' (estimated)'}, avg ${analysis.averageRideDurationMinutes} min`);
 
     // Classify completed plan entries so statuses are current before AI generation
     const stored = getStoredRecommendation();
@@ -370,7 +399,7 @@ app.post('/api/sync-workouts', async (req: Request, res: Response) => {
 app.get('/api/settings/gemini-key', (_req: Request, res: Response) => {
   const key           = getGeminiKey();
   const setupComplete = getSetting('setup_complete') === '1';
-  const geminiModel   = getSetting('gemini_model') || 'gemini-3.5-flash';
+  const geminiModel   = getSetting('gemini_model') || 'gemini-3.6-flash';
 
   // Preferred long ride days — read from plural key, fall back to legacy singular key
   const rawDays = getSetting('preferred_long_ride_days') || getSetting('preferred_long_ride_day') || '';
@@ -727,6 +756,80 @@ app.get('/api/debug/raw-activity', async (_req: Request, res: Response) => {
       listNonNullFields:    listFields,
       detailNonNullScalars: detailFields,
       detailSummaryDTO,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Debug — raw Garmin HR/zone data (discover real LTHR / zone boundaries) ────
+// Hit GET /api/debug/garmin-hr-data to inspect userData + an activity detail for
+// any field that could give us the athlete's REAL LTHR or zone boundaries,
+// instead of Velomate's own guessed ×0.88 estimate.
+app.get('/api/debug/garmin-hr-data', async (_req: Request, res: Response) => {
+  try {
+    const isAuthenticated = await trySessionAuth();
+    if (!isAuthenticated) return res.status(401).json({ error: 'Not authenticated.' });
+
+    const client = getGarminClient();
+    const token  = (client.client as any).oauth2Token?.access_token;
+    if (!token) return res.status(401).json({ error: 'No active Garmin session token.' });
+
+    // ── 1. User settings — may contain lactateThresholdHeartRate / maxHrBpm ──
+    let userData: Record<string, any> = {};
+    let userSettingsError: string | null = null;
+    try {
+      const settingsRes = await axios.get('https://connectapi.garmin.com/userprofile-service/userprofile/user-settings/', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      userData = settingsRes.data?.userData ?? {};
+    } catch (e: any) {
+      userSettingsError = e.message;
+    }
+
+    // ── 2. Activity detail — may contain a zones/boundary array ──────────────
+    const acts = await client.getActivities(0, 10);
+    const cycling = acts.filter((a: any) => {
+      const t = (a.activityType?.typeKey || '').toLowerCase();
+      return t.includes('cycl') || t.includes('bik');
+    });
+    const first = cycling[0] ?? acts[0];
+
+    let activityDetail: any = null;
+    let activityDetailError: string | null = null;
+    if (first) {
+      try {
+        activityDetail = await client.getActivity({ activityId: (first as any).activityId });
+      } catch (e: any) {
+        activityDetailError = e.message;
+      }
+    }
+
+    // Scan both payloads for any key that looks zone/boundary/threshold related.
+    const scanForZoneKeys = (obj: any, path = ''): Record<string, any> => {
+      const hits: Record<string, any> = {};
+      if (!obj || typeof obj !== 'object') return hits;
+      for (const [k, v] of Object.entries(obj)) {
+        const fullPath = path ? `${path}.${k}` : k;
+        if (/zone|boundary|threshold|lthr|lactate/i.test(k)) {
+          hits[fullPath] = v;
+        }
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          Object.assign(hits, scanForZoneKeys(v, fullPath));
+        } else if (Array.isArray(v)) {
+          v.forEach((item, i) => Object.assign(hits, scanForZoneKeys(item, `${fullPath}[${i}]`)));
+        }
+      }
+      return hits;
+    };
+
+    res.json({
+      userSettingsError,
+      activityDetailError,
+      activityId:            first ? (first as any).activityId : null,
+      userDataFull:           userData,
+      zoneRelatedInUserData:  scanForZoneKeys(userData),
+      zoneRelatedInActivity:  scanForZoneKeys(activityDetail),
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

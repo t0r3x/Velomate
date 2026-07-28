@@ -37,7 +37,7 @@
                 <i class="fa-solid fa-wand-magic-sparkles"></i>
                 <span v-if="suggestionState === 'loading'" class="ps-suggestion-placeholder">Fetching Garmin history for suggestion…</span>
                 <span v-else>
-                  Derived from your peak recorded data:
+                  Derived from your data:
                   Max HR <strong>{{ suggestedMaxHr }}</strong> bpm, LTHR <strong>{{ suggestedLthr }}</strong> bpm
                 </span>
               </div>
@@ -66,7 +66,11 @@
 
             <div class="zones-visualizer-container">
               <h3>Training Zones Preview</h3>
-              <HrZonesBar :maxHr="maxHr" :lthr="lthr" />
+              <p class="helper-text zones-hr-note">
+                <i class="fa-solid fa-circle-info"></i>
+                Make sure these zones match the ones on your heart rate monitor (e.g. Garmin) — drag a boundary between two zones to adjust it manually.
+              </p>
+              <HrZonesBar :zones="zones" :maxHr="maxHr" @update:zones="zones = $event" />
             </div>
 
             <!-- ── Preferred Long Ride Days ── -->
@@ -131,13 +135,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useRouter }  from 'vue-router'
 import { useProfileStore }  from '@/stores/profile.store'
 import { useSettingsStore } from '@/stores/settings.store'
 import { useActivitiesStore } from '@/stores/activities.store'
 import { useToast }    from '@/composables/useToast'
 import { calcZones }   from '@/composables/useZones'
+import type { HrZones } from '@/types'
 import { getTrainingGoals, postTrainingGoals } from '@/api/client'
 import HrZonesBar from '@/components/profile/HrZonesBar.vue'
 
@@ -163,6 +168,10 @@ const { show }       = useToast()
 // Form state
 const maxHr        = ref(profileStore.profile?.maxHr ?? 190)
 const lthr         = ref(profileStore.profile?.lthr  ?? 165)
+// Zones start from a previously-saved custom shape if one exists, else the LTHR-formula
+// baseline. Can then be dragged (HrZonesBar) to deviate from it — see the watcher below
+// for when the baseline gets reapplied.
+const zones        = ref<HrZones>(profileStore.profile?.zones ?? calcZones(lthr.value, maxHr.value))
 const selectedDays        = ref<string[]>([...settingsStore.preferredLongRideDays])
 const goals               = ref('')
 const inactivityPauseDays = ref(settingsStore.inactivityPauseDays)
@@ -177,6 +186,13 @@ const suggestedMaxHr = ref(0)
 const suggestedLthr  = ref(0)
 const noticeText     = ref('')
 const saving         = ref(false)
+
+// Recompute the formula baseline whenever Max HR / LTHR change (initial load, "Use
+// suggestion", the 88% recalc button). A manual drag on HrZonesBar only updates `zones`
+// directly and doesn't touch maxHr/lthr, so it isn't undone by this watcher.
+watch([maxHr, lthr], ([newMaxHr, newLthr]) => {
+  zones.value = calcZones(newLthr, newMaxHr)
+})
 
 onMounted(async () => {
   const hasCustom = profileStore.profile?.hasCustomOverrides ?? false
@@ -195,7 +211,7 @@ onMounted(async () => {
   }
 
   try {
-    const data = await activitiesStore.syncFromGarmin()
+    await activitiesStore.syncFromGarmin()
     const analysis = activitiesStore.analysis
 
     if (analysis?.estimatedMaxHr) {
@@ -224,19 +240,22 @@ onMounted(async () => {
 
 function recalcLthr() {
   lthr.value = Math.round(maxHr.value * 0.88)
+  // Force the reset even if lthr's numeric value happens to be unchanged (e.g. after
+  // a manual zone drag) — the watcher below only fires on an actual value change.
+  zones.value = calcZones(lthr.value, maxHr.value)
 }
 
 function useSuggestion() {
   maxHr.value = suggestedMaxHr.value
   lthr.value  = suggestedLthr.value
+  zones.value = calcZones(lthr.value, maxHr.value)
   suggestionState.value = 'hidden'
 }
 
 async function handleConfirm() {
   saving.value = true
   try {
-    const zones   = calcZones(lthr.value, maxHr.value)
-    const profile = { maxHr: maxHr.value, lthr: lthr.value, zones, hasCustomOverrides: true }
+    const profile = { maxHr: maxHr.value, lthr: lthr.value, zones: zones.value, hasCustomOverrides: true }
     const [ok] = await Promise.all([
       profileStore.save(profile),
       settingsStore.savePreferredDays(selectedDays.value),

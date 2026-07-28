@@ -184,7 +184,7 @@ today's date/day-of-week, athlete preferences (preferred long-ride days, free-te
 | Key | Description |
 |-----|-------------|
 | `gemini_api_key` | Raw API key |
-| `gemini_model` | e.g. `gemini-3.5-flash` |
+| `gemini_model` | e.g. `gemini-3.6-flash` (default) |
 | `gemini_last_generated` | ISO timestamp; `'0'` = never/force regen |
 | `preferred_long_ride_days` | Comma-separated day names, e.g. `Saturday,Sunday` |
 | `preferred_long_ride_day` | Legacy singular key (read as fallback) |
@@ -241,6 +241,8 @@ POST   /api/recommendation/skip-today       ← mark today 'skipped' → regener
 POST   /api/recommendation/reschedule       ← { fromDate, toDate } → swap dates → regenerate
 
 GET    /api/debug/raw-activity              ← debug-only: dumps raw Garmin activity/detail fields (RPE/feeling field discovery)
+GET    /api/debug/garmin-hr-data            ← debug-only: dumps userData + an activity detail, scanned for zone/threshold/LTHR-related keys
+                                               (discovering whether Garmin exposes a real LTHR/zone boundaries instead of Velomate's ×0.88 guess)
 
 GET    *                                    ← SPA catch-all → serves Vue index.html (Vue Router history mode)
 ```
@@ -271,7 +273,7 @@ The old vanilla-JS `setView()`/`currentView`/hidden-class toggling and `setRecSt
 ### Key helpers
 - `useTimeAgo()` composable (`composables/useTimeAgo.ts`) — same logic as the old vanilla `timeAgo()` helper, used in `ActivitiesCard.vue`/`LoadAssessment.vue`
 - `isElectron()` / `electronAPI()` (`utils/electron.ts`) — feature-detect the Electron preload bridge
-- `buildWeekWindow(plan, startOffset)` (`utils.ts`) — shared by `WeekGrid.vue` and `NextWeekSummary.vue`: slices a real 7-day window out of `weeklyPlan`, rolling from today (`This Week` = offset 0, `Next Week` = offset 7 — NOT a fixed Mon–Sun calendar week; that was tried and reverted because it shows fewer of the imminent days in full detail the later in the week "today" falls, worst case a Sunday start showing only today). Any date missing from `weeklyPlan` becomes a placeholder (`isPlaceholder: true`) — **never** a fabricated real rest day. A placeholder dated before today is additionally flagged `isPastPlaceholder: true` and rendered as quiet "No data" (`WeekDayCell.vue`/`WorkoutDetailPanel.vue`) rather than the actionable "Not planned yet" — dead code with the current rolling-only offsets (0 and 7 never produce a past date), kept as a harmless safety net in case a non-zero-or-positive offset is ever reintroduced. `describeCoverageGaps()` only counts non-past placeholders toward its "refresh to extend it" note for the same reason.
+- `buildWeekWindow(plan, startOffset)` (`utils.ts`) — shared by `WeekGrid.vue` and `NextWeekSummary.vue`: slices a real 7-day window out of `weeklyPlan`, rolling from today (`This Week` = offset 0, `Next Week` = offset 7 — NOT a fixed Mon–Sun calendar week; that was tried and reverted because it shows fewer of the imminent days in full detail the later in the week "today" falls, worst case a Sunday start showing only today). Any date missing from `weeklyPlan` becomes a placeholder (`isPlaceholder: true`) — **never** a fabricated real rest day. A placeholder dated before today is additionally flagged `isPastPlaceholder: true` and rendered as quiet "No data" (`WeekDayCell.vue`/`WorkoutDetailPanel.vue`) rather than the actionable "Not planned yet" — dead code with the current rolling-only offsets (0 and 7 never produce a past date), kept as a harmless safety net in case a non-zero-or-positive offset is ever reintroduced. `describeCoverageGaps()` only counts non-past placeholders toward its "refresh to extend it" note for the same reason — but it's only wired up in `WeekGrid.vue` ("This Week"); `NextWeekSummary.vue` dropped it since a coverage gap 7-13 days out is expected/normal rather than something to flag.
 
 ---
 
@@ -367,5 +369,5 @@ Bump `version` in root `package.json` before every publish — it's both the rel
 10. **`config.json` is still alive** — `profile.service.ts` reads/writes it as a legacy fallback; `POST /api/profile` keeps it in sync "for backward compat". Don't remove it without checking `getActiveProfile()`'s DB → config.json → defaults fallback chain in `server.ts`.
 11. **`setupComplete` comes from DB**, loaded via the settings store (`GET /api/settings/gemini-key` → `data.setupComplete`). Do not use localStorage.
 12. **WAL mode** — SQLite is opened with `db.pragma('journal_mode = WAL')` for better concurrent reads.
-13. **`GET /api/debug/raw-activity`** is a diagnostic-only endpoint (discovering Garmin's RPE/feeling field names) — don't treat it as public API surface.
+13. **`GET /api/debug/raw-activity`** and **`GET /api/debug/garmin-hr-data`** are diagnostic-only endpoints (discovering Garmin's RPE/feeling field names, and real LTHR/zone-boundary field names, respectively) — don't treat them as public API surface.
 14. **Backend port is 2012**, not 3001 — legacy docs/scripts referencing 3001 are stale.

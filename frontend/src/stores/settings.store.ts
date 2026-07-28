@@ -17,7 +17,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const setupComplete       = ref(false)
   const maskedKey           = ref<string | null>(null)
   const preferredLongRideDays = ref<string[]>([])
-  const geminiModel         = ref('gemini-3.5-flash')
+  const geminiModel         = ref('gemini-3.6-flash')
   const inactivityPauseDays = ref(14)
   const instantScoreOnNewActivity = ref(true)
 
@@ -29,7 +29,7 @@ export const useSettingsStore = defineStore('settings', () => {
       setupComplete.value         = data.setupComplete
       maskedKey.value             = data.hasKey ? data.maskedKey : null
       preferredLongRideDays.value = Array.isArray(data.preferredLongRideDays) ? data.preferredLongRideDays : []
-      geminiModel.value           = data.geminiModel || 'gemini-3.5-flash'
+      geminiModel.value           = data.geminiModel || 'gemini-3.6-flash'
       inactivityPauseDays.value   = data.inactivityPauseDays ?? 14
       instantScoreOnNewActivity.value = data.instantScoreOnNewActivity ?? true
     } catch (err) {
@@ -47,7 +47,7 @@ export const useSettingsStore = defineStore('settings', () => {
       setupComplete.value         = data.setupComplete
       maskedKey.value             = data.hasKey ? data.maskedKey : null
       preferredLongRideDays.value = Array.isArray(data.preferredLongRideDays) ? data.preferredLongRideDays : []
-      geminiModel.value           = data.geminiModel || 'gemini-3.5-flash'
+      geminiModel.value           = data.geminiModel || 'gemini-3.6-flash'
       inactivityPauseDays.value   = data.inactivityPauseDays ?? 14
       instantScoreOnNewActivity.value = data.instantScoreOnNewActivity ?? true
     } catch (err) {
