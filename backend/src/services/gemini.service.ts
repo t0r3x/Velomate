@@ -441,7 +441,7 @@ const _attemptGeneration = async (
   logger.info(prompt);
   logger.info('─'.repeat(72) + '\n');
 
-  const model = getSetting('gemini_model') || 'gemini-3.5-flash';
+  const model = getSetting('gemini_model') || 'gemini-3.6-flash';
   logger.info(`[Gemini] Model: ${model}`);
 
   // Retry up to 3 times on 429 (rate limit) with exponential backoff.

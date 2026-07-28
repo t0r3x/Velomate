@@ -120,7 +120,9 @@
               <i class="fa-solid fa-microchip input-icon"></i>
               <select id="panel-model" v-model="selectedModel">
                 <optgroup label="── Free Tier ──────────────────────">
-                  <option value="gemini-3.5-flash">gemini-3.5-flash (Recommended / Default)</option>
+                  <option value="gemini-3.6-flash">gemini-3.6-flash (Recommended / Default)</option>
+                  <option value="gemini-3.5-flash">gemini-3.5-flash</option>
+                  <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite</option>
                   <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option>
                   <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
                   <option value="gemini-2.5-flash">gemini-2.5-flash</option>
@@ -187,7 +189,7 @@ const loginBusy = ref(false)
 
 // AI settings form state
 const apiKey         = ref('')
-const selectedModel  = ref('gemini-3.5-flash')
+const selectedModel  = ref('gemini-3.6-flash')
 const instantScoring = ref(true)
 const saveBusy       = ref(false)
 

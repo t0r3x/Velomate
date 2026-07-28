@@ -5,10 +5,6 @@
       <span>Next Week</span>
       <span class="week-label">{{ weekLabel }}</span>
     </div>
-    <p v-if="coverageNote" class="week-coverage-note">
-      <i class="fa-solid fa-circle-info"></i> {{ coverageNote }}
-    </p>
-
     <p class="ai-next-week-summary">{{ summary }}</p>
     <div v-if="sessions.length" class="ai-next-week-chips">
       <span
@@ -29,13 +25,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { PlanEntry } from '@/types'
-import { workoutTypeIcon, workoutTypeLabel, DAY_NAMES, buildWeekWindow, describeCoverageGaps } from '@/utils'
+import { workoutTypeIcon, workoutTypeLabel, DAY_NAMES, buildWeekWindow } from '@/utils'
 
 const props = defineProps<{ plan: PlanEntry[]; startOffset: number; nextWeekFocus: string | null }>()
 
 // Real second-week slice of the plan — no separate AI-guessed overview anymore.
 const weekEntries = computed((): PlanEntry[] => buildWeekWindow(props.plan, props.startOffset))
-const coverageNote = computed(() => describeCoverageGaps(weekEntries.value))
 
 const sessions = computed(() => weekEntries.value.filter(e => e.type !== 'Rest'))
 

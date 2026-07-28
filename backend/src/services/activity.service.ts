@@ -105,7 +105,12 @@ export const fetchCyclingActivities = async (days: number = 90) => {
   return mapped;
 };
 
-export const assessProgression = (activities: any[]) => {
+/**
+ * @param realLthr Garmin's own lactateThresholdHeartRate (userprofile-service), when available —
+ *   preferred over the ×0.88 guess. Sanity-checked (must be a plausible bpm value below maxHR)
+ *   since it comes from an `unknown`-typed field in the Garmin client library.
+ */
+export const assessProgression = (activities: any[], realLthr?: number | null) => {
   let maxRecordedHr = 0;
   let durationSumSeconds = 0;
 
@@ -123,7 +128,8 @@ export const assessProgression = (activities: any[]) => {
     : 120 * 60;
 
   let estimatedMaxHr = maxRecordedHr > 0 ? maxRecordedHr : 190;
-  let estimatedLthr = Math.round(estimatedMaxHr * 0.88);
+  const hasSaneRealLthr = typeof realLthr === 'number' && realLthr > 100 && realLthr < estimatedMaxHr;
+  let estimatedLthr = hasSaneRealLthr ? (realLthr as number) : Math.round(estimatedMaxHr * 0.88);
 
   return {
     totalCyclingRides: activities.length,
