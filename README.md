@@ -44,9 +44,25 @@ Feedback, bug reports, and contributions are always welcome!
 
 ---
 
+## Your AI coach
+
+Velomate isn't a fixed training program you follow, it's built so the AI acts as an actual coach that adapts to *you*, not the other way around.
+
+- **Tell it your goals** — goals & preferences fed straight into every plan it generates
+- **Tell it your schedule** — set your preferred long-ride days and it shapes the week around them, instead of forcing a generic template on you
+- **It reads your actual training, not a script** — every regeneration looks at your recent rides (HR zones, duration, RPE, how you felt afterwards) plus what you did or skipped from the previous plan, and adjusts the coming days from that, not from a static periodization chart
+- **It explains its reasoning** — each week's plan comes with a short written rationale for why it's shaped the way it is, not just a list of workouts to blindly follow
+- **It scores how you actually rode** — after a workout, the AI compares what you did to what was intended and gives a 0–100 execution score with a one-line explanation, so you get feedback instead of a checkbox
+- **You can push back on it** — skip today, reschedule a session, or pause training entirely (illness, travel, burnout) and the AI rebuilds the plan around that rather than rigidly marching on
+- **It notices when you go quiet** — after a configurable number of inactive days it pauses training automatically instead of piling up stale, guilt-inducing plans
+
+In short: you set the direction and the boundaries, the AI works out the day-to-day path there, and re-plans every time your real training tells it something new.
+
+---
+
 ## Install (desktop app)
 
-This is the recommended way to run Velomate.
+This is easiest and the recommended way to run Velomate.
 
 1. Go to the [Releases page](https://github.com/t0r3x/Velomate/releases) and download the latest installer for your OS:
    - **Windows** — `Velomate-Setup-x.y.z.exe`
