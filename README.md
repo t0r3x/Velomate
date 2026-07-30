@@ -7,21 +7,21 @@ A cycling training dashboard that connects to **Garmin Connect** and uses **Goog
 ![TypeScript](https://img.shields.io/badge/typescript-5-blue)
 ![Electron](https://img.shields.io/badge/electron-32-47848F)
 
-[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?style=for-the-badge&logo=github)](https://github.com/sponsors/t0r3x)
-
 ## About this project
 
 Velomate started out as a personal tool to solve a specific problem: I wanted a flexible, adaptive training plan that adjusted to my life. During a period in my life when things were tough and my energy levels were low, I still wanted to keep riding, but I couldn't bring myself to commit to expensive monthly subscriptions like JOIN, TrainerRoad, or Zwift. When you're struggling with energy or when you're just having trouble finding the time, paying a steep monthly fee creates uncomfortable pressure; you constantly worry whether you'll even be able to follow through on the commitment, turning what should be a healthy outlet into an extra burden.
 
 To be fair, commercial platforms back their products with dedicated teams, extensive sports science, and deep professional engineering. But for my day-to-day needs, Velomate proved to work surprisingly well in practice. I strongly believe that incorporating smart AI into an application should be just as seamless, natural, and accessible as having a quick chat with an LLM. AI has become such a fundamental part of our lives, and leveraging adaptive training guidance shouldn't require complex overhead or a recurring monthly paywall.
 
-**Yes, this project is roughly 95% "vibecoded" using AI.** But it wasn't just built on a whim, it took a clear vision, lots of tweaking and testing to turn it into a reliable, functional application. 
+**Yes, this project is roughly 95% "vibecoded" using AI.** But it wasn't just built on a whim. It took a clear vision, lots of tweaking and testing to turn it into a reliable, functional application. 
 
 It was built with a clear purpose:
 - **Heart Rate-Focused:** Train based on true physiological fatigue and internal load, not rigid power numbers.
 - **No Subscriptions & Open Source:** Free to use, modify, and self-host forever, a pressure-free alternative to paid cycling apps.
 - **Accessible AI:** Powered by Google Gemini's free tier, bringing intelligent training guidance to everyone without monthly fees.
 - **Privacy-First:** Your credentials, API keys, and ride data stay strictly on your machine.
+
+To keep development moving quickly and make the app as accessible as possible without the hassle of self-hosting, I packaged it as an Electron desktop app. While I can easily see Velomate working perfectly as a native mobile app, I simply don't have the time and financial resources to build and maintain mobile apps right now.
 
 Whether you run it as a lightweight desktop app or self-host it via Docker on your home server, I hope Velomate makes your training a bit smarter and your rides a bit better, entirely on your own terms.
 
@@ -40,7 +40,9 @@ Feedback, bug reports, and contributions are always welcome!
 - **Garmin workout sync** — uploads structured workouts directly to your Garmin device
 - **Self-hosted data** — your Garmin/AI credentials and ride history stay in a local SQLite database; nothing is sent anywhere except Garmin and Gemini's own APIs
   
-<img width="1400" height="900" alt="velomate" src="https://github.com/user-attachments/assets/89733e88-6dc9-458e-a03a-83dbaa32199a" />
+<p align="center">
+  <img width="1400" height="900" alt="velomate" src="https://github.com/user-attachments/assets/89733e88-6dc9-458e-a03a-83dbaa32199a" />
+</p>
 
 ---
 
@@ -62,7 +64,7 @@ In short: you set the direction and the boundaries, the AI works out the day-to-
 
 ## Install (desktop app)
 
-This is easiest and the recommended way to run Velomate.
+This is the easiest and the recommended way to run Velomate.
 
 1. Go to the [Releases page](https://github.com/t0r3x/Velomate/releases) and download the latest installer for your OS:
    - **Windows** — `Velomate-Setup-x.y.z.exe`
