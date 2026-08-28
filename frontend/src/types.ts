@@ -140,7 +140,45 @@ export interface GeminiKeyStatus {
   geminiModel: string
   inactivityPauseDays: number
   instantScoreOnNewActivity: boolean
+  freeTrainingMode: boolean
 }
+
+// ── Free training mode ────────────────────────────────────────────────────────
+// One dateless suggestion instead of a 14-day plan. It only gains a date when the
+// athlete syncs it — that press date is what makes it traceable afterwards.
+
+export type FreeSuggestionStatus =
+  | 'open' | 'synced' | 'completed' | 'dismissed' | 'superseded'
+
+export interface FreeSuggestion {
+  id: number
+  workoutType: WorkoutType
+  reason: string
+  priority: string
+  /** AI guidance on WHEN to ride this — free mode's stand-in for a calendar slot. */
+  coachNote: string | null
+  structure: WorkoutStructure | null
+  loadAssessment: LoadAssessment | null
+  status: FreeSuggestionStatus
+  generatedAt: string
+  syncedAt: string | null
+  /** Date the sync button was pressed — also the Garmin calendar date and name prefix. */
+  syncedForDate: string | null
+  completedDate: string | null
+  completedActivityId: string | null
+  executionScore: number | null
+  executionNote: string | null
+}
+
+export interface FreeTraining {
+  suggestion: FreeSuggestion
+  history: FreeSuggestion[]
+  stale?: boolean
+  regenFailed?: boolean
+}
+
+export type FreeState =
+  | 'not-configured' | 'no-suggestion' | 'loading' | 'loaded' | 'error' | 'paused'
 
 export interface DashboardResponse {
   activities: Activity[]

@@ -108,50 +108,78 @@ const FALLBACK_STRUCTURES: Record<string, WorkoutStructure> = {
   }
 };
 
+/** Get HRM target for a zone key (z1–z5) from an HR profile. */
+const zoneTarget = (profile: any, zoneKey: string): HrmTarget => {
+  const z = (profile?.zones as any)?.[zoneKey];
+  return z ? new HrmTarget(z.min, z.max) : new HrmTarget(0, 220);
+};
+
+/** Build a Garmin WorkoutDef from a structure.
+ *
+ * LongRide uses LapPressDuration for the main ride block so the workout never
+ * ends prematurely — the athlete presses Lap when they are done, regardless of
+ * how long they ride. Sprint and Threshold keep precise TimeDuration timers.
+ */
+const buildFromStructure = (
+  profile: any,
+  name: string,
+  description: string,
+  structure: WorkoutStructure,
+  workoutType: string
+) => {
+  const isLongRide = workoutType === 'LongRide';
+  const builder = new WorkoutBuilder(WorkoutType.Cycling, name, description);
+  for (const step of structure.steps) {
+    const stepType = STEP_TYPE_MAP[step.stepType] ?? StepType.Run;
+    // LongRide main block: open-ended — athlete presses Lap to end.
+    // All other steps (including WarmUp/Cooldown on interval workouts) use a fixed timer.
+    const useOpenEnd = isLongRide && step.stepType === 'Run';
+    const duration   = useOpenEnd
+      ? new LapPressDuration()
+      : TimeDuration.fromSeconds(step.durationSec);
+    builder.addStep(new Step(
+      stepType,
+      duration,
+      zoneTarget(profile, step.zone),
+      step.label
+    ));
+  }
+  return builder.build();
+};
+
+/** Human-readable date prefix used in workout names, e.g. "Sat 14 Jun". */
+const dateLabelFor = (dateStr: string): string =>
+  new Date(dateStr + 'T12:00:00').toLocaleDateString('en-GB', {
+    weekday: 'short', day: 'numeric', month: 'short'
+  });
+
+/**
+ * Workout name + description for a type on a given date. The date prefix is what makes a
+ * workout traceable on the device and in the Garmin calendar — in free training mode it is
+ * the only date the workout has, since the suggestion itself is dateless until synced.
+ */
+const workoutLabels = (type: string, dateStr: string): { name: string; description: string } => {
+  const prefix = `${APP_NAME} - ${dateLabelFor(dateStr)}: `;
+  switch (type) {
+    case 'Sprint':
+      return { name: `${prefix}Sprint`, description: 'Sprint intervals targeted to heart rate zones' };
+    case 'VO2Max':
+      return { name: `${prefix}VO2 Max`, description: 'VO2 Max intervals (Z5, 4 min) to raise aerobic ceiling' };
+    case 'Threshold':
+      return { name: `${prefix}Threshold`, description: 'Threshold intervals (Z4) to increase aerobic power' };
+    case 'Tempo':
+      return { name: `${prefix}Tempo`, description: 'Tempo / sweet spot blocks (Z3) to build fatigue resistance' };
+    default:
+      return { name: `${prefix}Long Ride`, description: 'Steady Z2 endurance ride — press Lap when done' };
+  }
+};
+
 export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], scheduleDate?: string) => {
   const isAuthenticated = await trySessionAuth();
   if (!isAuthenticated) throw new Error('Not authenticated.');
 
   const client  = getGarminClient();
   const profile = getStoredProfile() ?? loadProfile();
-
-  /** Get HRM target for a zone key (z1–z5). */
-  const zoneTarget = (zoneKey: string): HrmTarget => {
-    const z = (profile.zones as any)[zoneKey];
-    return z ? new HrmTarget(z.min, z.max) : new HrmTarget(0, 220);
-  };
-
-  /** Build a Garmin WorkoutDef from a structure.
-   *
-   * LongRide uses LapPressDuration for the main ride block so the workout never
-   * ends prematurely — the athlete presses Lap when they are done, regardless of
-   * how long they ride. Sprint and Threshold keep precise TimeDuration timers.
-   */
-  const buildFromStructure = (
-    name: string,
-    description: string,
-    structure: WorkoutStructure,
-    workoutType: string
-  ) => {
-    const isLongRide = workoutType === 'LongRide';
-    const builder = new WorkoutBuilder(WorkoutType.Cycling, name, description);
-    for (const step of structure.steps) {
-      const stepType = STEP_TYPE_MAP[step.stepType] ?? StepType.Run;
-      // LongRide main block: open-ended — athlete presses Lap to end.
-      // All other steps (including WarmUp/Cooldown on interval workouts) use a fixed timer.
-      const useOpenEnd = isLongRide && step.stepType === 'Run';
-      const duration   = useOpenEnd
-        ? new LapPressDuration()
-        : TimeDuration.fromSeconds(step.durationSec);
-      builder.addStep(new Step(
-        stepType,
-        duration,
-        zoneTarget(step.zone),
-        step.label
-      ));
-    }
-    return builder.build();
-  };
 
   const dateStr = scheduleDate || localDate();
   const results: { type: string; workoutId: any; name: string; scheduledDate: string; scheduleError: string }[] = [];
@@ -238,33 +266,12 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
     logger.info(`[Sync] ${type}: ${aiProvided ? 'AI' : 'fallback'} — ${totalMin} min, ${structure.steps.length} steps`);
     if (!aiProvided) usingFallback.push(type);
 
-    // Resolve date first — used in the workout name so it's visible on the device
+    // Resolve date first — the date prefix in the name makes workouts easy to identify
+    // on the device and in the Garmin calendar
     const entryDate = entry.date || dateStr;
-    const dateLabel = new Date(entryDate + 'T12:00:00').toLocaleDateString('en-GB', {
-      weekday: 'short', day: 'numeric', month: 'short'
-    }); // e.g. "Sat 14 Jun"
+    const { name: workoutName, description: workoutDesc } = workoutLabels(type, entryDate);
 
-    // Build workout name — date prefix makes workouts easy to identify on the device
-    let workoutName: string;
-    let workoutDesc: string;
-    if (type === 'Sprint') {
-      workoutName = `${APP_NAME} - ${dateLabel}: Sprint`;
-      workoutDesc = 'Sprint intervals targeted to heart rate zones';
-    } else if (type === 'VO2Max') {
-      workoutName = `${APP_NAME} - ${dateLabel}: VO2 Max`;
-      workoutDesc = 'VO2 Max intervals (Z5, 4 min) to raise aerobic ceiling';
-    } else if (type === 'Threshold') {
-      workoutName = `${APP_NAME} - ${dateLabel}: Threshold`;
-      workoutDesc = 'Threshold intervals (Z4) to increase aerobic power';
-    } else if (type === 'Tempo') {
-      workoutName = `${APP_NAME} - ${dateLabel}: Tempo`;
-      workoutDesc = 'Tempo / sweet spot blocks (Z3) to build fatigue resistance';
-    } else {
-      workoutName = `${APP_NAME} - ${dateLabel}: Long Ride`;
-      workoutDesc = 'Steady Z2 endurance ride — press Lap when done';
-    }
-
-    const def = buildFromStructure(workoutName, workoutDesc, structure, type);
+    const def = buildFromStructure(profile, workoutName, workoutDesc, structure, type);
     devDump[`${entryDate}_${type.toLowerCase()}`] = def;
 
     // Upload the workout definition
@@ -311,6 +318,96 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
     workouts:       results,
     usingFallback,           // non-empty → frontend should warn user to regenerate plan
     scheduleErrors,          // non-empty → some workouts need manual scheduling
+    profileUsed:    profile
+  };
+};
+
+/**
+ * Upload and schedule ONE workout for free training mode.
+ *
+ * Free suggestions have no date of their own, so the date the athlete pressed the button
+ * becomes the workout's date: it goes into the workout name ("Velomate - Wed 27 Aug: Tempo")
+ * and onto the Garmin calendar for that day. That is what makes a synced suggestion traceable
+ * afterwards — you can always see which day you asked for it.
+ *
+ * Unlike the plan sync, this does NOT wipe every "Velomate - " workout first. Previously
+ * synced free workouts are the athlete's history and must survive; only an exact name clash
+ * (same type synced twice on the same day) is removed, so pressing the button again replaces
+ * rather than duplicates.
+ */
+export const syncFreeWorkout = async (
+  type: string,
+  structure: WorkoutStructure | null,
+  scheduleDate?: string
+) => {
+  const isAuthenticated = await trySessionAuth();
+  if (!isAuthenticated) throw new Error('Not authenticated.');
+
+  if (type === 'Rest') throw new Error('A Rest suggestion has no workout to sync.');
+
+  const client  = getGarminClient();
+  const profile = getStoredProfile() ?? loadProfile();
+  const dateStr = scheduleDate || localDate();
+
+  // Prefer the AI structure; fall back to the built-in template only if it is missing.
+  const usingFallback: string[] = [];
+  let resolved: WorkoutStructure;
+  if (structure?.steps?.length) {
+    resolved = structure;
+  } else if (FALLBACK_STRUCTURES[type]) {
+    logger.warn(`[Sync] Free mode: no AI structure for ${type} — using built-in fallback`);
+    resolved = FALLBACK_STRUCTURES[type]!;
+    usingFallback.push(type);
+  } else {
+    throw new Error(`No workout structure available for ${type}. Refresh the suggestion first.`);
+  }
+
+  const { name: workoutName, description: workoutDesc } = workoutLabels(type, dateStr);
+  const totalMin = Math.round(resolved.steps.reduce((s, st) => s + st.durationSec, 0) / 60);
+  logger.info(`[Sync] Free mode: ${type} for ${dateStr} — ${totalMin} min, ${resolved.steps.length} steps`);
+
+  // Remove only an identically-named workout — re-syncing the same suggestion on the same
+  // day replaces it, while every earlier free workout stays in the library as history.
+  try {
+    const existingWorkouts = await client.getWorkouts(0, 100) as any[];
+    const clashes = existingWorkouts.filter((w: any) => w.workoutName === workoutName);
+    for (const w of clashes) {
+      logger.info(`[Sync] Free mode: replacing existing "${w.workoutName}" (id ${w.workoutId})`);
+      await client.deleteWorkout({ workoutId: String(w.workoutId) });
+    }
+  } catch (err: any) {
+    // Non-fatal: worst case the athlete ends up with a duplicate entry.
+    logger.warn(`[Sync] Free mode: could not check for an existing workout (continuing anyway): ${err.message}`);
+  }
+
+  const def = buildFromStructure(profile, workoutName, workoutDesc, resolved, type);
+  devDumpWorkouts({ [`${dateStr}_${type.toLowerCase()}_free`]: def }, dateStr);
+
+  let uploaded: any;
+  try {
+    uploaded = await client.createWorkout(def);
+  } catch (err: any) {
+    throw new Error(`Failed to upload ${type} workout: ${err.message}`);
+  }
+
+  // Upload succeeded — a scheduling failure still leaves a usable workout in the library,
+  // so report it instead of failing the whole sync.
+  let scheduleError = '';
+  let scheduledDate = dateStr;
+  try {
+    logger.info(`[Sync] Free mode: scheduling ${type} (${uploaded.workoutName}) for ${dateStr}`);
+    await client.scheduleWorkout({ workoutId: String(uploaded.workoutId) }, dateStr);
+  } catch (err: any) {
+    logger.warn(`[Sync] Free mode: ${type} uploaded (id ${uploaded.workoutId}) but scheduling failed: ${err.message}`);
+    scheduleError = `Could not schedule for ${dateStr} — schedule manually in Garmin Connect`;
+    scheduledDate = '';
+  }
+
+  return {
+    scheduledDate:  dateStr,
+    workouts:       [{ type, workoutId: uploaded.workoutId, name: uploaded.workoutName, scheduledDate, scheduleError }],
+    usingFallback,
+    scheduleErrors: scheduleError ? [`${type}: ${scheduleError}`] : [],
     profileUsed:    profile
   };
 };

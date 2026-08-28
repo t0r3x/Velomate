@@ -73,6 +73,21 @@
               <HrZonesBar :zones="zones" :maxHr="maxHr" @update:zones="zones = $event" />
             </div>
 
+            <!-- ── Training Mode ── -->
+            <div class="tp-section-label tp-section-divider">
+              <i class="fa-solid fa-shuffle"></i>
+              Training Mode
+            </div>
+            <label class="checkbox-label" for="ps-free-training">
+              <input type="checkbox" id="ps-free-training" v-model="freeTrainingMode">
+              <span>Free training mode</span>
+            </label>
+            <p class="helper-text" style="margin-top: 0.35rem">
+              Replaces the two-week schedule with a single suggestion for your next workout, with no fixed day —
+              ride it whenever suits you and sync it to Garmin when you're ready.
+              Your weekly plan is kept, so you can switch back at any time.
+            </p>
+
             <!-- ── Preferred Long Ride Days ── -->
             <div class="tp-section-label tp-section-divider">
               <i class="fa-solid fa-calendar-week"></i>
@@ -84,7 +99,11 @@
                 <span>{{ day.label }}</span>
               </label>
             </div>
-            <p class="helper-text" style="margin-top: 0.35rem">The AI will prefer these days for long endurance rides.</p>
+            <p class="helper-text" style="margin-top: 0.35rem">
+              {{ freeTrainingMode
+                ? 'Not used in free training mode — there is no schedule to place long rides on, you pick the day yourself.'
+                : 'The AI will prefer these days for long endurance rides.' }}
+            </p>
 
             <!-- ── Goals & Preferences ── -->
             <div class="tp-section-label tp-section-divider">
@@ -175,6 +194,7 @@ const zones        = ref<HrZones>(profileStore.profile?.zones ?? calcZones(lthr.
 const selectedDays        = ref<string[]>([...settingsStore.preferredLongRideDays])
 const goals               = ref('')
 const inactivityPauseDays = ref(settingsStore.inactivityPauseDays)
+const freeTrainingMode    = ref(settingsStore.freeTrainingMode)
 
 // Suggestion state
 type LoadState = 'loading' | 'form'
@@ -199,7 +219,8 @@ onMounted(async () => {
 
   maxHr.value        = profileStore.profile?.maxHr ?? 190
   lthr.value         = profileStore.profile?.lthr  ?? 165
-  selectedDays.value = [...settingsStore.preferredLongRideDays]
+  selectedDays.value      = [...settingsStore.preferredLongRideDays]
+  freeTrainingMode.value  = settingsStore.freeTrainingMode
 
   try {
     const data = await getTrainingGoals()
@@ -256,10 +277,14 @@ async function handleConfirm() {
   saving.value = true
   try {
     const profile = { maxHr: maxHr.value, lthr: lthr.value, zones: zones.value, hasCustomOverrides: true }
+    // Captured before saving — switching mode swaps out the whole training card, so it is
+    // worth calling out in the toast rather than letting the dashboard silently change shape.
+    const modeChanged = freeTrainingMode.value !== settingsStore.freeTrainingMode
     const [ok] = await Promise.all([
       profileStore.save(profile),
       settingsStore.savePreferredDays(selectedDays.value),
       settingsStore.saveInactivityPauseDays(inactivityPauseDays.value),
+      modeChanged ? settingsStore.saveFreeTrainingMode(freeTrainingMode.value) : Promise.resolve(true),
       postTrainingGoals(goals.value).catch(() => {})
     ])
     if (!ok) {
@@ -267,7 +292,14 @@ async function handleConfirm() {
       return
     }
     if (props.modalMode) {
-      show('success', 'Training Profile Updated', 'Zones, preferences and goals saved.')
+      if (modeChanged) {
+        show('success', freeTrainingMode.value ? 'Free training mode on' : 'Free training mode off',
+          freeTrainingMode.value
+            ? 'Your weekly plan is kept safe — ask for your next workout whenever you like.'
+            : 'Back to the two-week AI plan. Refresh it to bring it up to date.')
+      } else {
+        show('success', 'Training Profile Updated', 'Zones, preferences and goals saved.')
+      }
       emit('confirmed')
     } else {
       await settingsStore.markSetupComplete()

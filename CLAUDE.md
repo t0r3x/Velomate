@@ -93,6 +93,13 @@ profile       -- id=1 singleton: user HR profile
 settings      -- key/value store (generic — see "Settings stored in DB" below for the full key list)
   key TEXT PK, value TEXT
 
+free_suggestion -- free training mode: one dateless "next workout" per row (see below)
+  id INTEGER PK AUTOINCREMENT, workoutType, reason, priority, coachNote TEXT,
+  structure TEXT (JSON WorkoutStructure | null), loadAssessment TEXT (JSON),
+  status TEXT ('open'|'synced'|'completed'|'dismissed'|'superseded'),
+  generatedAt, syncedAt, syncedForDate, completedDate, completedActivityId TEXT,
+  executionScore INTEGER, executionNote TEXT
+
 recommendation -- id=1 singleton: current AI training plan
   id=1, workoutType, reason, priority TEXT,
   weeklyPlan TEXT (JSON PlanEntry[14], entries carry executionScore/executionNote),
@@ -180,11 +187,33 @@ The first plan is never created here — only steps 2-4 ever fire, and they all 
 ### `buildPrompt()` assembles
 today's date/day-of-week, athlete preferences (preferred long-ride days, free-text goals), pause context, previous-plan compliance (completed/skipped/auto-skipped with RPE/feeling), pinned-today block, existing scheduled workouts, last-21-day (or reduced) activity JSON, HR profile/zones, 90-day analysis, workout-type guidelines (Sprint/VO2Max/Threshold/Tempo/LongRide/Rest), progression goals, the execution-scoring rubric, the JSON output schema, and plan-stability rules.
 
+### AI model selection
+
+The model is **user-supplied free text**, not a fixed dropdown — that list went stale every time Google
+shipped a model. `SettingsPanel.vue` offers `MODEL_PRESETS` (currently `gemini-3.6-flash` and
+`gemini-3.5-flash-lite`) plus a `Custom model ID…` option that reveals a text field, which is how Pro-tier
+and brand-new models get in. A stored value that is not a preset reopens the form **in custom mode with
+that value**, so removing a preset in a later version never silently resets someone's choice.
+
+Three helpers in `gemini.service.ts` own this:
+- `normalizeModelId(raw)` — trims, strips the `models/` prefix (Google's docs and ListModels show it, so
+  people paste it verbatim), lowercases.
+- `isValidModelId(id)` — `/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/`. Lowercase alphanumeric segments joined by dots
+  or hyphens, which is the shape of every Gemini/Gemma ID. Deliberately a **format** check, not an
+  allowlist: a model released after this build must still be enterable.
+- `getGeminiModel()` — the single read path, falling back to `DEFAULT_GEMINI_MODEL` when the stored value
+  is missing or no longer valid. Never read `getSetting('gemini_model')` directly.
+
+`POST /api/settings/gemini-model` validates server-side too, and that is **not** duplicate work: the model
+is interpolated into the Gemini request path (`/v1beta/models/{model}:generateContent`), so a value
+containing `/`, `?` or `..` would rewrite the endpoint rather than name a model. `SettingsPanel.vue`
+mirrors the same two functions purely to give an actionable message before the request goes out.
+
 ### Settings stored in DB
 | Key | Description |
 |-----|-------------|
 | `gemini_api_key` | Raw API key |
-| `gemini_model` | e.g. `gemini-3.6-flash` (default) |
+| `gemini_model` | e.g. `gemini-3.6-flash` (default). Free-text: the settings form offers two presets plus a "Custom model ID…" field, so a Pro-tier or newly released model can be used without an app update. Always stored normalized — see "AI model selection" |
 | `gemini_last_generated` | ISO timestamp; `'0'` = never/force regen |
 | `preferred_long_ride_days` | Comma-separated day names, e.g. `Saturday,Sunday` |
 | `preferred_long_ride_day` | Legacy singular key (read as fallback) |
@@ -195,6 +224,7 @@ today's date/day-of-week, athlete preferences (preferred long-ride days, free-te
 | `last_plan_activity_date` | Used by auto-pause inactivity detection |
 | `setup_complete` | `'1'` when user confirmed HR profile |
 | `instant_score_on_new_activity` | `'0'` disables instant regen-on-newly-completed-ride (default on, i.e. unset or `'1'`) |
+| `free_training_mode` | `'1'` replaces the 14-day plan with a single dateless suggestion (see "Free training mode") |
 
 ---
 
@@ -220,13 +250,14 @@ POST   /api/sync-workouts                   ← { scheduleDate } → upload to G
 
 GET    /api/settings/gemini-key             ← { hasKey, maskedKey, setupComplete,
                                                 preferredLongRideDays, geminiModel, inactivityPauseDays,
-                                                instantScoreOnNewActivity }
+                                                instantScoreOnNewActivity, freeTrainingMode }
 POST   /api/settings/gemini-key             ← { apiKey } → forces regen on next check
 DELETE /api/settings/gemini-key             ← removes the API key
-POST   /api/settings/gemini-model           ← { model }
+POST   /api/settings/gemini-model           ← { model } → normalized + format-validated, 400 on a bad ID
 POST   /api/settings/preferred-long-ride-days  ← { days: string[] }
 POST   /api/settings/inactivity-pause-days  ← { days: number } (1-365)
 POST   /api/settings/instant-score-on-new-activity  ← { enabled: boolean }
+POST   /api/settings/free-training-mode     ← { enabled: boolean } (also resets gemini_last_generated)
 GET    /api/settings/training-goals         ← { goals }
 POST   /api/settings/training-goals         ← { goals } (max 500 chars)
 POST   /api/settings/setup-complete         ← marks setup as done
@@ -239,6 +270,13 @@ GET    /api/recommendation                  ← stored plan, or { notConfigured 
 POST   /api/recommendation/refresh          ← syncs activities, then force-regenerates via Gemini
 POST   /api/recommendation/skip-today       ← mark today 'skipped' → regenerate → return rec
 POST   /api/recommendation/reschedule       ← { fromDate, toDate } → swap dates → regenerate
+
+GET    /api/free-training                   ← free mode only (409 otherwise): stored suggestion + history
+                                               → { notConfigured } / { paused, ... } / { noSuggestion }
+                                               → else { suggestion, history[], stale }
+POST   /api/free-training/refresh           ← syncs activities, then generates the next suggestion
+POST   /api/free-training/dismiss           ← mark current 'dismissed' → generate a replacement
+POST   /api/free-training/sync              ← upload + schedule the suggestion on today's date
 
 GET    /api/debug/raw-activity              ← debug-only: dumps raw Garmin activity/detail fields (RPE/feeling field discovery)
 GET    /api/debug/garmin-hr-data            ← debug-only: dumps userData + an activity detail, scanned for zone/threshold/LTHR-related keys
@@ -262,13 +300,14 @@ The old vanilla-JS `setView()`/`currentView`/hidden-class toggling and `setRecSt
 - **`auth.store.ts`** — `isLoggedIn`, `loaded`, `showMfa`. `init()`, `refresh()` (polled every 30s), `login()`, `submitMfa()`, `logout()`
 - **`settings.store.ts`** — `geminiConfigured`, `setupComplete`, `maskedKey`, `preferredLongRideDays[]`, `geminiModel`, `inactivityPauseDays`. `init()`/`reload()`, `saveAll()`, `saveInactivityPauseDays()`, `disconnectGemini()`, `savePreferredDays()`, `markSetupComplete()`
 - **`recommendation.store.ts`** — `state: RecState` (`'not-configured' | 'no-plan' | 'loading' | 'loaded' | 'error' | 'paused'`), `recommendation`, `pausedSince`, `pauseReason`. `fetchCached()`, `refresh()`, `skipToday()`, `reschedule()`, `pollForUpdate()` (polls every 4s up to 10× for a changed `generatedAt` after a non-blocking backend regen), `pauseTraining()`, `resumeTraining()`, `syncWorkouts()`
+- **`freeTraining.store.ts`** — free mode's counterpart to `recommendation.store`, same state-machine shape: `state: FreeState` (`'not-configured' | 'no-suggestion' | 'loading' | 'loaded' | 'error' | 'paused'`), `suggestion`, `history[]`. `fetchCached()`, `refresh()`, `dismiss()`, `syncWorkout()`, `pollForUpdate()`, `pauseTraining()`, `resumeTraining()`
 - **`profile.store.ts`** — `profile`, computed `hrLabel`. `fetch()`, `save()`, `setFromDashboard()`
 - **`activities.store.ts`** — `activities[]`, `analysis`, `loading`. `loadFromDb()` (DB-only, fast), `syncFromGarmin()` (full refresh, also updates profile store)
 
 ### Views
 - **`SetupView.vue`** — checklist ("Connect Garmin", "Add AI API key") → opens `SettingsPanel` modal; no inline login form
 - **`ProfileSetupView.vue`** — HR profile form (`HrZonesBar` preview), preferred long-ride days, free-text goals, auto-pause threshold. Also usable as a dashboard modal (`modalMode` prop, "edit profile"). Suggests maxHR/LTHR from `analysis.estimatedMaxHr/estimatedLthr` on mount
-- **`DashboardView.vue`** — `MenuBar`, `ActivitiesCard`, `AiPlanCard`, `SettingsPanel`, teleported `ProfileSetupView` modal. Loads activities from DB, starts auth polling, fetches cached recommendation, silently polls for a fresher plan if one is regenerating in the background
+- **`DashboardView.vue`** — `MenuBar`, `ActivitiesCard`, `AiPlanCard` **or** `FreeTrainingCard` (by `settings.freeTrainingMode` — only the active mode's store is ever loaded or polled), `SettingsPanel`, teleported `ProfileSetupView` modal. Loads activities from DB, starts auth polling, fetches cached recommendation, silently polls for a fresher plan if one is regenerating in the background
 
 ### Key helpers
 - `useTimeAgo()` composable (`composables/useTimeAgo.ts`) — same logic as the old vanilla `timeAgo()` helper, used in `ActivitiesCard.vue`/`LoadAssessment.vue`
@@ -280,7 +319,7 @@ The old vanilla-JS `setView()`/`currentView`/hidden-class toggling and `setRecSt
 ## Profile setup flow
 
 1. **`/setup`**: user connects Garmin + enters Gemini API key via the `SettingsPanel` modal
-2. **`/profile-setup`**: auto-fetches Garmin rides to estimate maxHR/LTHR; user confirms or adjusts, sets preferred long-ride days, goals, auto-pause threshold
+2. **`/profile-setup`**: auto-fetches Garmin rides to estimate maxHR/LTHR; user confirms or adjusts, sets training mode (free vs. planned), preferred long-ride days, goals, auto-pause threshold
    - On confirm: saves profile to DB (+ `config.json`), marks `setup_complete=1`, triggers first-plan generation
 3. Router guard redirects to `/` (dashboard)
 
@@ -329,6 +368,66 @@ New feature not present in earlier versions of the app:
 
 ---
 
+## Free training mode
+
+An alternative to the 14-day plan, toggled by `free_training_mode` under **Training Mode** in the training
+profile form (`ProfileSetupView.vue`, reachable as the dashboard's "edit profile" modal) — it sits with the
+other training preferences, not with the AI connection settings. Instead of a
+schedule, the AI returns **one dateless suggestion**: the single best next workout, ridden whenever the
+athlete likes. Deliberately built as a parallel track, not a rewrite of plan mode.
+
+**The plan is never destroyed.** Suggestions live in their own `free_suggestion` table; the
+`recommendation` row is left untouched, so toggling back restores the plan (stale, then refreshed by the
+normal 23h auto-check). Toggling either way resets `gemini_last_generated` to `'0'`.
+
+**What is reused vs. what differs**
+
+| Reused verbatim | Free-mode specific |
+|---|---|
+| `ACTIVITY_DATA_NOTES`, `WORKOUT_TYPE_GUIDELINES`, `PROGRESSION_GUIDELINES`, `SCORING_RUBRIC`, `buildRecentActivities()`, `buildZoneString()`, `buildPreferenceLines()`, `buildPauseBlock()` — extracted from `buildPrompt()` and shared (the plan prompt renders byte-identically to before the extraction) | `buildFreePrompt()` — one-workout framing, `coachNote` instead of a calendar slot, `PREVIOUS SUGGESTIONS` compliance block keyed by `[id N]` |
+| `buildFromStructure()`, `zoneTarget()`, `workoutLabels()`, `FALLBACK_STRUCTURES` in `workout.service.ts` | `syncFreeWorkout()` — one workout, deletes only an **exact name clash** instead of every `"Velomate - "` workout, so previously synced suggestions survive as history |
+| `WorkoutDetailPanel.vue` (new `dateless` prop hides the day label + Skip/Move), `LoadAssessment.vue`, `SyncResult.vue` (new `singleWorkout` prop), `usePauseDialog`, `useConfirm` | `FreeTrainingCard.vue`, `FreeHistoryList.vue`, `freeTraining.store.ts` |
+| `buildPreferenceLines()` (goals block identical) | its `freeMode` argument swaps the "preferred Long Ride day" instruction for "the athlete chooses the day themselves" — there is no calendar to place a long ride on, and the UI says the same under those day chips |
+| `/api/training/pause` + `/resume` (mode-agnostic; resume regenerates a suggestion instead of a plan) | `/api/free-training*` routes |
+
+**Suggestion lifecycle** (`status` column):
+`open` → `synced` (pushed to Garmin) → `completed` (a ride matched it) → scored by the AI on the next
+generation. `dismissed` = athlete rejected it, or had it synced and never rode it; `superseded` = replaced
+by a plain refresh without ever being synced. `insertFreeSuggestion()` retires the current row inside one
+transaction, so there is always at most one `open`/`synced` row.
+
+**Ride matching** — `findRideForFreeSuggestion(syncedForDate)` takes the **first activity on or after**
+that date (Velomate-named wins, else longest of that day). Deliberately forward-looking, unlike the plan's
+strict same-date `classifyCompletedEntries()`: syncing Monday and riding Wednesday is still that session.
+
+**Sync = the only date it ever gets.** `POST /api/free-training/sync` stamps `localDate()` (the day the
+button was pressed) into `syncedForDate`, the workout name (`Velomate - Wed 27 Aug: Tempo`) and the Garmin
+calendar slot — that press date is what makes a synced suggestion traceable afterwards, and the UI shows it
+back as "Synced to Garmin on Wednesday 27 August".
+
+**Auto-check** — `runGeminiAutoCheck()` delegates to `runFreeAutoCheck()` in free mode. Same shape minus
+everything date-bound (no auto-skips): sync → settle a synced suggestion against new rides → regen if one
+just completed (gated by `instant_score_on_new_activity`) → shared `maybeAutoPause()` → regen if >23h stale.
+Two invariants:
+- **The first suggestion is never auto-generated** — same rule as the first plan.
+- **A `synced` suggestion is never replaced on staleness alone.** It is sitting on the athlete's watch and
+  free mode has no deadline, so replacing it would mark it not-ridden and orphan the Garmin workout. Only a
+  matched ride, an explicit refresh/dismiss, or the inactivity auto-pause moves it on.
+
+**Inactivity clock** — free mode has no completed plan entries to stamp `last_plan_activity_date` from, so
+`syncActivitiesFromGarmin()` stamps it from the most recent ride instead. Without this, auto-pause would
+fire on an athlete who is training perfectly well.
+
+**Switching mid-session** — `DashboardView.vue` watches `settings.freeTrainingMode` and calls `loadActiveMode()`.
+Without it, toggling in the profile modal swaps the card while the store behind the newly shown one has never
+been fetched, leaving it stuck on its initial `loading` state until a reload.
+
+**Mode guards** — `requireMode(res, wantFree)` returns 409 when a request targets the inactive mode. Applied
+to `/api/recommendation/refresh|skip-today|reschedule` and `/api/sync-workouts` (plan-only), and to every
+`/api/free-training*` route (free-only).
+
+---
+
 ## Electron desktop shell
 
 `electron-main.js` (repo root, CommonJS, guarded by `if (process.type !== 'browser') return` since Windows launches it twice):
@@ -371,3 +470,6 @@ Bump `version` in root `package.json` before every publish — it's both the rel
 12. **WAL mode** — SQLite is opened with `db.pragma('journal_mode = WAL')` for better concurrent reads.
 13. **`GET /api/debug/raw-activity`** and **`GET /api/debug/garmin-hr-data`** are diagnostic-only endpoints (discovering Garmin's RPE/feeling field names, and real LTHR/zone-boundary field names, respectively) — don't treat them as public API surface.
 14. **Backend port is 2012**, not 3001 — legacy docs/scripts referencing 3001 are stale.
+15. **Free training mode swaps the card, it does not migrate the data** — `recommendation` and `free_suggestion` coexist. Never "clean up" one while the other is active; that is what makes toggling back lossless.
+16. **`gemini_model` is user-controlled free text that lands in a URL** — always go through `getGeminiModel()` to read it and `normalizeModelId()`/`isValidModelId()` to write it. See "AI model selection".
+17. **The shared prompt blocks are literally shared** — editing `WORKOUT_TYPE_GUIDELINES`, `PROGRESSION_GUIDELINES`, `SCORING_RUBRIC` or `ACTIVITY_DATA_NOTES` changes coaching behaviour in **both** modes. That is intentional; if a change should only apply to one mode, put it in that mode's own template.

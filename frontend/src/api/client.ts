@@ -4,6 +4,7 @@
  */
 import type {
   UserHRProfile,
+  FreeTraining,
   Recommendation,
   GeminiKeyStatus,
   DashboardResponse,
@@ -125,6 +126,12 @@ export const postInstantScoreOnNewActivity = (enabled: boolean) =>
     body: JSON.stringify({ enabled })
   })
 
+export const postFreeTrainingMode = (enabled: boolean) =>
+  request<void>('/api/settings/free-training-mode', {
+    method: 'POST',
+    body: JSON.stringify({ enabled })
+  })
+
 export const getTrainingGoals = () =>
   request<{ goals: string }>('/api/settings/training-goals')
 
@@ -164,6 +171,20 @@ export const postPauseTraining = (reason?: string) =>
 
 export const postResumeTraining = () =>
   request<{ resumed: true }>('/api/training/resume', { method: 'POST' })
+
+// ── Free training ─────────────────────────────────────────────────────────────
+
+export const getFreeTraining = () =>
+  request<FreeTraining | { notConfigured: true } | { noSuggestion: true } | PausedResponse>('/api/free-training')
+
+export const postFreeTrainingRefresh = () =>
+  request<FreeTraining>('/api/free-training/refresh', { method: 'POST' })
+
+export const postFreeTrainingDismiss = () =>
+  request<FreeTraining>('/api/free-training/dismiss', { method: 'POST' })
+
+export const postFreeTrainingSync = () =>
+  request<SyncResult & FreeTraining>('/api/free-training/sync', { method: 'POST' })
 
 // ── Sync ──────────────────────────────────────────────────────────────────────
 

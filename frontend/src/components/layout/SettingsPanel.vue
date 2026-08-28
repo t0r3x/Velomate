@@ -119,23 +119,33 @@
             <div class="input-wrapper input-wrapper--select">
               <i class="fa-solid fa-microchip input-icon"></i>
               <select id="panel-model" v-model="selectedModel">
-                <optgroup label="── Free Tier ──────────────────────">
-                  <option value="gemini-3.6-flash">gemini-3.6-flash (Recommended / Default)</option>
-                  <option value="gemini-3.5-flash">gemini-3.5-flash</option>
-                  <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite</option>
-                  <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option>
-                  <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
-                  <option value="gemini-2.5-flash">gemini-2.5-flash</option>
-                  <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
-                </optgroup>
-                <optgroup label="── Paid / Preview ─────────────────">
-                  <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
-                  <option value="gemini-2.5-pro">gemini-2.5-pro</option>
-                </optgroup>
+                <option v-for="m in MODEL_PRESETS" :key="m.id" :value="m.id">{{ m.label }}</option>
+                <option :value="CUSTOM_MODEL">Custom model ID…</option>
               </select>
             </div>
-            <p class="helper-text" style="margin-top:0.35rem">
-              Free tier models have daily rate limits.
+
+            <!-- Free text so a Pro model, or one released after this build, can be used
+                 without waiting for an app update. -->
+            <div v-if="isCustomModel" class="input-wrapper" style="margin-top:0.5rem">
+              <i class="fa-solid fa-pen-to-square input-icon"></i>
+              <input
+                type="text"
+                id="panel-model-custom"
+                v-model="customModel"
+                placeholder="gemini-3.1-pro-preview"
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck="false"
+              >
+            </div>
+
+            <p v-if="modelError" class="helper-text settings-error" style="margin-top:0.35rem">
+              <i class="fa-solid fa-circle-exclamation"></i> {{ modelError }}
+            </p>
+            <p v-else class="helper-text" style="margin-top:0.35rem">
+              {{ isCustomModel
+                ? 'Enter the model ID exactly as Google lists it. Pro models need a paid API key.'
+                : 'Free tier models have daily rate limits.' }}
               <a href="https://ai.google.dev/gemini-api/docs/models" target="_blank" rel="noopener" style="color:var(--primary-color)">See all models ↗</a>
             </p>
           </div>
@@ -167,7 +177,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter }   from 'vue-router'
 import { useAuthStore }     from '@/stores/auth.store'
 import { useSettingsStore } from '@/stores/settings.store'
@@ -187,21 +197,63 @@ const password = ref('')
 const mfaCode  = ref('')
 const loginBusy = ref(false)
 
+// AI model options. Deliberately a short list: it is a starting point, not a catalogue —
+// the dropdown went stale every time Google shipped a model, so anything not listed here
+// (Pro tiers, brand-new releases) goes in through "Custom model ID…" instead.
+const MODEL_PRESETS = [
+  { id: 'gemini-3.6-flash',      label: 'gemini-3.6-flash (Recommended / Default)' },
+  { id: 'gemini-3.5-flash-lite', label: 'gemini-3.5-flash-lite (Fastest, lightest quota use)' },
+] as const
+
+/** Sentinel `selectedModel` value meaning "use whatever is typed in customModel". */
+const CUSTOM_MODEL = '__custom__'
+
+/**
+ * Mirrors normalizeModelId/isValidModelId in the backend's gemini.service so a typo is
+ * caught here with an actionable message instead of coming back as a generic save failure.
+ * The backend still validates — it is the one interpolating this into the request URL.
+ */
+const normalizeModelId = (raw: string): string =>
+  raw.trim().replace(/^models\//i, '').toLowerCase()
+
+const isValidModelId = (id: string): boolean =>
+  /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(id)
+
 // AI settings form state
 const apiKey         = ref('')
-const selectedModel  = ref('gemini-3.6-flash')
+const selectedModel  = ref<string>(MODEL_PRESETS[0].id)
+const customModel    = ref('')
+const modelError     = ref('')
 const instantScoring = ref(true)
 const saveBusy       = ref(false)
 
-// Sync form state from store when panel opens
+const isCustomModel = computed(() => selectedModel.value === CUSTOM_MODEL)
+
+/** The model ID that will actually be saved, whichever input produced it. */
+const resolvedModel = computed(() =>
+  isCustomModel.value ? normalizeModelId(customModel.value) : selectedModel.value
+)
+
+// Sync form state from store when panel opens. A stored model that is not one of the
+// presets — a Pro model, or a preset removed in a later version — must reopen as a custom
+// entry rather than silently snapping back to the default.
 watch(() => props.open, (isOpen) => {
-  if (isOpen) {
-    selectedModel.value  = settingsStore.geminiModel
-    instantScoring.value = settingsStore.instantScoreOnNewActivity
-    apiKey.value         = ''
-    mfaCode.value        = ''
+  if (!isOpen) return
+  const stored = settingsStore.geminiModel
+  if (MODEL_PRESETS.some(m => m.id === stored)) {
+    selectedModel.value = stored
+    customModel.value   = ''
+  } else {
+    selectedModel.value = CUSTOM_MODEL
+    customModel.value   = stored
   }
+  modelError.value     = ''
+  instantScoring.value = settingsStore.instantScoreOnNewActivity
+  apiKey.value         = ''
+  mfaCode.value        = ''
 })
+
+watch([selectedModel, customModel], () => { modelError.value = '' })
 
 // ── Login ─────────────────────────────────────────────────────────────────────
 
@@ -247,10 +299,20 @@ async function handleDisconnectGemini() {
 // ── Save Settings ─────────────────────────────────────────────────────────────
 
 async function handleSave() {
+  const model = resolvedModel.value
+  if (!model) {
+    modelError.value = 'Enter a model ID, or pick one from the list.'
+    return
+  }
+  if (!isValidModelId(model)) {
+    modelError.value = 'That does not look like a Google model ID. Use it exactly as listed, e.g. gemini-3.1-pro-preview.'
+    return
+  }
+
   saveBusy.value = true
   try {
     const onSetup = router.currentRoute.value.name === 'setup'
-    const success = await settingsStore.saveAll(apiKey.value, selectedModel.value)
+    const success = await settingsStore.saveAll(apiKey.value, model)
     if (!success) {
       show('error', 'Save Failed', 'Could not save settings.')
       return
@@ -279,3 +341,13 @@ function checkRouting() {
 }
 
 </script>
+
+<style scoped>
+.settings-error {
+  color: var(--z5-color, #ef4444);
+}
+
+.settings-error i {
+  margin-right: 0.3rem;
+}
+</style>

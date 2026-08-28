@@ -122,6 +122,24 @@ db.exec(`
     loadAssessment   TEXT,
     generatedAt      TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS free_suggestion (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    workoutType         TEXT,
+    reason              TEXT,
+    priority            TEXT,
+    coachNote           TEXT,
+    structure           TEXT,
+    loadAssessment      TEXT,
+    status              TEXT    NOT NULL DEFAULT 'open',
+    generatedAt         TEXT,
+    syncedAt            TEXT,
+    syncedForDate       TEXT,
+    completedDate       TEXT,
+    completedActivityId TEXT,
+    executionScore      INTEGER,
+    executionNote       TEXT
+  );
 `);
 
 // Additive migration for installs whose `recommendation` table predates `nextWeekFocus` —
@@ -429,4 +447,158 @@ export const swapPlanEntryDates = (date1: string, date2: string): boolean => {
 
   db.prepare('UPDATE recommendation SET weeklyPlan = ? WHERE id = 1').run(JSON.stringify(plan));
   return true;
+};
+
+// ── Free training suggestions ─────────────────────────────────────────────────
+// Free training mode replaces the fixed 14-day plan with a single, dateless "next
+// workout" suggestion. Suggestions live in their OWN table rather than in the
+// `recommendation` row, so toggling the mode never destroys the weekly plan —
+// switch back and the plan (and its execution history) is still there.
+//
+// Lifecycle of a row:
+//   open       → generated, not yet acted on
+//   synced     → uploaded + scheduled to Garmin on the date the button was pressed
+//   completed  → a ride was matched to it (scored by the AI on the next generation)
+//   dismissed  → user explicitly asked for a different suggestion
+//   superseded → replaced by a newer suggestion without ever being synced or dismissed
+
+export type FreeSuggestionStatus =
+  | 'open' | 'synced' | 'completed' | 'dismissed' | 'superseded';
+
+export interface FreeSuggestion {
+  id: number;
+  workoutType: string;
+  reason: string;
+  priority: string;
+  coachNote: string | null;
+  structure: WorkoutStructure | null;
+  loadAssessment: any | null;
+  status: FreeSuggestionStatus;
+  generatedAt: string;
+  syncedAt: string | null;
+  syncedForDate: string | null;
+  completedDate: string | null;
+  completedActivityId: string | null;
+  executionScore: number | null;
+  executionNote: string | null;
+}
+
+const freeRowToSuggestion = (row: any): FreeSuggestion | null => {
+  if (!row) return null;
+  try {
+    return {
+      id:                  row.id,
+      workoutType:         row.workoutType,
+      reason:              row.reason,
+      priority:            row.priority,
+      coachNote:           row.coachNote ?? null,
+      structure:           row.structure ? JSON.parse(row.structure) : null,
+      loadAssessment:      row.loadAssessment ? JSON.parse(row.loadAssessment) : null,
+      status:              row.status,
+      generatedAt:         row.generatedAt,
+      syncedAt:            row.syncedAt ?? null,
+      syncedForDate:       row.syncedForDate ?? null,
+      completedDate:       row.completedDate ?? null,
+      completedActivityId: row.completedActivityId ?? null,
+      executionScore:      row.executionScore ?? null,
+      executionNote:       row.executionNote ?? null
+    };
+  } catch (e) {
+    logger.warn('[DB] freeRowToSuggestion: JSON parse failed — skipping row ' + JSON.stringify(e));
+    return null;
+  }
+};
+
+/** The suggestion the athlete is currently looking at: newest row still open or synced. */
+export const getCurrentFreeSuggestion = (): FreeSuggestion | null => {
+  const row = db.prepare(
+    `SELECT * FROM free_suggestion WHERE status IN ('open', 'synced') ORDER BY id DESC LIMIT 1`
+  ).get() as any;
+  return freeRowToSuggestion(row);
+};
+
+/** Past suggestions (everything that is no longer current), newest first. */
+export const getFreeSuggestionHistory = (limit = 10): FreeSuggestion[] => {
+  const rows = db.prepare(
+    `SELECT * FROM free_suggestion
+       WHERE status NOT IN ('open', 'synced')
+       ORDER BY id DESC LIMIT ?`
+  ).all(limit) as any[];
+  return rows.map(freeRowToSuggestion).filter((s): s is FreeSuggestion => s !== null);
+};
+
+/**
+ * Store a freshly generated suggestion. Any still-current suggestion is retired first:
+ * a never-synced one is 'superseded' (it was only ever a proposal), while a synced one
+ * that was never matched to a ride becomes 'dismissed' — the athlete had it on their
+ * watch and moved on, which is the free-mode equivalent of an auto-skip.
+ */
+export const insertFreeSuggestion = (s: {
+  workoutType: string;
+  reason: string;
+  priority: string;
+  coachNote: string | null;
+  structure: WorkoutStructure | null;
+  loadAssessment: any;
+}): number => {
+  const insert = db.transaction(() => {
+    db.prepare(
+      `UPDATE free_suggestion
+          SET status = CASE WHEN status = 'synced' THEN 'dismissed' ELSE 'superseded' END
+        WHERE status IN ('open', 'synced')`
+    ).run();
+    const info = db.prepare(`
+      INSERT INTO free_suggestion
+        (workoutType, reason, priority, coachNote, structure, loadAssessment, status, generatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, 'open', ?)
+    `).run(
+      s.workoutType,
+      s.reason,
+      s.priority,
+      s.coachNote,
+      s.structure ? JSON.stringify(s.structure) : null,
+      JSON.stringify(s.loadAssessment ?? null),
+      new Date().toISOString()
+    );
+    return Number(info.lastInsertRowid);
+  });
+  return insert();
+};
+
+/** Stamp the sync: the date the button was pressed is what makes the workout traceable. */
+export const markFreeSuggestionSynced = (id: number, syncedForDate: string): void => {
+  db.prepare(
+    `UPDATE free_suggestion SET status = 'synced', syncedAt = ?, syncedForDate = ? WHERE id = ?`
+  ).run(new Date().toISOString(), syncedForDate, id);
+};
+
+export const markFreeSuggestionCompleted = (
+  id: number,
+  completedDate: string,
+  activityId: string | null
+): void => {
+  db.prepare(
+    `UPDATE free_suggestion SET status = 'completed', completedDate = ?, completedActivityId = ? WHERE id = ?`
+  ).run(completedDate, activityId, id);
+};
+
+export const markFreeSuggestionDismissed = (id: number): void => {
+  db.prepare(`UPDATE free_suggestion SET status = 'dismissed' WHERE id = ?`).run(id);
+};
+
+/** Apply an AI execution score to a past suggestion. Never overwrites an existing score. */
+export const setFreeSuggestionScore = (id: number, score: number, note: string | null): void => {
+  db.prepare(
+    `UPDATE free_suggestion SET executionScore = ?, executionNote = ? WHERE id = ? AND executionScore IS NULL`
+  ).run(score, note, id);
+};
+
+/** Suggestions still awaiting an AI quality score (completed but unscored), newest first. */
+export const getUnscoredFreeSuggestions = (limit = 5): FreeSuggestion[] => {
+  const rows = db.prepare(
+    `SELECT * FROM free_suggestion
+       WHERE status = 'completed' AND executionScore IS NULL
+       ORDER BY id DESC LIMIT ?`
+  ).all(limit) as any[];
+  return rows.map(freeRowToSuggestion).filter((s): s is FreeSuggestion => s !== null);
 };

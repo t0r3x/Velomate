@@ -37,6 +37,8 @@
 import { computed, ref } from 'vue'
 import { useActivitiesStore }    from '@/stores/activities.store'
 import { useRecommendationStore } from '@/stores/recommendation.store'
+import { useFreeTrainingStore }   from '@/stores/freeTraining.store'
+import { useSettingsStore }      from '@/stores/settings.store'
 import { useAuthStore }          from '@/stores/auth.store'
 import { useToast }              from '@/composables/useToast'
 import { useTimeAgo }            from '@/composables/useTimeAgo'
@@ -45,6 +47,8 @@ import ActivityItem from './ActivityItem.vue'
 
 const activitiesStore    = useActivitiesStore()
 const recommendationStore = useRecommendationStore()
+const freeTrainingStore  = useFreeTrainingStore()
+const settingsStore      = useSettingsStore()
 const authStore          = useAuthStore()
 const { show }           = useToast()
 const { timeAgo }        = useTimeAgo()
@@ -56,11 +60,30 @@ const lastSyncedLabel = computed(() => {
   return updatedAt ? `Last synced ${timeAgo(updatedAt)}` : ''
 })
 
-/** Build date → plan entry map for execution score lookup. */
+/**
+ * Build date → scored entry map for the execution score badge on each activity.
+ * Both modes produce the same 0-100 score, they just store it differently: the plan keeps
+ * it on the dated plan entry, free mode on the suggestion the ride was matched to (whose
+ * completedDate is the ride's date). Normalised to PlanEntry so ActivityItem is unchanged.
+ */
 const scoreByDate = computed(() => {
   const map = new Map<string, PlanEntry>()
-  for (const e of recommendationStore.recommendation?.weeklyPlan ?? []) {
-    if (e.executionScore != null) map.set(e.date, e)
+  if (settingsStore.freeTrainingMode) {
+    for (const s of freeTrainingStore.history) {
+      if (s.executionScore == null || !s.completedDate) continue
+      map.set(s.completedDate, {
+        date:           s.completedDate,
+        type:           s.workoutType,
+        reason:         s.reason,
+        status:         'completed',
+        executionScore: s.executionScore,
+        executionNote:  s.executionNote,
+      })
+    }
+  } else {
+    for (const e of recommendationStore.recommendation?.weeklyPlan ?? []) {
+      if (e.executionScore != null) map.set(e.date, e)
+    }
   }
   return map
 })
@@ -69,11 +92,18 @@ async function handleSync() {
   syncing.value = true
   try {
     const { newCount, planRegenTriggered } = await activitiesStore.syncFromGarmin()
-    // Reload plan to reflect newly classified statuses (e.g. Done badge)
-    await recommendationStore.fetchCached()
-    if (planRegenTriggered) {
-      // AI regen was triggered non-blocking — poll silently until scores arrive
-      recommendationStore.pollForUpdate(recommendationStore.recommendation?.generatedAt)
+    // Reload the active mode's output to reflect newly matched rides (e.g. Done badge)
+    if (settingsStore.freeTrainingMode) {
+      await freeTrainingStore.fetchCached()
+      if (planRegenTriggered) {
+        // AI regen was triggered non-blocking — poll silently until scores arrive
+        freeTrainingStore.pollForUpdate(freeTrainingStore.suggestion?.generatedAt)
+      }
+    } else {
+      await recommendationStore.fetchCached()
+      if (planRegenTriggered) {
+        recommendationStore.pollForUpdate(recommendationStore.recommendation?.generatedAt)
+      }
     }
     const total = activitiesStore.activities.length
     show('success', 'Synced from Garmin',

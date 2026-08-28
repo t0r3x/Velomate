@@ -8,7 +8,7 @@ import { GarminSSOClient } from './services/sso.service';
 import { finalizeLogin } from './services/garmin.service';
 import { loadProfile, saveProfile, calculateDefaultZones } from './services/profile.service';
 import { fetchCyclingActivities, assessProgression, fetchAndStoreRecentFeedback } from './services/activity.service';
-import { syncAndScheduleWorkouts } from './services/workout.service';
+import { syncAndScheduleWorkouts, syncFreeWorkout } from './services/workout.service';
 import {
   upsertActivities,
   getStoredActivities,
@@ -20,14 +20,25 @@ import {
   setSetting,
   getStoredRecommendation,
   updatePlanEntryStatus,
-  swapPlanEntryDates
+  swapPlanEntryDates,
+  getCurrentFreeSuggestion,
+  getFreeSuggestionHistory,
+  markFreeSuggestionSynced,
+  markFreeSuggestionCompleted,
+  markFreeSuggestionDismissed
 } from './services/database.service';
 import {
   generateRecommendation,
   getGeminiKey,
   maskKey,
   classifyCompletedEntries,
-  detectAutoSkippedEntries
+  detectAutoSkippedEntries,
+  getGeminiModel,
+  normalizeModelId,
+  isValidModelId,
+  generateFreeSuggestion,
+  isFreeTrainingMode,
+  findRideForFreeSuggestion
 } from './services/gemini.service';
 import { UserHRProfile } from './types';
 import { localDate, APP_NAME } from './utils';
@@ -261,6 +272,37 @@ app.get('/api/activities', async (req: Request, res: Response) => {
   }
 });
 
+// ── Free training helpers ─────────────────────────────────────────────────────
+
+/**
+ * Free-mode equivalent of classifyCompletedEntries(): matches a synced suggestion to the
+ * ride that followed it and marks it completed, so the next AI call can score it.
+ * Returns the id of the suggestion that just completed, or null when nothing changed.
+ */
+const settleFreeSuggestion = (): number | null => {
+  const current = getCurrentFreeSuggestion();
+  if (!current || current.status !== 'synced' || !current.syncedForDate) return null;
+
+  const ride = findRideForFreeSuggestion(current.syncedForDate);
+  if (!ride) return null;
+
+  const rideDate = ride.startTime.slice(0, 10);
+  markFreeSuggestionCompleted(current.id, rideDate, String(ride.activityId));
+  logger.info(`[Free] Suggestion #${current.id} (${current.workoutType}, synced for ${current.syncedForDate}) matched to ride on ${rideDate} — marked completed`);
+  return current.id;
+};
+
+/** 409 when a request targets the mode the athlete is not currently in. */
+const requireMode = (res: Response, wantFree: boolean): boolean => {
+  if (isFreeTrainingMode() === wantFree) return true;
+  res.status(409).json({
+    error: wantFree
+      ? 'Free training mode is not enabled.'
+      : 'Free training mode is enabled — the weekly plan is inactive.'
+  });
+  return false;
+};
+
 // ── Shared activity sync helper ───────────────────────────────────────────────
 //
 // Pulls fresh cycling activities from Garmin, updates DB + analysis, and
@@ -302,15 +344,26 @@ const syncActivitiesFromGarmin = async (): Promise<boolean> => {
     upsertAnalysis(analysis);
     logger.info(`[Sync] Analysis: ${analysis.totalCyclingRides} rides (90d), peak HR ${analysis.maxRecordedHr} bpm, est. LTHR ${analysis.estimatedLthr} bpm${realLthr ? ' (from Garmin)' : ' (estimated)'}, avg ${analysis.averageRideDurationMinutes} min`);
 
-    // Classify completed plan entries so statuses are current before AI generation
-    const stored = getStoredRecommendation();
-    if (stored?.weeklyPlan) {
-      const classified = classifyCompletedEntries(stored.weeklyPlan);
-      if (classified.length > 0) {
-        const summary = classified.map(c => `${c.date}:${c.status}`).join(', ');
-        logger.info(`[Sync] Classified ${classified.length} workout(s): ${summary}`);
-        classified.forEach(({ date, status }) => updatePlanEntryStatus(date, status));
-        setSetting('last_plan_activity_date', localDate());
+    if (isFreeTrainingMode()) {
+      // Free mode has no dated plan to classify against, so the inactivity clock can't be
+      // driven by completed plan entries. Stamp it from the most recent ride instead —
+      // otherwise auto-pause would fire on an athlete who is training perfectly well.
+      const latestRide = getStoredActivities().find((a: any) => a.startTime)?.startTime?.slice(0, 10);
+      if (latestRide && latestRide > (getSetting('last_plan_activity_date') ?? '')) {
+        setSetting('last_plan_activity_date', latestRide);
+      }
+      settleFreeSuggestion();
+    } else {
+      // Classify completed plan entries so statuses are current before AI generation
+      const stored = getStoredRecommendation();
+      if (stored?.weeklyPlan) {
+        const classified = classifyCompletedEntries(stored.weeklyPlan);
+        if (classified.length > 0) {
+          const summary = classified.map(c => `${c.date}:${c.status}`).join(', ');
+          logger.info(`[Sync] Classified ${classified.length} workout(s): ${summary}`);
+          classified.forEach(({ date, status }) => updatePlanEntryStatus(date, status));
+          setSetting('last_plan_activity_date', localDate());
+        }
       }
     }
 
@@ -336,6 +389,9 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
     const prePlannedDates = new Set(
       preSyncPlan.filter((e: any) => e.status === 'planned').map((e: any) => e.date)
     );
+    // Same trick for free mode: the sync calls settleFreeSuggestion() internally, which
+    // flips a synced suggestion to 'completed' and thus out of getCurrentFreeSuggestion().
+    const preSyncFreeId = getCurrentFreeSuggestion()?.id ?? null;
 
     // syncActivitiesFromGarmin handles fetch → upsert → analysis → classify
     await syncActivitiesFromGarmin();
@@ -345,7 +401,23 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
     let planRegenTriggered = false;
     const stored = getStoredRecommendation();
     const instantScoringEnabled = getSetting('instant_score_on_new_activity') !== '0';
-    if (stored?.weeklyPlan && prePlannedDates.size > 0) {
+
+    if (isFreeTrainingMode()) {
+      // syncActivitiesFromGarmin() already settled the synced suggestion against the new
+      // rides. If one just completed, regenerate so the AI scores it and hands out the
+      // next session immediately instead of at the next 23h refresh.
+      const current = getCurrentFreeSuggestion();
+      const justCompleted = !current || current.id !== preSyncFreeId;
+      if (preSyncFreeId !== null && justCompleted && instantScoringEnabled) {
+        logger.info(`[Free] Suggestion #${preSyncFreeId} completed during sync — triggering AI re-evaluation`);
+        generateFreeSuggestion().catch((err: any) =>
+          logger.warn(`[Free] Auto-regen after activity sync failed: ${err.message}`)
+        );
+        planRegenTriggered = true;
+      } else if (preSyncFreeId !== null && justCompleted) {
+        logger.info(`[Free] Suggestion #${preSyncFreeId} completed but instant scoring is disabled — skipping immediate regen`);
+      }
+    } else if (stored?.weeklyPlan && prePlannedDates.size > 0) {
       const newlyCompleted = stored.weeklyPlan.filter(
         (e: any) => e.status === 'completed' && prePlannedDates.has(e.date)
       );
@@ -383,6 +455,7 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
 app.post('/api/sync-workouts', async (req: Request, res: Response) => {
   const { scheduleDate } = req.body;
   try {
+    if (!requireMode(res, false)) return;
     const rec = getStoredRecommendation();
     const result = await syncAndScheduleWorkouts(rec?.weeklyPlan, scheduleDate);
     res.json({ success: true, ...result });
@@ -399,7 +472,7 @@ app.post('/api/sync-workouts', async (req: Request, res: Response) => {
 app.get('/api/settings/gemini-key', (_req: Request, res: Response) => {
   const key           = getGeminiKey();
   const setupComplete = getSetting('setup_complete') === '1';
-  const geminiModel   = getSetting('gemini_model') || 'gemini-3.6-flash';
+  const geminiModel   = getGeminiModel();
 
   // Preferred long ride days — read from plural key, fall back to legacy singular key
   const rawDays = getSetting('preferred_long_ride_days') || getSetting('preferred_long_ride_day') || '';
@@ -417,8 +490,24 @@ app.get('/api/settings/gemini-key', (_req: Request, res: Response) => {
     preferredLongRideDays,
     geminiModel,
     inactivityPauseDays,
-    instantScoreOnNewActivity
+    instantScoreOnNewActivity,
+    freeTrainingMode:     isFreeTrainingMode()
   });
+});
+
+// Free training mode — replaces the 14-day plan with a single dateless suggestion.
+// The weekly plan is left untouched in the DB so switching back restores it.
+app.post('/api/settings/free-training-mode', (req: Request, res: Response) => {
+  const { enabled } = req.body;
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: 'enabled must be a boolean.' });
+  }
+  setSetting('free_training_mode', enabled ? '1' : '0');
+  // Whichever mode we land in, its current output is now the stale one — clear the
+  // freshness stamp so the next auto-check regenerates instead of waiting out 23h.
+  setSetting('gemini_last_generated', '0');
+  logger.info(`[Settings] Free training mode: ${enabled ? 'enabled' : 'disabled'}`);
+  res.json({ saved: true });
 });
 
 // Multi-day preferred long ride days (replaces the old single-day endpoint)
@@ -463,9 +552,19 @@ app.post('/api/settings/gemini-model', (req: Request, res: Response) => {
   if (!model || typeof model !== 'string' || !model.trim()) {
     return res.status(400).json({ error: 'model is required.' });
   }
-  setSetting('gemini_model', model.trim());
-  logger.info(`[Settings] Gemini model set to: ${model.trim()}`);
-  res.json({ saved: true });
+  // The settings form accepts a free-text model ID so a model released after this build —
+  // or a paid-tier one — can be used without shipping an update. That makes validation here
+  // mandatory rather than cosmetic: the value is interpolated into the Gemini request path,
+  // so a stray '/', '?' or '..' would rewrite the endpoint instead of naming a model.
+  const normalized = normalizeModelId(model);
+  if (!isValidModelId(normalized)) {
+    return res.status(400).json({
+      error: 'Invalid model ID. Use the ID exactly as Google lists it, for example "gemini-3.6-flash".'
+    });
+  }
+  setSetting('gemini_model', normalized);
+  logger.info(`[Settings] Gemini model set to: ${normalized}`);
+  res.json({ saved: true, model: normalized });
 });
 
 app.post('/api/settings/gemini-key', (req: Request, res: Response) => {
@@ -538,16 +637,21 @@ app.post('/api/training/resume', async (req: Request, res: Response) => {
   setSetting('last_plan_activity_date', localDate());
   logger.info(`[Training] Resumed — was paused since ${pausedSince || 'unknown'}, ${activitiesCount} ride(s) during pause`);
 
-  // Sync fresh activities, then regenerate plan with pause context
+  // Sync fresh activities, then regenerate with pause context — a plan, or in free mode
+  // a single suggestion calibrated to the time off.
   try {
     const key = getGeminiKey();
     if (key) {
       await syncActivitiesFromGarmin();
-      const current = getStoredRecommendation();
       const pauseCtx = pausedSince
         ? { pausedSince: pausedSince.slice(0, 10), pauseReason: pauseReason || undefined, activitiesCount }
         : undefined;
-      await generateRecommendation(current?.weeklyPlan, pauseCtx);
+      if (isFreeTrainingMode()) {
+        await generateFreeSuggestion(pauseCtx);
+      } else {
+        const current = getStoredRecommendation();
+        await generateRecommendation(current?.weeklyPlan, pauseCtx);
+      }
       setSetting('gemini_last_generated', new Date().toISOString());
     }
   } catch (err: any) {
@@ -605,6 +709,7 @@ const handleGeminiError = (res: Response, error: any, context: string): void => 
 
 app.post('/api/recommendation/refresh', async (req: Request, res: Response) => {
   try {
+    if (!requireMode(res, false)) return;
     if (getSetting('training_paused') === '1') {
       return res.status(403).json({ error: 'Training is paused. Resume training before refreshing the plan.' });
     }
@@ -628,6 +733,7 @@ app.post('/api/recommendation/refresh', async (req: Request, res: Response) => {
 
 app.post('/api/recommendation/skip-today', async (req: Request, res: Response) => {
   try {
+    if (!requireMode(res, false)) return;
     if (getSetting('training_paused') === '1') {
       return res.status(403).json({ error: 'Training is paused. Resume training before making changes.' });
     }
@@ -656,6 +762,7 @@ app.post('/api/recommendation/skip-today', async (req: Request, res: Response) =
 
 app.post('/api/recommendation/reschedule', async (req: Request, res: Response) => {
   try {
+    if (!requireMode(res, false)) return;
     if (getSetting('training_paused') === '1') {
       return res.status(403).json({ error: 'Training is paused. Resume training before making changes.' });
     }
@@ -699,6 +806,137 @@ app.post('/api/recommendation/reschedule', async (req: Request, res: Response) =
     }
   } catch (error: any) {
     handleGeminiError(res, error, 'Reschedule error');
+  }
+});
+
+// ── Free training ─────────────────────────────────────────────────────────────
+// The free-mode counterpart of /api/recommendation*: one dateless suggestion instead of
+// a 14-day plan. Same state shapes (notConfigured / paused / stale) so the frontend can
+// reuse the recommendation card's states, and the same "first one needs a user action"
+// invariant — the auto-check never creates the very first suggestion.
+
+/** How long a suggestion stays fresh before the UI marks it stale — matches the plan. */
+const FREE_STALE_MS = 23 * 60 * 60 * 1000;
+
+const freeTrainingPayload = () => {
+  const suggestion = getCurrentFreeSuggestion();
+  if (!suggestion) return { noSuggestion: true };
+  const ageMs = Date.now() - new Date(suggestion.generatedAt).getTime();
+  return {
+    suggestion,
+    history: getFreeSuggestionHistory(10),
+    stale:   ageMs > FREE_STALE_MS
+  };
+};
+
+app.get('/api/free-training', (_req: Request, res: Response) => {
+  if (!getGeminiKey()) return res.json({ notConfigured: true });
+  if (!requireMode(res, true)) return;
+
+  if (getSetting('training_paused') === '1') {
+    return res.json({
+      paused:      true,
+      pausedSince: getSetting('paused_since') || '',
+      pauseReason: getSetting('pause_reason') || ''
+    });
+  }
+
+  res.json(freeTrainingPayload());
+});
+
+/** Force a new suggestion. Also used for "generate my first suggestion". */
+app.post('/api/free-training/refresh', async (_req: Request, res: Response) => {
+  try {
+    if (!requireMode(res, true)) return;
+    if (getSetting('training_paused') === '1') {
+      return res.status(403).json({ error: 'Training is paused. Resume training before asking for a new suggestion.' });
+    }
+    // Always sync first so the AI judges recovery on current ride data — and so a synced
+    // suggestion the athlete has since ridden is settled (and therefore scorable) first.
+    await syncActivitiesFromGarmin();
+
+    const current = getCurrentFreeSuggestion();
+    logger.info(`[Free] Refresh requested — current: ${current ? `#${current.id} ${current.workoutType} [${current.status}]` : 'none'}`);
+
+    await generateFreeSuggestion();
+    setSetting('gemini_last_generated', new Date().toISOString());
+    res.json(freeTrainingPayload());
+  } catch (error: any) {
+    handleGeminiError(res, error, 'Free training refresh error');
+  }
+});
+
+/**
+ * "Not this one" — explicitly reject the current suggestion and ask for another.
+ * Recorded as 'dismissed' rather than the plain 'superseded' a refresh produces, so the
+ * AI can tell a rejected suggestion apart from one that was simply replaced by a newer read
+ * of the same data, and stop offering workouts this athlete keeps turning down.
+ */
+app.post('/api/free-training/dismiss', async (_req: Request, res: Response) => {
+  try {
+    if (!requireMode(res, true)) return;
+    if (getSetting('training_paused') === '1') {
+      return res.status(403).json({ error: 'Training is paused. Resume training before making changes.' });
+    }
+    if (!getCurrentFreeSuggestion()) {
+      return res.status(404).json({ error: 'No current suggestion to dismiss.' });
+    }
+
+    await syncActivitiesFromGarmin();
+
+    // Re-read after the sync: it may have matched a ride to this suggestion and marked it
+    // completed. A completed suggestion must not be overwritten as dismissed — the athlete
+    // actually did it, and that ride still needs to be scored.
+    const current = getCurrentFreeSuggestion();
+    if (current) {
+      markFreeSuggestionDismissed(current.id);
+      logger.info(`[Free] Suggestion #${current.id} (${current.workoutType}) dismissed by athlete — generating a replacement`);
+    } else {
+      logger.info('[Free] Dismiss: suggestion was completed by a ride during the sync — generating the next one instead');
+    }
+
+    try {
+      await generateFreeSuggestion();
+      setSetting('gemini_last_generated', new Date().toISOString());
+      res.json(freeTrainingPayload());
+    } catch (regenError: any) {
+      // The dismissal is already committed — report it rather than failing the whole call,
+      // mirroring how skip-today keeps its skip when the follow-up regen fails.
+      logger.warn(`[Free] Dismiss regen failed (dismissal already committed): ${regenError?.message}`);
+      res.json({ ...freeTrainingPayload(), regenFailed: true });
+    }
+  } catch (error: any) {
+    handleGeminiError(res, error, 'Free training dismiss error');
+  }
+});
+
+/**
+ * Upload + schedule the current suggestion on Garmin.
+ * The date the button is pressed becomes the workout's date — in the name and on the
+ * calendar — which is the only date a free suggestion ever gets, and what makes it
+ * traceable afterwards.
+ */
+app.post('/api/free-training/sync', async (_req: Request, res: Response) => {
+  try {
+    if (!requireMode(res, true)) return;
+
+    const current = getCurrentFreeSuggestion();
+    if (!current) return res.status(404).json({ error: 'No current suggestion to sync.' });
+    if (current.workoutType === 'Rest') {
+      return res.status(400).json({ error: 'This suggestion is a rest day — there is no workout to sync.' });
+    }
+
+    const pressedOn = localDate();
+    const result    = await syncFreeWorkout(current.workoutType, current.structure, pressedOn);
+    markFreeSuggestionSynced(current.id, pressedOn);
+    logger.info(`[Free] Suggestion #${current.id} (${current.workoutType}) synced to Garmin for ${pressedOn}`);
+
+    res.json({ success: true, ...result, ...freeTrainingPayload() });
+  } catch (error: any) {
+    res.status(error.message.includes('authenticated') ? 401 : 500).json({
+      error: 'Failed to create or schedule the workout.',
+      details: error.message
+    });
   }
 });
 
@@ -844,6 +1082,12 @@ const logAutoCheckState = () => {
   const ageMs     = Date.now() - (lastGenStr && lastGenStr !== '0' ? new Date(lastGenStr).getTime() : 0);
   const ageHours  = (ageMs / 3600000).toFixed(1);
 
+  if (isFreeTrainingMode()) {
+    const s = getCurrentFreeSuggestion();
+    logger.info(`[Free] Auto-check state: ${s ? `#${s.id} ${s.workoutType} [${s.status}]${s.syncedForDate ? ` synced for ${s.syncedForDate}` : ''}` : 'no suggestion in DB'}, age ${ageHours}h`);
+    return;
+  }
+
   if (!stored) {
     logger.info(`[Gemini] Auto-check state: no plan in DB, last_generated=${lastGenStr ?? 'never'}`);
     return;
@@ -854,6 +1098,80 @@ const logAutoCheckState = () => {
     .join(' ');
   logger.info(`[Gemini] Auto-check state: plan age ${ageHours}h, fatigue=${stored.loadAssessment?.fatigue ?? '?'}`);
   logger.info(`[Gemini] Plan: ${planLine}`);
+};
+
+/**
+ * Auto-pause after N consecutive days without any completed workout (default 14,
+ * user-configurable). Reference date: last completed workout, or if never, the plan
+ * creation date. This naturally handles "plan not yet started" — a brand-new plan won't
+ * reach N days yet. Shared by both modes; in free mode the reference date is stamped from
+ * the athlete's most recent ride instead of a completed plan entry.
+ * Returns true when it paused, meaning the caller should stop.
+ */
+const maybeAutoPause = (): boolean => {
+  const inactivityThreshold = parseInt(getSetting('inactivity_pause_days') || '14', 10) || 14;
+  const lastActivity = getSetting('last_plan_activity_date');
+  const refDate      = lastActivity ?? getSetting('gemini_last_generated');
+  if (!refDate || refDate === '0') return false;
+
+  const daysSince = Math.floor((Date.now() - new Date(refDate).getTime()) / 86_400_000);
+  if (daysSince < inactivityThreshold) return false;
+
+  setSetting('training_paused', '1');
+  setSetting('paused_since', new Date().toISOString());
+  setSetting('pause_reason', `Automatically paused after ${inactivityThreshold} days without any training activity.`);
+  logger.info(`[Gemini] Auto-check: auto-pausing — ${daysSince} days without activity (threshold: ${inactivityThreshold}, ref: ${refDate})`);
+  return true;
+};
+
+/**
+ * Free-mode auto-check. Mirrors the plan flow minus everything date-bound: there are no
+ * days to auto-skip, only a synced suggestion that may since have been ridden. Like the
+ * plan, it never creates the FIRST suggestion — that stays a deliberate user action.
+ */
+const runFreeAutoCheck = async () => {
+  const preSyncId = getCurrentFreeSuggestion()?.id ?? null;
+
+  logger.info('[Free] Auto-check: syncing activities from Garmin before evaluation…');
+  await syncActivitiesFromGarmin();   // settles a synced suggestion against new rides
+
+  const current = getCurrentFreeSuggestion();
+  const justCompleted = preSyncId !== null && (!current || current.id !== preSyncId);
+  const instantScoringEnabled = getSetting('instant_score_on_new_activity') !== '0';
+
+  if (justCompleted && instantScoringEnabled) {
+    logger.info(`[Free] Auto-check: suggestion #${preSyncId} was ridden — generating the next one and scoring it`);
+    await generateFreeSuggestion();
+    setSetting('gemini_last_generated', new Date().toISOString());
+    return;
+  }
+
+  if (maybeAutoPause()) return;
+
+  if (!current && !justCompleted) {
+    logger.info('[Free] Auto-check: no suggestion yet — waiting for the athlete to ask for their first one');
+    return;
+  }
+
+  // A synced suggestion is already sitting on the athlete's watch, waiting to be ridden —
+  // and in free mode "whenever suits you" may well be several days out. Replacing it on
+  // staleness alone would mark it not-ridden and orphan the Garmin workout, so leave it
+  // alone until a ride matches it or the athlete asks for something else themselves.
+  // The inactivity auto-pause above is what stops this from waiting forever.
+  if (current?.status === 'synced') {
+    logger.info(`[Free] Auto-check: suggestion #${current.id} is synced for ${current.syncedForDate} and not yet ridden — leaving it in place`);
+    return;
+  }
+
+  const lastGenStr = getSetting('gemini_last_generated');
+  const ageMs      = Date.now() - (lastGenStr && lastGenStr !== '0' ? new Date(lastGenStr).getTime() : 0);
+  if (ageMs > 23 * 60 * 60 * 1000) {
+    logger.info(`[Free] Auto-check: regenerating — suggestion is ${(ageMs / 3600000).toFixed(1)}h old (> 23h)`);
+    await generateFreeSuggestion();
+    setSetting('gemini_last_generated', new Date().toISOString());
+  } else {
+    logger.info(`[Free] Auto-check: suggestion is fresh (${(ageMs / 3600000).toFixed(1)}h old) — no regen needed`);
+  }
 };
 
 const runGeminiAutoCheck = async () => {
@@ -868,6 +1186,12 @@ const runGeminiAutoCheck = async () => {
     // Skip everything when training is paused
     if (getSetting('training_paused') === '1') {
       logger.info('[Gemini] Auto-check: training paused — skipping auto-check');
+      return;
+    }
+
+    // Free mode has no weekly plan to keep current — a completely different check.
+    if (isFreeTrainingMode()) {
+      await runFreeAutoCheck();
       return;
     }
 
@@ -911,22 +1235,7 @@ const runGeminiAutoCheck = async () => {
       }
     }
 
-    // Auto-pause after N consecutive days without any completed workout (default 14, user-configurable).
-    // Reference date: last completed workout, or if never, the plan creation date.
-    // This naturally handles "plan not yet started" — a brand-new plan won't reach N days yet.
-    const inactivityThreshold = parseInt(getSetting('inactivity_pause_days') || '14', 10) || 14;
-    const lastActivity = getSetting('last_plan_activity_date');
-    const refDate      = lastActivity ?? getSetting('gemini_last_generated');
-    if (refDate && refDate !== '0') {
-      const daysSince = Math.floor((Date.now() - new Date(refDate).getTime()) / 86_400_000);
-      if (daysSince >= inactivityThreshold) {
-        setSetting('training_paused', '1');
-        setSetting('paused_since', new Date().toISOString());
-        setSetting('pause_reason', `Automatically paused after ${inactivityThreshold} days without any training activity.`);
-        logger.info(`[Gemini] Auto-check: auto-pausing — ${daysSince} days without activity (threshold: ${inactivityThreshold}, ref: ${refDate})`);
-        return;
-      }
-    }
+    if (maybeAutoPause()) return;
 
     // Standard daily freshness check — only regenerate if a plan already exists.
     // The very first plan must be initiated by the user via the "Generate my first plan" button.
@@ -977,6 +1286,11 @@ app.listen(PORT, () => {
   logger.info('='.repeat(60));
   logger.info(`${APP_NAME} backend started — listening on :${PORT}`);
   logger.info(`Profile: maxHR ${profile?.maxHr ?? '?'} bpm, LTHR ${profile?.lthr ?? '?'} bpm | Activities: ${acts.length} stored | Setup: ${setup ? 'yes' : 'no'}`);
-  logger.info(`Gemini key: ${geminiKey ? maskKey(geminiKey) : 'not configured'} | Last generated: ${lastGen && lastGen !== '0' ? lastGen : 'never'} | Plan: ${rec ? `${rec.workoutType} (${rec.loadAssessment?.fatigue} fatigue)` : 'none'}`);
+  const freeMode  = isFreeTrainingMode();
+  const freeSugg  = freeMode ? getCurrentFreeSuggestion() : null;
+  const output    = freeMode
+    ? `Free suggestion: ${freeSugg ? `${freeSugg.workoutType} [${freeSugg.status}]` : 'none'}`
+    : `Plan: ${rec ? `${rec.workoutType} (${rec.loadAssessment?.fatigue} fatigue)` : 'none'}`;
+  logger.info(`Gemini key: ${geminiKey ? maskKey(geminiKey) : 'not configured'} | Mode: ${freeMode ? 'free training' : 'weekly plan'} | Last generated: ${lastGen && lastGen !== '0' ? lastGen : 'never'} | ${output}`);
   logger.info('='.repeat(60));
 });

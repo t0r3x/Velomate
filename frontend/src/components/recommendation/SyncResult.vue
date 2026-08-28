@@ -20,7 +20,7 @@
             </ul>
             <p class="sync-tip">
               <i class="fa-solid fa-calendar-days"></i>
-              <span>Your AI training plan is now visible in the <strong>Garmin Connect</strong> calendar — check it in the app or on the web at
+              <span>{{ calendarLead }} now visible in the <strong>Garmin Connect</strong> calendar — check it in the app or on the web at
               <a href="https://connect.garmin.com" target="_blank" rel="noopener">connect.garmin.com</a>.
               After syncing your device, workouts also appear under <strong>Training Plans</strong> on your Garmin device.</span>
             </p>
@@ -43,8 +43,16 @@
 import { computed } from 'vue'
 import type { SyncResult, SyncedWorkout } from '@/types'
 
-const props = defineProps<{ result: SyncResult | null }>()
+const props = defineProps<{
+  result: SyncResult | null
+  /** Free training mode syncs one dateless suggestion, not a whole plan — adjusts the copy. */
+  singleWorkout?: boolean
+}>()
 const emit = defineEmits<{ close: [] }>()
+
+const calendarLead = computed(() =>
+  props.singleWorkout ? 'This workout is' : 'Your AI training plan is'
+)
 
 const syncMsg = computed(() => {
   const count = props.result?.workouts.length ?? 0

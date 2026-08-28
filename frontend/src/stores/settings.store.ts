@@ -8,6 +8,7 @@ import {
   postPreferredDays,
   postInactivityPauseDays,
   postInstantScoreOnNewActivity,
+  postFreeTrainingMode,
   postSetupComplete
 } from '@/api/client'
 
@@ -20,6 +21,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const geminiModel         = ref('gemini-3.6-flash')
   const inactivityPauseDays = ref(14)
   const instantScoreOnNewActivity = ref(true)
+  const freeTrainingMode          = ref(false)
 
   async function init() {
     if (loaded.value) return
@@ -32,6 +34,7 @@ export const useSettingsStore = defineStore('settings', () => {
       geminiModel.value           = data.geminiModel || 'gemini-3.6-flash'
       inactivityPauseDays.value   = data.inactivityPauseDays ?? 14
       instantScoreOnNewActivity.value = data.instantScoreOnNewActivity ?? true
+      freeTrainingMode.value      = data.freeTrainingMode ?? false
     } catch (err) {
       console.warn('[Settings] init failed (backend offline?):', err)
     } finally {
@@ -50,6 +53,7 @@ export const useSettingsStore = defineStore('settings', () => {
       geminiModel.value           = data.geminiModel || 'gemini-3.6-flash'
       inactivityPauseDays.value   = data.inactivityPauseDays ?? 14
       instantScoreOnNewActivity.value = data.instantScoreOnNewActivity ?? true
+      freeTrainingMode.value      = data.freeTrainingMode ?? false
     } catch (err) {
       console.warn('[Settings] reload failed:', err)
     }
@@ -87,6 +91,21 @@ export const useSettingsStore = defineStore('settings', () => {
       return true
     } catch (err) {
       console.error('[Settings] saveInstantScoreOnNewActivity failed:', err)
+      return false
+    }
+  }
+
+  /**
+   * Switch between the 14-day AI plan and free training mode. The backend keeps both
+   * artefacts side by side, so flipping this never destroys the other mode's data.
+   */
+  async function saveFreeTrainingMode(enabled: boolean): Promise<boolean> {
+    try {
+      await postFreeTrainingMode(enabled)
+      freeTrainingMode.value = enabled
+      return true
+    } catch (err) {
+      console.error('[Settings] saveFreeTrainingMode failed:', err)
       return false
     }
   }
@@ -132,6 +151,7 @@ export const useSettingsStore = defineStore('settings', () => {
     geminiModel,
     inactivityPauseDays,
     instantScoreOnNewActivity,
+    freeTrainingMode,
     init,
     reload,
     saveAll,
@@ -139,6 +159,7 @@ export const useSettingsStore = defineStore('settings', () => {
     savePreferredDays,
     saveInactivityPauseDays,
     saveInstantScoreOnNewActivity,
+    saveFreeTrainingMode,
     markSetupComplete
   }
 })

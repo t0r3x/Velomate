@@ -3,13 +3,13 @@
     <!-- Header -->
     <div class="wdp-header">
       <div class="wdp-title-block">
-        <span class="wdp-day-label">{{ dayLabel }} {{ dayOfMonth }}</span>
+        <span v-if="!dateless" class="wdp-day-label">{{ dayLabel }} {{ dayOfMonth }}</span>
         <span class="ai-workout-chip" :class="`wt-${entry.type.toLowerCase()}`">
           <i class="fa-solid" :class="typeIcon"></i>
           {{ typeLabel }}
         </span>
         <span v-if="durationText" class="wdp-duration">{{ durationText }}</span>
-        <span v-if="priorityLabel && props.entry.status === 'planned'" class="ai-priority-badge" :class="`priority-${props.priority!.toLowerCase()}`">
+        <span v-if="priorityLabel && entry.status === 'planned'" class="ai-priority-badge" :class="`priority-${props.priority!.toLowerCase()}`">
           {{ priorityLabel }}
         </span>
       </div>
@@ -65,7 +65,13 @@ import { computed } from 'vue'
 import type { PlanEntry } from '@/types'
 import { workoutTypeIcon as iconMap, workoutTypeLabel as labelMap, DAY_NAMES, isoDate } from '@/utils'
 
-const props = defineProps<{ entry: PlanEntry; priority?: string }>()
+const props = defineProps<{
+  entry: PlanEntry
+  priority?: string
+  /** Free training mode: the workout has no date yet, so drop the day label and the
+   *  date-bound Skip/Move actions and render just the structure, duration and reason. */
+  dateless?: boolean
+}>()
 const emit  = defineEmits<{
   skip: [date: string]
   reschedule: [date: string]
@@ -78,9 +84,10 @@ const priorityLabel = computed(() =>
   props.priority ? (PRIORITY_LABELS[props.priority.toLowerCase()] ?? props.priority) : ''
 )
 
-const d            = computed(() => new Date(props.entry.date + 'T12:00:00'))
-const dayLabel     = computed(() => DAY_NAMES[d.value.getDay()])
-const dayOfMonth   = computed(() => d.value.getDate())
+// Guarded for the dateless case — a free suggestion carries no date until it is synced.
+const d            = computed(() => props.entry.date ? new Date(props.entry.date + 'T12:00:00') : null)
+const dayLabel     = computed(() => d.value ? DAY_NAMES[d.value.getDay()] : '')
+const dayOfMonth   = computed(() => d.value ? d.value.getDate() : '')
 const isPlaceholder     = computed(() => !!props.entry.isPlaceholder)
 const isPastPlaceholder = computed(() => !!props.entry.isPastPlaceholder)
 const typeIcon     = computed(() => isPastPlaceholder.value ? 'fa-minus' : isPlaceholder.value ? 'fa-hourglass-half' : (iconMap[props.entry.type]  ?? 'fa-dumbbell'))
@@ -91,10 +98,10 @@ const durationText = computed(() =>
 )
 
 const canSkip = computed(() =>
-  !isPlaceholder.value && props.entry.status === 'planned'
+  !props.dateless && !isPlaceholder.value && props.entry.status === 'planned'
 )
 const canMove = computed(() =>
-  !isPlaceholder.value && props.entry.date >= isoDate() && props.entry.status === 'planned'
+  !props.dateless && !isPlaceholder.value && props.entry.date >= isoDate() && props.entry.status === 'planned'
 )
 
 function fmtDur(sec: number): string {
