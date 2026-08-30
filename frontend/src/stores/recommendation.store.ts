@@ -19,6 +19,9 @@ export const useRecommendationStore = defineStore('recommendation', () => {
   const errorMessage   = ref('')
   const pausedSince    = ref<string | null>(null)
   const pauseReason    = ref<string | null>(null)
+  /** True while a background AI regen (triggered by refresh/skip/reschedule/resume/sync) is
+   *  in flight — drives a small inline indicator instead of blanking the whole card. */
+  const isRegenerating = ref(false)
 
   const hasSyncableWorkout = computed(() =>
     recommendation.value?.weeklyPlan?.some(e => e.status === 'planned') ?? false
@@ -51,12 +54,20 @@ export const useRecommendationStore = defineStore('recommendation', () => {
     }
   }
 
-  /** Force-regenerate via AI. */
+  /**
+   * Force-regenerate via AI. When a plan already exists, the backend commits nothing and
+   * responds immediately with the current plan (`regenerating: true`) while the AI read
+   * runs in the background — so this only shows the full loading state for the very first
+   * plan, when there's nothing else to display yet.
+   */
   async function refresh() {
-    state.value = 'loading'
+    const isFirstGeneration = state.value !== 'loaded'
+    if (isFirstGeneration) state.value = 'loading'
     try {
-      recommendation.value = await postRefreshRecommendation()
+      const result = await postRefreshRecommendation()
+      recommendation.value = result
       state.value = 'loaded'
+      if (result.regenerating) pollForUpdate(result.generatedAt)
     } catch (err: unknown) {
       console.error('[Recommendation] refresh failed:', err)
       const e = err as { details?: string; message?: string }
@@ -65,13 +76,13 @@ export const useRecommendationStore = defineStore('recommendation', () => {
     }
   }
 
-  async function skipToday(date?: string): Promise<'ok' | 'skipped' | 'failed'> {
-    state.value = 'loading'
+  async function skipToday(date?: string): Promise<'ok' | 'failed'> {
     try {
       const result = await postSkipToday(date)
       recommendation.value = result
       state.value = 'loaded'
-      return result.regenFailed ? 'skipped' : 'ok'
+      if (result.regenerating) pollForUpdate(result.generatedAt)
+      return 'ok'
     } catch (err) {
       console.error('[Recommendation] skipToday failed:', err)
       await fetchCached()
@@ -79,14 +90,14 @@ export const useRecommendationStore = defineStore('recommendation', () => {
     }
   }
 
-  async function reschedule(fromDate: string, toDate: string): Promise<'ok' | 'moved' | 'failed'> {
+  async function reschedule(fromDate: string, toDate: string): Promise<'ok' | 'failed'> {
     if (fromDate === toDate) return 'failed'
-    state.value = 'loading'
     try {
       const result = await postReschedule(fromDate, toDate)
       recommendation.value = result
       state.value = 'loaded'
-      return result.regenFailed ? 'moved' : 'ok'
+      if (result.regenerating) pollForUpdate(result.generatedAt)
+      return 'ok'
     } catch (err) {
       console.error('[Recommendation] reschedule failed:', err)
       await fetchCached()
@@ -96,22 +107,28 @@ export const useRecommendationStore = defineStore('recommendation', () => {
 
   /**
    * Poll GET /api/recommendation silently in the background until `generatedAt`
-   * changes. Called after an activity sync triggers a non-blocking AI regen so
-   * execution scores appear automatically once the AI response arrives.
+   * changes. Called after any action triggers a non-blocking AI regen (activity sync,
+   * refresh, skip, reschedule, resume) so the updated plan appears automatically once the
+   * AI response arrives, without blocking the triggering action on the Gemini round trip.
    */
   async function pollForUpdate(knownGeneratedAt: string | undefined, maxAttempts = 20) {
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise<void>(r => setTimeout(r, 4000))
-      try {
-        const data = await getRecommendation()
-        if ('notConfigured' in data || 'noData' in data) return
-        const rec = data as Recommendation
-        if (rec.generatedAt !== knownGeneratedAt) {
-          recommendation.value = rec
-          state.value = 'loaded'
-          return
-        }
-      } catch { /* ignore poll errors */ }
+    isRegenerating.value = true
+    try {
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise<void>(r => setTimeout(r, 4000))
+        try {
+          const data = await getRecommendation()
+          if ('notConfigured' in data || 'noData' in data) return
+          const rec = data as Recommendation
+          if (rec.generatedAt !== knownGeneratedAt) {
+            recommendation.value = rec
+            state.value = 'loaded'
+            return
+          }
+        } catch { /* ignore poll errors */ }
+      }
+    } finally {
+      isRegenerating.value = false
     }
   }
 
@@ -130,12 +147,13 @@ export const useRecommendationStore = defineStore('recommendation', () => {
   }
 
   async function resumeTraining(): Promise<boolean> {
-    state.value = 'loading'
     try {
-      await postResumeTraining()
+      const result = await postResumeTraining()
       pausedSince.value = null
       pauseReason.value = null
+      // Shows the pre-pause plan immediately; the pause-aware regen runs in the background.
       await fetchCached()
+      if (result.regenerating) pollForUpdate(recommendation.value?.generatedAt)
       return true
     } catch (err) {
       console.error('[Recommendation] resumeTraining failed:', err)
@@ -164,6 +182,7 @@ export const useRecommendationStore = defineStore('recommendation', () => {
     errorMessage,
     pausedSince,
     pauseReason,
+    isRegenerating,
     hasSyncableWorkout,
     canSync,
     fetchCached,

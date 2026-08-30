@@ -637,28 +637,32 @@ app.post('/api/training/resume', async (req: Request, res: Response) => {
   setSetting('last_plan_activity_date', localDate());
   logger.info(`[Training] Resumed — was paused since ${pausedSince || 'unknown'}, ${activitiesCount} ride(s) during pause`);
 
-  // Sync fresh activities, then regenerate with pause context — a plan, or in free mode
-  // a single suggestion calibrated to the time off.
-  try {
-    const key = getGeminiKey();
-    if (key) {
-      await syncActivitiesFromGarmin();
-      const pauseCtx = pausedSince
-        ? { pausedSince: pausedSince.slice(0, 10), pauseReason: pauseReason || undefined, activitiesCount }
-        : undefined;
-      if (isFreeTrainingMode()) {
-        await generateFreeSuggestion(pauseCtx);
-      } else {
-        const current = getStoredRecommendation();
-        await generateRecommendation(current?.weeklyPlan, pauseCtx);
+  // Non-blocking: sync fresh activities, then regenerate with pause context — a plan, or in
+  // free mode a single suggestion calibrated to the time off. The athlete sees the
+  // pre-pause plan/suggestion immediately (via fetchCached) and the frontend polls for the
+  // fresh one, rather than waiting on the Gemini round trip here.
+  const key = getGeminiKey();
+  if (key) {
+    (async () => {
+      try {
+        await syncActivitiesFromGarmin();
+        const pauseCtx = pausedSince
+          ? { pausedSince: pausedSince.slice(0, 10), pauseReason: pauseReason || undefined, activitiesCount }
+          : undefined;
+        if (isFreeTrainingMode()) {
+          await generateFreeSuggestion(pauseCtx);
+        } else {
+          const current = getStoredRecommendation();
+          await generateRecommendation(current?.weeklyPlan, pauseCtx);
+        }
+        setSetting('gemini_last_generated', new Date().toISOString());
+      } catch (err: any) {
+        logger.warn(`[Training] Resume: plan regen failed: ${err.message}`);
       }
-      setSetting('gemini_last_generated', new Date().toISOString());
-    }
-  } catch (err: any) {
-    logger.warn(`[Training] Resume: plan regen failed: ${err.message}`);
+    })();
   }
 
-  res.json({ resumed: true });
+  res.json({ resumed: true, regenerating: !!key });
 });
 
 // ── Recommendation ────────────────────────────────────────────────────────────
@@ -720,9 +724,18 @@ app.post('/api/recommendation/refresh', async (req: Request, res: Response) => {
     if (current) {
       const planSummary = current.weeklyPlan.map((e: any) => `${e.date}:${e.type}[${e.status}]`).join(' ');
       logger.info(`[Gemini] Manual refresh requested — current plan: ${planSummary}`);
-    } else {
-      logger.info('[Gemini] Manual refresh requested — no existing plan');
+      // Non-blocking: there's already a plan to show, so don't make the athlete wait on the
+      // Gemini round trip — return the current plan immediately and let the AI's refreshed
+      // read arrive in the background (frontend polls, same pattern as the sync auto-regen).
+      generateRecommendation(current.weeklyPlan)
+        .then(() => setSetting('gemini_last_generated', new Date().toISOString()))
+        .catch((err: any) => logger.warn(`[Gemini] Manual refresh regen failed: ${err.message}`));
+      res.json({ ...current, regenerating: true });
+      return;
     }
+
+    // First-ever plan: nothing to show yet, so this one has to block.
+    logger.info('[Gemini] Manual refresh requested — no existing plan');
     const result = await generateRecommendation(current?.weeklyPlan);
     setSetting('gemini_last_generated', new Date().toISOString());
     res.json(result);
@@ -747,14 +760,13 @@ app.post('/api/recommendation/skip-today', async (req: Request, res: Response) =
     logger.info(`[Gemini] Skip: marking ${date} as skipped (was: ${entry?.type ?? 'unknown'} [${entry?.status ?? 'unknown'}])`);
     updatePlanEntryStatus(date, 'skipped');
     const updated = getStoredRecommendation();
-    try {
-      const result = await generateRecommendation(updated?.weeklyPlan);
-      setSetting('gemini_last_generated', new Date().toISOString());
-      res.json(result);
-    } catch (regenError: any) {
-      logger.warn(`[Plan] Skip-today regen failed (skip already committed): ${regenError?.message}`);
-      res.json({ ...updated, regenFailed: true });
-    }
+
+    // Non-blocking: the skip is already committed — return it right away and let the AI's
+    // re-plan of the rest of the week arrive in the background.
+    generateRecommendation(updated?.weeklyPlan)
+      .then(() => setSetting('gemini_last_generated', new Date().toISOString()))
+      .catch((err: any) => logger.warn(`[Plan] Skip-today regen failed (skip already committed): ${err.message}`));
+    res.json({ ...updated, regenerating: true });
   } catch (error: any) {
     handleGeminiError(res, error, 'Skip-today error');
   }
@@ -794,16 +806,13 @@ app.post('/api/recommendation/reschedule', async (req: Request, res: Response) =
       : undefined;
     if (pinnedTodayType) logger.info(`[Plan] Pinning today's type to "${pinnedTodayType}" after reschedule`);
 
-    try {
-      const result = await generateRecommendation(updated?.weeklyPlan, undefined, pinnedTodayType);
-      setSetting('gemini_last_generated', new Date().toISOString());
-      res.json(result);
-    } catch (regenError: any) {
-      // Swap succeeded but AI regen failed — return the swapped plan so the UI
-      // reflects the move without falsely reporting the whole operation as failed.
-      logger.warn(`[Plan] Reschedule regen failed (swap already committed): ${regenError?.message}`);
-      res.json({ ...updated, regenFailed: true });
-    }
+    // Non-blocking: the swap is already committed — return it immediately, so the UI
+    // reflects the move without waiting on the Gemini round trip. AI re-evaluation of the
+    // week arrives in the background.
+    generateRecommendation(updated?.weeklyPlan, undefined, pinnedTodayType)
+      .then(() => setSetting('gemini_last_generated', new Date().toISOString()))
+      .catch((err: any) => logger.warn(`[Plan] Reschedule regen failed (swap already committed): ${err.message}`));
+    res.json({ ...updated, regenerating: true });
   } catch (error: any) {
     handleGeminiError(res, error, 'Reschedule error');
   }
@@ -858,6 +867,17 @@ app.post('/api/free-training/refresh', async (_req: Request, res: Response) => {
     const current = getCurrentFreeSuggestion();
     logger.info(`[Free] Refresh requested — current: ${current ? `#${current.id} ${current.workoutType} [${current.status}]` : 'none'}`);
 
+    if (current) {
+      // Non-blocking: there's already a suggestion to show — return it immediately
+      // (marked regenerating) and let the frontend poll for the replacement.
+      generateFreeSuggestion()
+        .then(() => setSetting('gemini_last_generated', new Date().toISOString()))
+        .catch((err: any) => logger.warn(`[Free] Refresh regen failed: ${err.message}`));
+      res.json({ ...freeTrainingPayload(), regenerating: true });
+      return;
+    }
+
+    // First-ever suggestion: nothing to show yet, so this one has to block.
     await generateFreeSuggestion();
     setSetting('gemini_last_generated', new Date().toISOString());
     res.json(freeTrainingPayload());
@@ -891,20 +911,24 @@ app.post('/api/free-training/dismiss', async (_req: Request, res: Response) => {
     if (current) {
       markFreeSuggestionDismissed(current.id);
       logger.info(`[Free] Suggestion #${current.id} (${current.workoutType}) dismissed by athlete — generating a replacement`);
-    } else {
-      logger.info('[Free] Dismiss: suggestion was completed by a ride during the sync — generating the next one instead');
+
+      // Non-blocking: return the just-dismissed suggestion immediately so there's still
+      // something on screen while the AI picks a replacement in the background. Built from
+      // `current` (already in hand) rather than re-querying — the instant it's marked
+      // dismissed, getCurrentFreeSuggestion()/freeTrainingPayload() would report none at all.
+      generateFreeSuggestion()
+        .then(() => setSetting('gemini_last_generated', new Date().toISOString()))
+        .catch((err: any) => logger.warn(`[Free] Dismiss regen failed (dismissal already committed): ${err.message}`));
+      res.json({ suggestion: current, history: getFreeSuggestionHistory(10), stale: true, regenerating: true });
+      return;
     }
 
-    try {
-      await generateFreeSuggestion();
-      setSetting('gemini_last_generated', new Date().toISOString());
-      res.json(freeTrainingPayload());
-    } catch (regenError: any) {
-      // The dismissal is already committed — report it rather than failing the whole call,
-      // mirroring how skip-today keeps its skip when the follow-up regen fails.
-      logger.warn(`[Free] Dismiss regen failed (dismissal already committed): ${regenError?.message}`);
-      res.json({ ...freeTrainingPayload(), regenFailed: true });
-    }
+    // Rare edge case: the sync matched a ride to this suggestion before the athlete's
+    // dismiss landed, so there's nothing sensible to show as "current" — this one blocks.
+    logger.info('[Free] Dismiss: suggestion was completed by a ride during the sync — generating the next one instead');
+    await generateFreeSuggestion();
+    setSetting('gemini_last_generated', new Date().toISOString());
+    res.json(freeTrainingPayload());
   } catch (error: any) {
     handleGeminiError(res, error, 'Free training dismiss error');
   }

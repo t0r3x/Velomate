@@ -67,6 +67,12 @@
       <!-- State: loaded -->
       <div v-show="recStore.state === 'loaded'" class="ai-rec-state">
         <template v-if="rec">
+          <!-- Inline indicator for a background regen (refresh/skip/reschedule/resume) —
+               the plan below stays visible and interactive while the AI updates it. -->
+          <p v-if="recStore.isRegenerating" class="ai-rec-regenerating">
+            <i class="fa-solid fa-spinner fa-spin"></i><span>Your plan is being updated…</span>
+          </p>
+
           <!-- This week: rolling "today onwards" window — always shows the next 7 days in
                full detail regardless of what weekday today is, grid + load assessment -->
           <div class="ai-week-section">
@@ -178,7 +184,7 @@ async function handleResume() {
   const ok = await recStore.resumeTraining()
   resuming.value = false
   if (ok) {
-    show('success', 'Training resumed', 'AI is generating a fresh plan for your return.')
+    show('success', 'Training resumed', 'A fresh plan is being generated for your return.')
   } else {
     show('error', 'Resume Failed', 'Could not resume training.')
   }
@@ -195,9 +201,7 @@ async function handleSkip(date: string) {
 
   const result = await recStore.skipToday(date)
   if (result === 'ok') {
-    show('success', 'Workout skipped', 'Plan updated by AI.')
-  } else if (result === 'skipped') {
-    show('warn', 'Workout skipped', 'AI refresh temporarily unavailable — plan will update automatically.')
+    show('success', 'Workout skipped', 'Your plan is being updated…')
   } else {
     show('error', 'Skip Failed', 'Could not skip today.')
   }
@@ -213,9 +217,7 @@ async function handleReschedule(fromDate: string) {
 
   const result = await recStore.reschedule(fromDate, toDate)
   if (result === 'ok') {
-    show('success', 'Workout moved', 'Plan updated — AI recalculated the week.')
-  } else if (result === 'moved') {
-    show('warn', 'Workout moved', 'AI refresh temporarily unavailable — plan will update automatically.')
+    show('success', 'Workout moved', 'Your week is being recalculated…')
   } else {
     show('error', 'Move Failed', 'Could not move workout.')
   }

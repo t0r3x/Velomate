@@ -76,7 +76,9 @@ export interface Recommendation {
   loadAssessment: LoadAssessment
   generatedAt: string
   stale?: boolean
-  regenFailed?: boolean
+  /** True when this response is the pre-regen data — a fresh AI read is running in the
+   *  background and the frontend should poll for it (see pollForUpdate). */
+  regenerating?: boolean
 }
 
 // ── Activity types ────────────────────────────────────────────────────────────
@@ -174,7 +176,9 @@ export interface FreeTraining {
   suggestion: FreeSuggestion
   history: FreeSuggestion[]
   stale?: boolean
-  regenFailed?: boolean
+  /** True when this response is the pre-regen suggestion — a fresh AI read is running in
+   *  the background and the frontend should poll for it (see pollForUpdate). */
+  regenerating?: boolean
 }
 
 export type FreeState =

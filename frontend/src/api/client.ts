@@ -170,7 +170,7 @@ export const postPauseTraining = (reason?: string) =>
   })
 
 export const postResumeTraining = () =>
-  request<{ resumed: true }>('/api/training/resume', { method: 'POST' })
+  request<{ resumed: true; regenerating?: boolean }>('/api/training/resume', { method: 'POST' })
 
 // ── Free training ─────────────────────────────────────────────────────────────
 

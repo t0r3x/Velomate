@@ -25,6 +25,9 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
   const errorMessage = ref('')
   const pausedSince  = ref<string | null>(null)
   const pauseReason  = ref<string | null>(null)
+  /** True while a background AI regen (triggered by refresh/dismiss/resume/sync) is in
+   *  flight — drives a small inline indicator instead of blanking the whole card. */
+  const isRegenerating = ref(false)
 
   /** A Rest suggestion is real advice, but there is no workout file to push to Garmin. */
   const isSyncable = computed(() =>
@@ -66,11 +69,19 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
     }
   }
 
-  /** Ask the AI for a new suggestion — also the "generate my first one" path. */
+  /**
+   * Ask the AI for a new suggestion — also the "generate my first one" path. When a
+   * suggestion already exists, the backend commits nothing and responds immediately with
+   * the current one (`regenerating: true`) while the AI read runs in the background — so
+   * this only shows the full loading state for the very first suggestion.
+   */
   async function refresh() {
-    state.value = 'loading'
+    const isFirstGeneration = state.value !== 'loaded'
+    if (isFirstGeneration) state.value = 'loading'
     try {
-      applyPayload(await postFreeTrainingRefresh())
+      const result = await postFreeTrainingRefresh()
+      applyPayload(result)
+      if (result.regenerating) pollForUpdate(result.suggestion?.generatedAt)
     } catch (err: unknown) {
       console.error('[FreeTraining] refresh failed:', err)
       const e = err as { details?: string; message?: string }
@@ -83,12 +94,12 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
    * "Not this one" — reject the current suggestion and ask for another. Recorded
    * separately from a plain refresh so the AI learns what this athlete turns down.
    */
-  async function dismiss(): Promise<'ok' | 'dismissed' | 'failed'> {
-    state.value = 'loading'
+  async function dismiss(): Promise<'ok' | 'failed'> {
     try {
       const result = await postFreeTrainingDismiss()
       applyPayload(result)
-      return result.regenFailed ? 'dismissed' : 'ok'
+      if (result.regenerating) pollForUpdate(result.suggestion?.generatedAt)
+      return 'ok'
     } catch (err) {
       console.error('[FreeTraining] dismiss failed:', err)
       await fetchCached()
@@ -128,12 +139,13 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
   }
 
   async function resumeTraining(): Promise<boolean> {
-    state.value = 'loading'
     try {
-      await postResumeTraining()
+      const result = await postResumeTraining()
       pausedSince.value = null
       pauseReason.value = null
+      // Shows the pre-pause suggestion immediately; the pause-aware regen runs in the background.
       await fetchCached()
+      if (result.regenerating) pollForUpdate(suggestion.value?.generatedAt)
       return true
     } catch (err) {
       console.error('[FreeTraining] resumeTraining failed:', err)
@@ -144,19 +156,25 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
 
   /**
    * Poll silently until the stored suggestion changes, after a non-blocking backend regen
-   * (a newly matched ride triggers one). Mirrors recommendation.store's pollForUpdate.
+   * (refresh/dismiss/resume, or a newly matched ride via activity sync). Mirrors
+   * recommendation.store's pollForUpdate.
    */
   async function pollForUpdate(knownGeneratedAt: string | undefined, maxAttempts = 20) {
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise<void>(r => setTimeout(r, 4000))
-      try {
-        const data = await getFreeTraining()
-        if ('notConfigured' in data || 'noSuggestion' in data || 'paused' in data) return
-        if (data.suggestion?.generatedAt !== knownGeneratedAt) {
-          applyPayload(data)
-          return
-        }
-      } catch { /* ignore poll errors */ }
+    isRegenerating.value = true
+    try {
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise<void>(r => setTimeout(r, 4000))
+        try {
+          const data = await getFreeTraining()
+          if ('notConfigured' in data || 'noSuggestion' in data || 'paused' in data) return
+          if (data.suggestion?.generatedAt !== knownGeneratedAt) {
+            applyPayload(data)
+            return
+          }
+        } catch { /* ignore poll errors */ }
+      }
+    } finally {
+      isRegenerating.value = false
     }
   }
 
@@ -168,6 +186,7 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
     errorMessage,
     pausedSince,
     pauseReason,
+    isRegenerating,
     isSyncable,
     isSynced,
     canSync,

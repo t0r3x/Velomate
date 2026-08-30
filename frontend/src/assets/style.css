@@ -2168,6 +2168,22 @@ body.shablagoo-active .bg-glow-2 {
 }
 .ai-rec-error i { font-size: 1.4rem; }
 
+/* Inline banner shown above still-visible content while a background AI regen runs
+   (refresh/skip/reschedule/resume/dismiss) — never blanks the card the way the full
+   `.ai-rec-loading` state does. */
+.ai-rec-regenerating {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  background: rgba(var(--primary-rgb), 0.06);
+  border: 1px solid rgba(var(--primary-rgb), 0.15);
+  border-radius: 10px;
+}
+
 /* Today block */
 .ai-today-block {
   background: rgba(var(--primary-rgb), 0.06);

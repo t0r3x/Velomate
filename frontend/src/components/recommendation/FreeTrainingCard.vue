@@ -67,6 +67,12 @@
       <!-- State: loaded -->
       <div v-show="freeStore.state === 'loaded'" class="ai-rec-state">
         <template v-if="suggestion">
+          <!-- Inline indicator for a background regen (refresh/dismiss/resume) — the
+               suggestion below stays visible while the AI picks the next one. -->
+          <p v-if="freeStore.isRegenerating" class="ai-rec-regenerating">
+            <i class="fa-solid fa-spinner fa-spin"></i><span>Your next suggestion is on its way…</span>
+          </p>
+
           <div class="week-preview-header">
             <i class="fa-solid fa-dumbbell"></i>
             <span>Your Next Workout</span>
@@ -224,9 +230,7 @@ async function handleDismiss() {
   dismissing.value = false
 
   if (result === 'ok') {
-    show('success', 'New suggestion ready', 'The AI picked a different workout for you.')
-  } else if (result === 'dismissed') {
-    show('warn', 'Suggestion dismissed', 'AI is temporarily unavailable — a new suggestion will appear automatically.')
+    show('success', 'Suggestion dismissed', 'Picking a different workout…')
   } else {
     show('error', 'Failed', 'Could not get a different suggestion.')
   }
@@ -251,7 +255,7 @@ async function handleResume() {
   const ok = await freeStore.resumeTraining()
   resuming.value = false
   if (ok) {
-    show('success', 'Training resumed', 'AI is working out a fresh suggestion for your return.')
+    show('success', 'Training resumed', 'A fresh suggestion is being worked out for your return.')
   } else {
     show('error', 'Resume Failed', 'Could not resume training.')
   }
