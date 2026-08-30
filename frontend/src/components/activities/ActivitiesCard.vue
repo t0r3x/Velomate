@@ -96,13 +96,13 @@ async function handleSync() {
     if (settingsStore.freeTrainingMode) {
       await freeTrainingStore.fetchCached()
       if (planRegenTriggered) {
-        // AI regen was triggered non-blocking — poll silently until scores arrive
-        freeTrainingStore.pollForUpdate(freeTrainingStore.suggestion?.generatedAt)
+        // Regen was triggered non-blocking — poll until scores arrive, showing the inline indicator
+        freeTrainingStore.pollForUpdate(freeTrainingStore.suggestion?.generatedAt, 20, true)
       }
     } else {
       await recommendationStore.fetchCached()
       if (planRegenTriggered) {
-        recommendationStore.pollForUpdate(recommendationStore.recommendation?.generatedAt)
+        recommendationStore.pollForUpdate(recommendationStore.recommendation?.generatedAt, 20, true)
       }
     }
     const total = activitiesStore.activities.length

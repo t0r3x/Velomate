@@ -67,7 +67,7 @@ export const useRecommendationStore = defineStore('recommendation', () => {
       const result = await postRefreshRecommendation()
       recommendation.value = result
       state.value = 'loaded'
-      if (result.regenerating) pollForUpdate(result.generatedAt)
+      if (result.regenerating) pollForUpdate(result.generatedAt, 20, true)
     } catch (err: unknown) {
       console.error('[Recommendation] refresh failed:', err)
       const e = err as { details?: string; message?: string }
@@ -81,7 +81,7 @@ export const useRecommendationStore = defineStore('recommendation', () => {
       const result = await postSkipToday(date)
       recommendation.value = result
       state.value = 'loaded'
-      if (result.regenerating) pollForUpdate(result.generatedAt)
+      if (result.regenerating) pollForUpdate(result.generatedAt, 20, true)
       return 'ok'
     } catch (err) {
       console.error('[Recommendation] skipToday failed:', err)
@@ -96,7 +96,7 @@ export const useRecommendationStore = defineStore('recommendation', () => {
       const result = await postReschedule(fromDate, toDate)
       recommendation.value = result
       state.value = 'loaded'
-      if (result.regenerating) pollForUpdate(result.generatedAt)
+      if (result.regenerating) pollForUpdate(result.generatedAt, 20, true)
       return 'ok'
     } catch (err) {
       console.error('[Recommendation] reschedule failed:', err)
@@ -106,13 +106,16 @@ export const useRecommendationStore = defineStore('recommendation', () => {
   }
 
   /**
-   * Poll GET /api/recommendation silently in the background until `generatedAt`
-   * changes. Called after any action triggers a non-blocking AI regen (activity sync,
-   * refresh, skip, reschedule, resume) so the updated plan appears automatically once the
-   * AI response arrives, without blocking the triggering action on the Gemini round trip.
+   * Poll GET /api/recommendation silently in the background until `generatedAt` changes.
+   * Called both for a *confirmed* regen (the backend said `regenerating: true` after
+   * refresh/skip/reschedule/resume/activity-sync) and speculatively on every dashboard
+   * mount, in case the server's own startup/hourly auto-check is regenerating independently
+   * with no other way to signal the frontend. Only the confirmed case shows `isRegenerating`
+   * — the speculative mount-time check has no evidence anything is actually happening, so
+   * it must stay invisible or the banner would flash on every single startup.
    */
-  async function pollForUpdate(knownGeneratedAt: string | undefined, maxAttempts = 20) {
-    isRegenerating.value = true
+  async function pollForUpdate(knownGeneratedAt: string | undefined, maxAttempts = 20, showIndicator = false) {
+    if (showIndicator) isRegenerating.value = true
     try {
       for (let i = 0; i < maxAttempts; i++) {
         await new Promise<void>(r => setTimeout(r, 4000))
@@ -128,7 +131,7 @@ export const useRecommendationStore = defineStore('recommendation', () => {
         } catch { /* ignore poll errors */ }
       }
     } finally {
-      isRegenerating.value = false
+      if (showIndicator) isRegenerating.value = false
     }
   }
 
@@ -153,7 +156,7 @@ export const useRecommendationStore = defineStore('recommendation', () => {
       pauseReason.value = null
       // Shows the pre-pause plan immediately; the pause-aware regen runs in the background.
       await fetchCached()
-      if (result.regenerating) pollForUpdate(recommendation.value?.generatedAt)
+      if (result.regenerating) pollForUpdate(recommendation.value?.generatedAt, 20, true)
       return true
     } catch (err) {
       console.error('[Recommendation] resumeTraining failed:', err)

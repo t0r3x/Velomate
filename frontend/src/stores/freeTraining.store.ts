@@ -81,7 +81,7 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
     try {
       const result = await postFreeTrainingRefresh()
       applyPayload(result)
-      if (result.regenerating) pollForUpdate(result.suggestion?.generatedAt)
+      if (result.regenerating) pollForUpdate(result.suggestion?.generatedAt, 20, true)
     } catch (err: unknown) {
       console.error('[FreeTraining] refresh failed:', err)
       const e = err as { details?: string; message?: string }
@@ -98,7 +98,7 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
     try {
       const result = await postFreeTrainingDismiss()
       applyPayload(result)
-      if (result.regenerating) pollForUpdate(result.suggestion?.generatedAt)
+      if (result.regenerating) pollForUpdate(result.suggestion?.generatedAt, 20, true)
       return 'ok'
     } catch (err) {
       console.error('[FreeTraining] dismiss failed:', err)
@@ -145,7 +145,7 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
       pauseReason.value = null
       // Shows the pre-pause suggestion immediately; the pause-aware regen runs in the background.
       await fetchCached()
-      if (result.regenerating) pollForUpdate(suggestion.value?.generatedAt)
+      if (result.regenerating) pollForUpdate(suggestion.value?.generatedAt, 20, true)
       return true
     } catch (err) {
       console.error('[FreeTraining] resumeTraining failed:', err)
@@ -155,12 +155,16 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
   }
 
   /**
-   * Poll silently until the stored suggestion changes, after a non-blocking backend regen
-   * (refresh/dismiss/resume, or a newly matched ride via activity sync). Mirrors
-   * recommendation.store's pollForUpdate.
+   * Poll silently until the stored suggestion changes. Called both for a *confirmed* regen
+   * (the backend said `regenerating: true` after refresh/dismiss/resume/activity-sync) and
+   * speculatively on every dashboard mount, in case the server's own startup/hourly
+   * auto-check is regenerating independently with no other way to signal the frontend. Only
+   * the confirmed case shows `isRegenerating` — the speculative mount-time check has no
+   * evidence anything is actually happening, so it must stay invisible or the banner would
+   * flash on every single startup.
    */
-  async function pollForUpdate(knownGeneratedAt: string | undefined, maxAttempts = 20) {
-    isRegenerating.value = true
+  async function pollForUpdate(knownGeneratedAt: string | undefined, maxAttempts = 20, showIndicator = false) {
+    if (showIndicator) isRegenerating.value = true
     try {
       for (let i = 0; i < maxAttempts; i++) {
         await new Promise<void>(r => setTimeout(r, 4000))
@@ -174,7 +178,7 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
         } catch { /* ignore poll errors */ }
       }
     } finally {
-      isRegenerating.value = false
+      if (showIndicator) isRegenerating.value = false
     }
   }
 
