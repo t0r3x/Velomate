@@ -7,8 +7,8 @@
         <button class="btn-icon-sm btn-icon-pause" title="Pause training — use for injury, illness or travel" :disabled="pausing" @click="handlePause">
           <i class="fa-solid" :class="pausing ? 'fa-spinner fa-spin' : 'fa-circle-pause'"></i>
         </button>
-        <button class="btn-icon-sm" title="Refresh suggestion" @click="handleRefresh">
-          <i class="fa-solid fa-rotate"></i>
+        <button class="btn-icon-sm" title="Refresh suggestion" :disabled="refreshing" @click="handleRefresh">
+          <i class="fa-solid" :class="refreshing ? 'fa-spinner fa-spin' : 'fa-rotate'"></i>
         </button>
       </div>
     </div>
@@ -191,6 +191,7 @@ const syncTitle = computed(() => {
 const generating = ref(false)
 const pausing    = ref(false)
 const resuming   = ref(false)
+const refreshing = ref(false)
 const syncing    = ref(false)
 const dismissing = ref(false)
 const syncResult = ref<SyncResultType | null>(null)
@@ -211,7 +212,9 @@ async function handleGenerateFirst() {
 }
 
 async function handleRefresh() {
+  refreshing.value = true
   await freeStore.refresh()
+  refreshing.value = false
   if (freeStore.state === 'error') {
     show('error', 'Refresh Failed', freeStore.errorMessage)
   }
