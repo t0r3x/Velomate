@@ -7,6 +7,10 @@ services:
       - ./data:/app/backend/data   # SQLite database
       - ./logs:/app/logs           # Winston log files
     environment:
+      # Inside a container 127.0.0.1 means "this container only", which makes the published
+      # port above unreachable — that is why the server default must be overridden here.
+      # Docker networking, not the listener, is what bounds exposure in this setup.
+      - BIND_HOST=0.0.0.0
       - LOG_DIR=/app/logs
       - VELOMATE_DB_PATH=/app/backend/data/velomate.db
     restart: unless-stopped
