@@ -53,3 +53,15 @@ export const toRpe = (raw: number): number =>
  */
 export const toFeeling = (raw: number): number =>
   Math.max(1, Math.min(5, Math.round(raw / 25) + 1));
+
+/**
+ * Inverses of the two conversions above, for feedback the athlete enters in Velomate
+ * instead of on the watch. Garmin stores both on its internal 0-100 scale, so a value
+ * entered in the app has to be expressed the same way or it would read back wrong.
+ * toRpe(fromRpe(n)) === n for 1-10, and toFeeling(fromFeeling(n)) === n for 1-5.
+ */
+export const fromRpe = (rpe: number): number =>
+  Math.max(0, Math.min(100, Math.round(rpe) * 10));
+
+export const fromFeeling = (feeling: number): number =>
+  Math.max(0, Math.min(100, (Math.round(feeling) - 1) * 25));

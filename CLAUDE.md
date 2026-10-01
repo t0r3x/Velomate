@@ -93,6 +93,9 @@ profile       -- id=1 singleton: user HR profile
 settings      -- key/value store (generic — see "Settings stored in DB" below for the full key list)
   key TEXT PK, value TEXT
 
+daily_checkin -- how the athlete feels on a day, with or without a ride (see "Daily check-in")
+  date TEXT PK (YYYY-MM-DD local), feeling INTEGER (1-5), note TEXT, createdAt, updatedAt
+
 free_suggestion -- free training mode: one dateless "next workout" per row (see below)
   id INTEGER PK AUTOINCREMENT, workoutType, reason, priority, coachNote TEXT,
   structure TEXT (JSON WorkoutStructure | null), loadAssessment TEXT (JSON),
@@ -147,7 +150,7 @@ Note: `frontend/src/types.ts`'s `PlanEntryStatus` additionally declares `'comple
 
 There is **no `classifyExecution()` function** — that rule-based Sprint/Threshold/LongRide thresholding was removed. Completion is now determined in two separate steps:
 
-1. **Binary match** (`classifyCompletedEntries()` in `gemini.service.ts`): any planned entry with a Garmin activity on that date → `'completed'`. Tie-break: an activity named "Velomate" wins, else the longest ride of the day.
+1. **Binary match** (`classifyCompletedEntries()` in `gemini.service.ts`): any planned **non-Rest** entry with a Garmin activity on that date → `'completed'`. Tie-break: an activity named "Velomate" wins, else the longest ride of the day. **Rest is excluded deliberately** — riding on a rest day does not complete it, and marking it so would hand the AI a `Rest → NEEDS SCORING` line the rubric has no band for. A past Rest day therefore stays `'planned'` forever, which is what the rolling-history logic below already assumes; the ride itself still reaches the model via `RECENT ACTIVITIES`.
 2. **Quality scoring**: delegated entirely to the AI. `executionScore` (0-100) and `executionNote` come back from the *same* Gemini call that regenerates the weekly plan, using a rubric embedded in the prompt (90-100 textbook / 75-89 good / 60-74 partial / 40-59 poor / 0-39 mismatch), based on zone data + RPE + feeling.
 
 `parseZones()` in `gemini.service.ts` guards malformed zone arrays before they're formatted into the prompt:
@@ -179,13 +182,34 @@ The first plan is never created here — only steps 2-4 ever fire, and they all 
 - Retries with a shrinking activity window (`ACTIVITY_WINDOWS = [21, 14, 10]` days) if Gemini's response is truncated (`finishReason === 'MAX_TOKENS'`)
 - POSTs to `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`, retries up to 3× on HTTP 429 with backoff
 - `responseMimeType: "application/json"`, joins all parts: `parts.map(p => p.text ?? '').join('')` — avoids truncation
+- `temperature: 0.2`. Deliberately low: the prompt asks for plan stability in prose, and a higher setting sampled against the very thing it was asking for.
+- **Single-flight**: `generateRecommendation()` is a thin wrapper around `_generatePlan()` guarded by a module-level `planGenerationInFlight` promise — a second concurrent caller joins the run already in progress instead of starting its own. Six paths can trigger a generation and most fire without awaiting (an ordinary app launch triggers two), so without this, two Gemini calls would race to write `recommendation.id=1`. `generateFreeSuggestion()` has the same guard (`freeGenerationInFlight`); `isGenerationInFlight()` exposes both to the API.
+- Only `weeklyPlan[0..6]` get a `structure` (`STRUCTURED_WINDOW_DAYS`); days 7-13 are a typed outline with `structure: null`. Only the first week is ever synced to Garmin (`syncAndScheduleWorkouts` covers today..today+6) and the plan regenerates daily, so a second-week day always gets its structure before it can be ridden. Generating them up front was roughly half the output tokens, thrown away — and the main cause of the `MAX_TOKENS` truncation the `ACTIVITY_WINDOWS` ladder exists to retry around. Don't "restore" it.
 - Validates: `today.type` in the valid set, `weeklyPlan` is exactly 14 entries (`PLAN_WINDOW_DAYS`)
-- Merges statuses/scores with the previous plan — never re-scores an already-scored entry; keeps a rolling 14-day window of ALL past entries (any status — completed, skipped, auto-skipped, or still-planned Rest days) prepended to the new 14-day window. This must NOT be filtered to `status === 'completed'` only — Rest days never reach 'completed' (no Garmin activity to match), so that filter would silently drop every past Rest day, which is invisible with a rolling "today onwards" display but breaks a fixed calendar-week display that renders days before today.
+- Merges statuses/scores from the plan **as stored at write time** (`getStoredRecommendation()` re-read inside `_attemptGeneration`), not from the `previousPlan` argument — that argument is only the prompt's view of the world. The Gemini round trip takes many seconds, and a skip, reschedule or completion committed during it would otherwise be clobbered by the opening snapshot. Never re-scores an already-scored entry; keeps a rolling 14-day window of ALL past entries (any status — completed, skipped, auto-skipped, or still-planned Rest days) prepended to the new 14-day window. This must NOT be filtered to `status === 'completed'` only — Rest days never reach 'completed' (no Garmin activity to match), so that filter would silently drop every past Rest day, which is invisible with a rolling "today onwards" display but breaks a fixed calendar-week display that renders days before today.
 - Recomputes `structure.totalMinutes` from steps (corrects AI rounding)
 - Always returns `getStoredRecommendation()` (i.e., what was just saved to DB)
 
+### Prompt structure: static `systemInstruction` + dynamic athlete turn
+
+Each mode has **two halves**, and which half a piece of text belongs in is a real decision, not formatting:
+
+- `PLAN_SYSTEM_INSTRUCTION` / `FREE_SYSTEM_INSTRUCTION` — module constants, byte-identical on every call: role, `ACTIVITY_DATA_NOTES`, `WORKOUT_TYPE_GUIDELINES`, `CALIBRATION_GUIDELINES`, `SCORING_RUBRIC`, the output schema and the STRICT RULES. Sent as `systemInstruction`, where Gemini adheres to them more reliably than to the same text buried in a long user turn, and where — being identical every time — they form a cacheable prefix. Roughly 10.8k of the plan prompt's ~13.4k characters live here.
+- `buildPrompt()` / `buildFreePrompt()` — only this athlete, today (~2.6k chars).
+
+**Never move a static block into the per-call turn to interpolate one value into it.** That forfeits both the adherence and the caching for the sake of a detail that belongs in the athlete data. Cross-references in the static half must name the block they point at ("in the PREVIOUS PLAN COMPLIANCE block"), never "above" — the two halves are separate messages.
+
+**Output key order is load-bearing**, not cosmetic: `executionScores` → `loadAssessment` → `today` → `weeklyPlan` → `nextWeekFocus`. Generation is autoregressive, so later fields are conditioned on earlier ones. `loadAssessment` used to come *last*, which meant the model wrote fourteen days of plan and only then stated the fatigue judgement supposedly driving it — a rationalisation after the fact. Scores (evidence) → assessment (judgement) → plan (consequence) is the order the STRICT RULES now spell out as mandatory. Parsing is by key and unaffected; this is purely about what the model conditions on.
+
 ### `buildPrompt()` assembles
-today's date/day-of-week, athlete preferences (preferred long-ride days, free-text goals), pause context, previous-plan compliance (completed/skipped/auto-skipped with RPE/feeling), pinned-today block, existing scheduled workouts, last-21-day (or reduced) activity JSON, HR profile/zones, 90-day analysis, workout-type guidelines (Sprint/VO2Max/Threshold/Tempo/LongRide/Rest), progression goals, the execution-scoring rubric, the JSON output schema, and plan-stability rules.
+today's date/day-of-week, athlete preferences (preferred long-ride days, free-text goals), pause context, `buildPreviousAssessmentBlock()`, previous-plan compliance (completed/skipped/auto-skipped with RPE/feeling), pinned-today block, existing scheduled workouts, HR profile/zones, 90-day analysis, `buildTrainingLoadBlock()`, and the last-21-day (or reduced) ride table. The guidelines, rubric, schema and rules are **not** here — they are in the system instruction.
+
+Two blocks exist specifically because the model was previously being asked to derive them itself:
+
+- **`buildTrainingLoadBlock()`** — weekly volume for four rolling 7-day blocks, Z3+ minutes, days since the last hard effort (≥10 min in Z4/Z5), consecutive training days, most recent rideless day. Summing zone minutes across weeks and doing date arithmetic over a ride list are things LLMs get wrong silently, and the answers drive every downstream decision. Two accuracy details that are easy to regress: the rideless-day scan starts at **yesterday** (today is not over, so its lack of a ride proves nothing), and the weekly average covers only the blocks the stored history actually reaches — averaging one real week against three empty ones would report a fraction of the athlete's true load as fact.
+- **`buildPreviousAssessmentBlock()`** — the stored `loadAssessment` from the plan being revised. PLAN STABILITY condition (d) ("your loadAssessment differs from PREVIOUS ASSESSMENT") is unevaluable without it; before this block existed, the rule asked the model to compare against something it had never been shown.
+
+Rides are rendered by `formatActivityLines()` as one line per ride (`date | duration | avgHR | distance | zone minutes | rating`), not `JSON.stringify(..., null, 2)` — the column order is documented in `ACTIVITY_DATA_NOTES`, so the two must change together.
 
 ### AI model selection
 
@@ -241,10 +265,20 @@ GET    /api/profile                         ← { maxHr, lthr, zones, ... } (opp
 POST   /api/profile                         ← { maxHr, lthr, zones } → saves to DB and config.json (backward compat)
 
 GET    /api/activities                      ← same as dashboard
-POST   /api/activities/refresh              ← fetch from Garmin, upsert DB, re-run analysis
+POST   /api/activities/refresh              ← fetch from Garmin, upsert DB, re-run analysis → { …, newCount }
                                                → also classifies completed plan entries (non-blocking)
                                                → triggers instant AI regen on newly-completed rides
                                                  (non-blocking, gated by instant_score_on_new_activity)
+
+GET    /api/checkin                         ← { today: DailyCheckin | null, history[] }
+DELETE /api/checkin                         ← clears today's answer (back to never-answered) and
+                                               re-plans without it; no-op when there was none
+POST   /api/checkin                         ← { feeling: 1-5, note? } → upserts today, triggers
+                                               an AI re-evaluation
+
+POST   /api/activities/:activityId/feedback ← { rpe?: 1-10, feeling?: 1-5 } → writes to Garmin FIRST,
+                                               then the local row; triggers an AI re-evaluation
+                                               (gated by instant_score_on_new_activity)
 
 POST   /api/sync-workouts                   ← { scheduleDate } → upload to Garmin + schedule Threshold
 
@@ -267,13 +301,14 @@ POST   /api/training/resume                 ← counts rides during pause, regen
 
 GET    /api/recommendation                  ← stored plan, or { notConfigured } / { paused, ... } / { noData }
                                                → stale:true if generatedAt > 23h ago
+                                               → regenerating:true while a generation is actually in flight
 POST   /api/recommendation/refresh          ← syncs activities, then force-regenerates via Gemini
 POST   /api/recommendation/skip-today       ← mark today 'skipped' → regenerate → return rec
 POST   /api/recommendation/reschedule       ← { fromDate, toDate } → swap dates → regenerate
 
 GET    /api/free-training                   ← free mode only (409 otherwise): stored suggestion + history
                                                → { notConfigured } / { paused, ... } / { noSuggestion }
-                                               → else { suggestion, history[], stale }
+                                               → else { suggestion, history[], stale, regenerating }
 POST   /api/free-training/refresh           ← syncs activities, then generates the next suggestion
 POST   /api/free-training/dismiss           ← mark current 'dismissed' → generate a replacement
 POST   /api/free-training/sync              ← upload + schedule the suggestion on today's date
@@ -289,6 +324,32 @@ GET    *                                    ← SPA catch-all → serves Vue ind
 
 ---
 
+## Visual language (`frontend/src/assets/style.css`)
+
+Dark, navy-based, one blue accent. The colours are unchanged from the original design; what was
+tightened is the *execution*, because the combination of stock-Tailwind palette, glassmorphism panels
+and ad-hoc radii is the visual signature of a generated dashboard.
+
+- **Radius is a four-step scale** — `--radius-xs: 3px` (chips, badges, ticks), `--radius-sm: 5px`
+  (buttons, inputs), `--radius-md: 8px` (cards, dialogs, editors), `--radius-pill: 999px` (only
+  genuinely pill-shaped things). There were **fourteen** ad-hoc values before, up to 20px; oversized
+  pill radii were most of what read as bubbly. Use a token, never a literal. `50%` (circles) and `2px`
+  (caps on 4px-tall bars) stay literal on purpose: that is geometry, not style.
+- **Depth comes from `--surface-0..3` plus a 1px `--hairline`**, not from blur or drop shadows. Current
+  guidance is explicit that heavy shadows, glassmorphism panels and gradient KPI cards date within a
+  year and cost legibility. `backdrop-filter` survives on exactly three rules, all **scrims behind a
+  dialog** — a blurred backdrop is not glassmorphism. A panel that blurs what is under *itself* is, and
+  none do any more. One shadow token remains, `--shadow-overlay`, for genuinely floating layers.
+- **The accent is for things you can act on** — primary buttons, focus rings, active state. The settings
+  dialog used to carry a brand-tinted border; spending the accent on decoration dilutes it everywhere
+  it actually means something. Zone colours (`--z1..z5`) are exempt: those encode data.
+- **`font-variant-numeric: tabular-nums` is set on `body`.** The app is mostly numbers, and with
+  proportional digits a changing value visibly shifts its neighbours.
+- **Positive letter-spacing belongs on small uppercase labels only.** On mixed-case headings it is the
+  dated, webby look — `.card-header h2` is negative. Don't "fix" the uppercase labels to match.
+- `.glass-panel` is a legacy class name: it is now just background + hairline + radius, and never had a
+  `backdrop-filter` of its own.
+
 ## Frontend architecture (Vue 3 + Pinia + Vue Router)
 
 The old vanilla-JS `setView()`/`currentView`/hidden-class toggling and `setRecState()` machinery is gone — replaced by Vue Router + a navigation guard, and by Pinia's reactive state.
@@ -301,6 +362,7 @@ The old vanilla-JS `setView()`/`currentView`/hidden-class toggling and `setRecSt
 - **`settings.store.ts`** — `geminiConfigured`, `setupComplete`, `maskedKey`, `preferredLongRideDays[]`, `geminiModel`, `inactivityPauseDays`. `init()`/`reload()`, `saveAll()`, `saveInactivityPauseDays()`, `disconnectGemini()`, `savePreferredDays()`, `markSetupComplete()`
 - **`recommendation.store.ts`** — `state: RecState` (`'not-configured' | 'no-plan' | 'loading' | 'loaded' | 'error' | 'paused'`), `recommendation`, `pausedSince`, `pauseReason`. `fetchCached()`, `refresh()`, `skipToday()`, `reschedule()`, `pollForUpdate()` (polls every 4s up to 10× for a changed `generatedAt` after a non-blocking backend regen), `pauseTraining()`, `resumeTraining()`, `syncWorkouts()`
 - **`freeTraining.store.ts`** — free mode's counterpart to `recommendation.store`, same state-machine shape: `state: FreeState` (`'not-configured' | 'no-suggestion' | 'loading' | 'loaded' | 'error' | 'paused'`), `suggestion`, `history[]`. `fetchCached()`, `refresh()`, `dismiss()`, `syncWorkout()`, `pollForUpdate()`, `pauseTraining()`, `resumeTraining()`
+- **`checkin.store.ts`** — `today`, `history[]`, computed `answeredToday`. `fetch()`, `save()`, `clear()`. Backs `DailyCheckinStrip.vue`, which is rendered by **both** `AiPlanCard.vue` and `FreeTrainingCard.vue` (loaded state only), above their scroll area.
 - **`profile.store.ts`** — `profile`, computed `hrLabel`. `fetch()`, `save()`, `setFromDashboard()`
 - **`activities.store.ts`** — `activities[]`, `analysis`, `loading`. `loadFromDb()` (DB-only, fast), `syncFromGarmin()` (full refresh, also updates profile store)
 
@@ -358,6 +420,63 @@ z5min = lthr + 1
 
 ---
 
+## Daily check-in
+
+The only signal that does not require riding. Everything else Velomate knows about an athlete's
+state hangs off an activity, which left every rest day — and the bad night before one — silent, and
+meant the single most important input in a "listen to your body" app could only be entered on the
+watch, after a ride.
+
+- **It is not RPE.** RPE lives per activity and syncs to Garmin; a check-in is per *day*, answers the
+  days with no ride at all, and stays local — Garmin has no field for it. The two deliberately share
+  the 1-5 feeling vocabulary (not the 1-10 RPE scale) so "3" means one thing everywhere.
+- **Only ever today.** `upsertCheckin(localDate(), …)` is the single writer; nothing asks about or
+  backfills an earlier day. History is read-only, for the prompt and the strip.
+- **Picking a face is a selection, not a commitment.** Nothing is written until Save. An earlier version
+  saved and re-planned on the tap itself, which made it impossible to add a note and spent an AI call on
+  what the athlete thought was just selecting. Layout is fixed: faces row, note field, Save.
+- **It sits at the top of the training card**, in both modes, above the card's scroll area — how the
+  athlete feels today is the first input to everything shown underneath, so it must not scroll away. It
+  lived above the rides list first, which put it nowhere near the thing it actually drives.
+- **It stays ignorable.** A compact block, never a modal, no badge, no nagging. Skipping a day is a valid
+  outcome, not a failure state — and absence is explicitly meaningless to the prompt.
+- **Clear is not "rate yourself Normal".** `DELETE /api/checkin` removes the row, so the day reads as never
+  answered and the prompt carries no line for it; a 3/Normal is still an answer the model weighs. Clearing
+  re-plans too — the previous plan was built on a line that is now gone — but only when there was actually
+  something to remove.
+- **Re-planning requires new information.** `POST /api/checkin` compares against the stored answer for
+  today and skips `triggerAdaptiveRegen()` when feeling *and* note are unchanged: the plan was already
+  built on exactly that input, so regenerating would spend a call to arrive at the same place. Saving the
+  same answer twice is therefore free, and `regenerating` in the response is the honest signal for whether
+  the UI has anything to poll for.
+- One row per local date (`date` is the PK); re-submitting corrects it, because a check-in is a
+  present-tense statement and the athlete is allowed to change their mind during the day.
+- `feeling` reuses the **same 1-5 scale and labels** as post-ride feeling (1 exhausted … 5 strong), so
+  the vocabulary means one thing everywhere — in the badges, in the check-in block and in the prompt.
+- The optional `note` is the only channel for anything outside cycling. Velomate deliberately does not
+  import non-cycling activities: RPE, feeling and this note are where the athlete integrates them. The
+  prompt says so explicitly, so the model takes "ran 10k yesterday" at face value.
+- `CHECKIN_NOTES` (shared by both modes) states that a check-in **outranks** anything inferred from HR
+  or volume, and that **a missing day carries no information** — absence must never be read as "fine".
+  `buildCheckinBlock()` returns an empty string rather than an empty header for the same reason.
+- `CHECKIN_HISTORY_DAYS` is a window in **days (14), not a row count**. Checking in is optional and many
+  athletes do it sporadically, so "the last N rows" could reach back months and present a bad day from
+  five weeks ago under a heading the model is told to weigh above everything else.
+
+### `triggerAdaptiveRegen(context)`
+
+Both a ride rating and a check-in call this: the athlete said something new about their own state, so
+the plan re-evaluates. Non-blocking, and the response returns `regenerating` so the UI knows whether
+to poll. It declines only when there is no API key, training is paused, or
+`instant_score_on_new_activity` is off. A check-in that changed nothing would contradict the product —
+reacting to how the athlete actually feels is the whole point.
+
+It also returns **`replacedSyncedWorkout`**, and this is not optional polish. In free mode this call can
+displace a suggestion the athlete already pushed to their watch — `runFreeAutoCheck()` refuses to do that
+on staleness alone, but reacting to how someone actually feels outranks that rule. The Garmin workout
+stays on their calendar either way and only they can delete it, so the response names what was displaced
+and the UI warns about it. Dropping that field would silently orphan workouts in Garmin.
+
 ## Training pause / resume
 
 New feature not present in earlier versions of the app:
@@ -384,7 +503,7 @@ normal 23h auto-check). Toggling either way resets `gemini_last_generated` to `'
 
 | Reused verbatim | Free-mode specific |
 |---|---|
-| `ACTIVITY_DATA_NOTES`, `WORKOUT_TYPE_GUIDELINES`, `PROGRESSION_GUIDELINES`, `SCORING_RUBRIC`, `buildRecentActivities()`, `buildZoneString()`, `buildPreferenceLines()`, `buildPauseBlock()` — extracted from `buildPrompt()` and shared (the plan prompt renders byte-identically to before the extraction) | `buildFreePrompt()` — one-workout framing, `coachNote` instead of a calendar slot, `PREVIOUS SUGGESTIONS` compliance block keyed by `[id N]` |
+| `ACTIVITY_DATA_NOTES`, `WORKOUT_TYPE_GUIDELINES`, `CALIBRATION_GUIDELINES`, `SCORING_RUBRIC`, `buildRecentActivities()`, `buildZoneString()`, `buildPreferenceLines()`, `buildPauseBlock()`, `buildTrainingLoadBlock()`, `formatActivityLines()` — shared; the first four now live in each mode's system instruction rather than in the per-call text | `buildFreePrompt()` — one-workout framing, `coachNote` instead of a calendar slot, `PREVIOUS SUGGESTIONS` compliance block keyed by `[id N]` |
 | `buildFromStructure()`, `zoneTarget()`, `workoutLabels()`, `FALLBACK_STRUCTURES` in `workout.service.ts` | `syncFreeWorkout()` — one workout, deletes only an **exact name clash** instead of every `"Velomate - "` workout, so previously synced suggestions survive as history |
 | `WorkoutDetailPanel.vue` (new `dateless` prop hides the day label + Skip/Move), `LoadAssessment.vue`, `SyncResult.vue` (new `singleWorkout` prop), `usePauseDialog`, `useConfirm` | `FreeTrainingCard.vue`, `FreeHistoryList.vue`, `freeTraining.store.ts` |
 | `buildPreferenceLines()` (goals block identical) | its `freeMode` argument swaps the "preferred Long Ride day" instruction for "the athlete chooses the day themselves" — there is no calendar to place a long ride on, and the UI says the same under those day chips |
@@ -392,9 +511,25 @@ normal 23h auto-check). Toggling either way resets `gemini_last_generated` to `'
 
 **Suggestion lifecycle** (`status` column):
 `open` → `synced` (pushed to Garmin) → `completed` (a ride matched it) → scored by the AI on the next
-generation. `dismissed` = athlete rejected it, or had it synced and never rode it; `superseded` = replaced
-by a plain refresh without ever being synced. `insertFreeSuggestion()` retires the current row inside one
-transaction, so there is always at most one `open`/`synced` row.
+generation. `dismissed` = athlete rejected it, or had it synced and never rode it; `superseded` = **the
+athlete** asked for a different one before syncing it; `expired` = an automatic regeneration replaced it.
+`insertFreeSuggestion()` retires the current row inside one transaction, so there is always at most one
+`open`/`synced` row.
+
+**`superseded` vs `expired` is not bookkeeping.** The prompt reads repeated rejection of a workout type as
+a reason to stop offering it, so recording an automatic refresh as a rejection teaches the AI something
+that never happened — and regeneration fires automatically on staleness, on a new ride, and on every
+check-in. Only an explicit refresh passes `athleteRequested: true` to `generateFreeSuggestion()`; the
+`expired` line in the prompt says outright that no compliance conclusion may be drawn from it.
+
+**Rest is not a valid free-mode suggestion.** It is in `WORKOUT_TYPE_GUIDELINES` (shared) but the free
+schema omits it, the STRICT RULES forbid it, and `_attemptFreeGeneration()` rejects it. A dateless rest
+suggestion is something the athlete cannot ride, cannot sync and can never complete, so it would occupy
+the mode's single slot until it expired. Recovery advice goes in `coachNote` + a `low` priority instead:
+name the session they should come back to and say plainly that they should not ride it yet. `buildCheckinNotes(freeMode)`
+is mode-aware for exactly this reason — telling free mode to "make it Rest" would be an instruction it is
+forbidden to follow. Frontend guards (`isSyncable`, the `isRest` card header) stay as safety nets, because
+suggestions stored before this change still render.
 
 **Ride matching** — `findRideForFreeSuggestion(syncedForDate)` takes the **first activity on or after**
 that date (Velomate-named wins, else longest of that day). Deliberately forward-looking, unlike the plan's
@@ -432,6 +567,7 @@ to `/api/recommendation/refresh|skip-today|reschedule` and `/api/sync-workouts` 
 
 `electron-main.js` (repo root, CommonJS, guarded by `if (process.type !== 'browser') return` since Windows launches it twice):
 - Single-instance lock (`requestSingleInstanceLock`) — second launch just focuses the existing window
+- Default window 1400x1040, clamped to screen.getPrimaryDisplay().workAreaSize so it never opens taller than the display. Height was raised from 900 when the daily check-in moved into the training card — at 900 the plan card opened already scrolled.
 - Frameless window on Windows (custom `TitleBar.vue` + IPC `window:minimize/toggle-maximize/close`), native title bar (`hiddenInset`) on macOS
 - Runs the Express backend **in-process**: `require('./backend/dist/server.js')`. Packaged builds pick a free port dynamically (`findFreePort()`) and set `LOG_DIR` to `app.getPath('userData')/logs`; dev mode uses the fixed port 2012
 - Waits for `GET /api/status` to respond (`waitForHttp()`) before loading the window
@@ -460,16 +596,19 @@ Bump `version` in root `package.json` before every publish — it's both the rel
 2. **No first-plan auto-generation** — `runGeminiAutoCheck()` never creates the first plan; only user action (or `/api/training/resume`) does.
 3. **Gemini response truncation** — always join all parts: `parts.map(p => p.text ?? '').join('')`; also handled via the shrinking `ACTIVITY_WINDOWS` retry.
 4. **`classifyExecution()` no longer exists** — completion matching is now binary/date-based; all quality scoring (0-100 + note) comes from the AI in the same call that regenerates the plan. Don't look for rule-based Sprint/Threshold/LongRide thresholds in `gemini.service.ts`.
-5. **`perceivedExertion`/`feelingAfterExercise`** are excluded from the bulk-upsert `ON CONFLICT` update in `database.service.ts` — never overwritten by a routine activity sync, only by the dedicated feedback fetch.
-6. **`getStoredRecommendation()` can return null** even right after a write (JSON parse failure or race). Always use optional chaining: `updated?.weeklyPlan`.
-7. **Preferred days plural key** — `preferred_long_ride_days` (comma-separated). Legacy `preferred_long_ride_day` is read as fallback but never written.
-8. **UI language** — always English only. Variable names, DB keys, logs can be Dutch/English but all user-visible text must be English.
-9. **AI branding is mostly, not entirely, "AI"-only** — component names, most copy, and toasts say "AI" (`AiPlanCard.vue`, "Add AI API key"). But `SettingsPanel.vue` still names "Google Gemini" explicitly in a couple of spots (header, key-help text, disconnect toast) since that's the actual product the user needs an API key from. Internal names (`gemini_api_key`, `getGeminiKeyStatus`, etc.) keep "gemini" throughout — this is intentional, not a bug to "fix" by blanket-replacing "Gemini" with "AI".
-10. **`config.json` is still alive** — `profile.service.ts` reads/writes it as a legacy fallback; `POST /api/profile` keeps it in sync "for backward compat". Don't remove it without checking `getActiveProfile()`'s DB → config.json → defaults fallback chain in `server.ts`.
-11. **`setupComplete` comes from DB**, loaded via the settings store (`GET /api/settings/gemini-key` → `data.setupComplete`). Do not use localStorage.
-12. **WAL mode** — SQLite is opened with `db.pragma('journal_mode = WAL')` for better concurrent reads.
-13. **`GET /api/debug/raw-activity`** and **`GET /api/debug/garmin-hr-data`** are diagnostic-only endpoints (discovering Garmin's RPE/feeling field names, and real LTHR/zone-boundary field names, respectively) — don't treat them as public API surface.
-14. **Backend port is 2012**, not 3001 — legacy docs/scripts referencing 3001 are stale.
-15. **Free training mode swaps the card, it does not migrate the data** — `recommendation` and `free_suggestion` coexist. Never "clean up" one while the other is active; that is what makes toggling back lossless.
-16. **`gemini_model` is user-controlled free text that lands in a URL** — always go through `getGeminiModel()` to read it and `normalizeModelId()`/`isValidModelId()` to write it. See "AI model selection".
-17. **The shared prompt blocks are literally shared** — editing `WORKOUT_TYPE_GUIDELINES`, `PROGRESSION_GUIDELINES`, `SCORING_RUBRIC` or `ACTIVITY_DATA_NOTES` changes coaching behaviour in **both** modes. That is intentional; if a change should only apply to one mode, put it in that mode's own template.
+5. **`perceivedExertion`/`feelingAfterExercise`** are excluded from the bulk-upsert `ON CONFLICT` update in `database.service.ts` — never overwritten by a routine activity sync. They have exactly two writers: `fetchAndStoreRecentFeedback()` (pulling what the athlete entered on the watch) and `POST /api/activities/:id/feedback` (what they entered in Velomate).
+6. **Ride feedback is written to Garmin before it is written locally.** RPE and feeling normally originate on the watch and are read back from Garmin, so a value stored only in Velomate would diverge the moment the athlete opens Garmin Connect. `pushActivityFeedback()` PUTs `{ activityId, summaryDTO: { directWorkoutRpe, directWorkoutFeel } }` to `/activity-service/activity/{id}` — a partial body, the same mechanism the client library uses for `renameActivity` — and `updateActivityFeedback()` only runs once that succeeded. A failed write leaves both sides untouched and the UI keeps its editor open. Do not reorder these: a local-first write would silently create two different answers to "how did that ride feel", and the AI reads the local one.
+7. **Entering a rating is a planning signal, not metadata.** It triggers the same non-blocking regeneration a newly completed ride does — reacting to how the athlete actually feels is the product, so a rating that changed nothing would be the bug. Honours `instant_score_on_new_activity` for athletes who would rather save the API call.
+8. **`getStoredRecommendation()` can return null** even right after a write (JSON parse failure or race). Always use optional chaining: `updated?.weeklyPlan`.
+9. **Preferred days plural key** — `preferred_long_ride_days` (comma-separated). Legacy `preferred_long_ride_day` is read as fallback but never written.
+10. **UI language** — always English only. Variable names, DB keys, logs can be Dutch/English but all user-visible text must be English.
+11. **AI branding is mostly, not entirely, "AI"-only** — component names, most copy, and toasts say "AI" (`AiPlanCard.vue`, "Add AI API key"). But `SettingsPanel.vue` still names "Google Gemini" explicitly in a couple of spots (header, key-help text, disconnect toast) since that's the actual product the user needs an API key from. Internal names (`gemini_api_key`, `getGeminiKeyStatus`, etc.) keep "gemini" throughout — this is intentional, not a bug to "fix" by blanket-replacing "Gemini" with "AI".
+12. **`config.json` is still alive** — `profile.service.ts` reads/writes it as a legacy fallback; `POST /api/profile` keeps it in sync "for backward compat". Don't remove it without checking `getActiveProfile()`'s DB → config.json → defaults fallback chain in `server.ts`.
+13. **`setupComplete` comes from DB**, loaded via the settings store (`GET /api/settings/gemini-key` → `data.setupComplete`). Do not use localStorage.
+14. **WAL mode** — SQLite is opened with `db.pragma('journal_mode = WAL')` for better concurrent reads.
+15. **`GET /api/debug/raw-activity`** and **`GET /api/debug/garmin-hr-data`** are diagnostic-only endpoints (discovering Garmin's RPE/feeling field names, and real LTHR/zone-boundary field names, respectively) — don't treat them as public API surface.
+16. **Backend port is 2012**, not 3001 — legacy docs/scripts referencing 3001 are stale. It binds **127.0.0.1 by default**: no API route is authenticated, so an all-interfaces bind would expose ride history, the debug endpoints, the AI key and Garmin workout upload to anyone on the same network. Electron and the Vite dev proxy both target 127.0.0.1 explicitly. Set `BIND_HOST=0.0.0.0` to opt in to remote access — `docker-compose.yml` does, since a container that binds loopback is unreachable through a published port.
+17. **Free training mode swaps the card, it does not migrate the data** — `recommendation` and `free_suggestion` coexist. Never "clean up" one while the other is active; that is what makes toggling back lossless.
+18. **`gemini_model` is user-controlled free text that lands in a URL** — always go through `getGeminiModel()` to read it and `normalizeModelId()`/`isValidModelId()` to write it. See "AI model selection".
+19. **The shared prompt blocks are literally shared** — editing `WORKOUT_TYPE_GUIDELINES`, `CALIBRATION_GUIDELINES`, `SCORING_RUBRIC` or `ACTIVITY_DATA_NOTES` changes coaching behaviour in **both** modes. That is intentional; if a change should only apply to one mode, put it in that mode's own template. They are interpolated into both system instructions, so a change also invalidates the cached prefix for every user — correctness-neutral, but not free.
+20. **Prompt rules must be evaluable from the prompt itself.** Two rules were asking the model to judge things it had never been given: stability condition (d) compared against an unseen previous assessment, and a progression rule keyed on `'easy'`/`'moderate'` rides — words quoted as if they were data fields, which no activity line carries. Both are now either supplied (`buildPreviousAssessmentBlock()`) or defined numerically ("no ride shows more than roughly 5 minutes of combined Z4+Z5 time"). When adding a rule, check that every term in it appears in the data the model actually receives.

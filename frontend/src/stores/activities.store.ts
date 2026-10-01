@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { getDashboard, postActivitiesRefresh } from '@/api/client'
+import { getDashboard, postActivitiesRefresh, postActivityFeedback } from '@/api/client'
 import { useProfileStore } from '@/stores/profile.store'
 import type { Activity, Analysis } from '@/types'
 
@@ -42,5 +42,25 @@ export const useActivitiesStore = defineStore('activities', () => {
     }
   }
 
-  return { activities, analysis, loading, loadFromDb, syncFromGarmin }
+  /**
+   * Save the athlete's own rating of a ride.
+   * The backend writes to Garmin before it writes here, so a false return means the
+   * rating was not stored anywhere and the UI must keep showing the previous state.
+   */
+  async function saveFeedback(
+    activityId: string,
+    feedback: { rpe?: number | null; feeling?: number | null }
+  ): Promise<{ ok: boolean; regenerating: boolean; details?: string }> {
+    try {
+      const data = await postActivityFeedback(activityId, feedback)
+      activities.value = data.activities || activities.value
+      return { ok: true, regenerating: data.regenerating }
+    } catch (err) {
+      console.error('[Activities] saveFeedback failed:', err)
+      const e = err as { details?: string }
+      return { ok: false, regenerating: false, details: e.details }
+    }
+  }
+
+  return { activities, analysis, loading, loadFromDb, syncFromGarmin, saveFeedback }
 })

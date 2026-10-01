@@ -5,6 +5,9 @@
       <span>Next Week</span>
       <span class="week-label">{{ weekLabel }}</span>
     </div>
+    <!-- These days are re-planned as rides and feedback come in. Presenting them as a fixed
+         schedule makes the daily adaptation look like inconsistency instead of the point. -->
+    <p class="ai-next-week-provisional">Direction, not a schedule — these days adapt as your rides and feedback come in.</p>
     <p class="ai-next-week-summary">{{ summary }}</p>
     <div v-if="sessions.length" class="ai-next-week-chips">
       <span

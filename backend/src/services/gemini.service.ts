@@ -8,6 +8,7 @@ import {
   getStoredAnalysis,
   getCurrentFreeSuggestion,
   getFreeSuggestionHistory,
+  getRecentCheckins,
   getUnscoredFreeSuggestions,
   insertFreeSuggestion,
   setFreeSuggestionScore,
@@ -21,6 +22,18 @@ import logger from '../logger';
 
 /** Forward-looking plan length in days — kept wide enough that a lagged regen still covers "next week" with real data. */
 const PLAN_WINDOW_DAYS = 14;
+
+/**
+ * How many leading days of the plan get a full step-by-step workout structure.
+ *
+ * Only this window is ever pushed to Garmin (syncAndScheduleWorkouts covers today..today+6),
+ * and the plan regenerates daily — so a second-week day is always re-planned, with a fresh
+ * structure, before it can be ridden. Generating its steps now produces output the app
+ * throws away, and it is exactly that waste that drives the response into MAX_TOKENS
+ * truncation. Asking for structures on the first week only roughly halves the output
+ * without losing anything the athlete can act on.
+ */
+const STRUCTURED_WINDOW_DAYS = 7;
 
 export const getGeminiKey = (): string | null => getSetting('gemini_api_key') || null;
 
@@ -68,6 +81,171 @@ const parseZones = (raw: any): number[] | null =>
 /** Format zone seconds array as a readable string for the prompt, e.g. "z1=8m z2=32m z3=6m z4=14m z5=3m" */
 const fmtZones = (zones: number[]): string =>
   zones.map((s, i) => `z${i + 1}=${Math.round(s / 60)}m`).join(' ');
+
+/**
+ * One line per ride instead of JSON.stringify(..., null, 2).
+ * Pretty-printed JSON spent a large share of the prompt on braces and indentation that carry
+ * no meaning for the model, and a flat table is easier to scan across 21 rows than nested
+ * objects. Keep the column order in sync with ACTIVITY_DATA_NOTES, which tells the model how
+ * to read it.
+ */
+const formatActivityLines = (acts: any[]): string => {
+  if (acts.length === 0) return '(no rides recorded in this window)';
+  return acts.map(a => {
+    const zones = a.zonesMin
+      ? `z1=${a.zonesMin.z1} z2=${a.zonesMin.z2} z3=${a.zonesMin.z3} z4=${a.zonesMin.z4} z5=${a.zonesMin.z5}`
+      : 'zones=n/a';
+    const feedback = [
+      a.rpe     != null ? `rpe=${a.rpe}`         : null,
+      a.feeling != null ? `feeling=${a.feeling}` : null
+    ].filter(Boolean).join(' ') || 'unrated';
+    return `${a.date} | ${a.durationMin}min | ${a.avgHr}bpm | ${a.distKm}km | ${zones} | ${feedback}`;
+  }).join('\n');
+};
+
+/**
+ * Pre-computed training load.
+ *
+ * The model was being asked to derive all of this from the ride list on every call: summing
+ * zone minutes across three weeks, and date arithmetic to work out how long ago the last hard
+ * effort was. Both are things language models get wrong silently, and the answers drive every
+ * decision downstream. Computing them here costs ~50 tokens and makes them exact.
+ */
+const buildTrainingLoadBlock = (): string => {
+  const today = localDate();
+  const dayOffset = (n: number): string => {
+    const d = new Date(today + 'T12:00:00');
+    d.setDate(d.getDate() + n);
+    return localDate(d);
+  };
+
+  const acts   = getStoredActivities().filter(a => a.startTime);   // newest first
+  const dateOf = (a: any): string => a.startTime.slice(0, 10);
+  const fmt    = (min: number): string => `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`;
+
+  const windowStats = (fromOffset: number, toOffset: number) => {
+    const from = dayOffset(fromOffset);
+    const to   = dayOffset(toOffset);
+    const inWindow = acts.filter(a => dateOf(a) >= from && dateOf(a) <= to);
+    return {
+      rides:   inWindow.length,
+      minutes: inWindow.reduce((s, a) => s + (a.durationMinutes || 0), 0),
+      z3plus:  Math.round(inWindow.reduce((s, a) => {
+        const z = parseZones(a.timeInZones);
+        return s + (z ? (z[2] + z[3] + z[4]) / 60 : 0);
+      }, 0))
+    };
+  };
+
+  const weeks = [windowStats(-6, 0), windowStats(-13, -7), windowStats(-20, -14), windowStats(-27, -21)];
+
+  // Average only across the 7-day blocks the stored history actually reaches. Averaging a
+  // real week against three empty ones would report a fraction of the athlete's true load
+  // as if it were fact, and the model has no way to tell the difference.
+  const oldestRide  = acts.length ? dateOf(acts[acts.length - 1]) : null;
+  const historyDays = oldestRide
+    ? Math.round((new Date(today + 'T12:00:00').getTime() - new Date(oldestRide + 'T12:00:00').getTime()) / 86_400_000)
+    : 0;
+  const blocksCovered = Math.max(1, Math.min(weeks.length, Math.ceil((historyDays + 1) / 7)));
+  const avgPerWeek = Math.round(
+    weeks.slice(0, blocksCovered).reduce((s, w) => s + w.minutes, 0) / blocksCovered
+  );
+
+  // "Hard" = at least 10 minutes above threshold, which is what actually needs recovering
+  // from — a ride that merely touched Z4 for a minute on a climb does not count.
+  const lastHard = acts.find(a => {
+    const z = parseZones(a.timeInZones);
+    return z && (z[3] + z[4]) / 60 >= 10;
+  });
+  const daysSinceHard = lastHard
+    ? Math.round((new Date(today + 'T12:00:00').getTime() - new Date(dateOf(lastHard) + 'T12:00:00').getTime()) / 86_400_000)
+    : null;
+
+  const rideDates = new Set(acts.map(dateOf));
+  const lastRide  = acts[0] ? dateOf(acts[0]) : null;
+  let streak = 0;
+  if (lastRide) {
+    const cursor = new Date(lastRide + 'T12:00:00');
+    while (rideDates.has(localDate(cursor))) {
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+  }
+
+  // Start at yesterday: today is not over, so its lack of a ride proves nothing.
+  let lastRestDay: string | null = null;
+  for (let i = -1; i >= -28; i--) {
+    const d = dayOffset(i);
+    if (!rideDates.has(d)) { lastRestDay = d; break; }
+  }
+
+  const withZones = acts.filter(a => parseZones(a.timeInZones)).length;
+
+  return `TRAINING LOAD (pre-computed from the full ride history — use these figures, do not re-derive them):
+- Last 7 days: ${weeks[0].rides} ride(s), ${fmt(weeks[0].minutes)} total, ${weeks[0].z3plus} min in Z3+
+- Preceding 7-day blocks (most recent first): ${weeks.slice(1).map(w => `${fmt(w.minutes)} (${w.rides} rides)`).join(', ')}
+- ${blocksCovered}-week average: ${fmt(avgPerWeek)} per week${blocksCovered < weeks.length ? ` (only ${historyDays} days of ride history are stored — do not read this as a long-term baseline)` : ''}
+- Days since last hard effort (>=10 min in Z4/Z5): ${daysSinceHard ?? 'no such effort in stored history'}
+- Consecutive training days: ${streak}${lastRide ? ` (most recent ride ${lastRide})` : ''}
+- Most recent day without a ride: ${lastRestDay ?? 'none in the last 28 days'}
+- Zone data present for ${withZones} of ${acts.length} stored rides${withZones < acts.length ? ' — the Z3+ and Z4/Z5 figures above count only those' : ''}
+
+`;
+};
+
+/**
+ * How far back check-in history is shown to the model.
+ *
+ * A window in DAYS, not a row count. Checking in is optional and many athletes will do it
+ * sporadically, so "the last 10 rows" could reach back months and present a bad day from
+ * five weeks ago directly under a heading the model is told to weigh above everything else.
+ */
+const CHECKIN_HISTORY_DAYS = 14;
+
+const FEELING_WORDS: Record<number, string> = {
+  1: 'exhausted', 2: 'tired', 3: 'normal', 4: 'good', 5: 'strong'
+};
+
+/**
+ * The athlete's own reports, newest first, with today marked.
+ * Empty string when they have never checked in — an empty header would read as evidence
+ * of nothing being wrong, which is exactly the inference CHECKIN_NOTES forbids.
+ */
+const buildCheckinBlock = (): string => {
+  const today  = localDate();
+  const cutoff = new Date(today + 'T12:00:00');
+  cutoff.setDate(cutoff.getDate() - CHECKIN_HISTORY_DAYS);
+  const cutoffStr = localDate(cutoff);
+
+  // Fetch generously, then bound by date — anything older is history, not current state.
+  const checkins = getRecentCheckins(CHECKIN_HISTORY_DAYS).filter(c => c.date >= cutoffStr);
+  if (checkins.length === 0) return '';
+  const lines = checkins.map(c => {
+    const dow  = new Date(c.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short' });
+    const when = c.date === today ? `TODAY (${c.date})` : `${c.date} (${dow})`;
+    return `- ${when}: ${c.feeling}/5 ${FEELING_WORDS[c.feeling] ?? ''}${c.note ? ` — "${c.note}"` : ''}`;
+  });
+
+  return `DAILY CHECK-INS (self-reported, independent of any ride):\n${lines.join('\n')}\n\n`;
+};
+
+/**
+ * The load assessment from the plan being revised.
+ *
+ * PLAN STABILITY condition (d) — "the athlete's fatigue assessment has changed from the
+ * previous plan" — was unevaluable without this: the previous assessment was never in the
+ * prompt, so the model could only guess at whether it had changed.
+ */
+const buildPreviousAssessmentBlock = (): string => {
+  const prev = getStoredRecommendation()?.loadAssessment;
+  if (!prev || typeof prev !== 'object') return '';
+  return `PREVIOUS ASSESSMENT (your own, from the plan you are now revising):
+- Fatigue: ${prev.fatigue ?? 'unknown'} | Load trend: ${prev.weeklyLoadTrend ?? 'unknown'}${prev.insight ? `
+- "${prev.insight}"` : ''}
+PLAN STABILITY condition (d) depends on whether your new assessment differs from this one.
+
+`;
+};
 
 
 // ── Completion / skip detection ───────────────────────────────────────────────
@@ -118,8 +296,12 @@ export const classifyCompletedEntries = (
 
   const today = localDate();
 
+  // Rest is deliberately excluded: riding on a planned rest day does not "complete" it, and
+  // marking it so hands the AI a Rest entry flagged NEEDS SCORING — a case the rubric has no
+  // band for, producing a meaningless score that then feeds straight back into planning.
+  // The ride itself is already visible to the model in RECENT ACTIVITIES.
   return plan
-    .filter(e => e.status === 'planned' && e.date <= today && actMap.has(e.date))
+    .filter(e => e.status === 'planned' && e.type !== 'Rest' && e.date <= today && actMap.has(e.date))
     .map(e => ({ date: e.date, status: 'completed' as const }));
 };
 
@@ -154,11 +336,37 @@ interface PauseContext {
 // a coaching tweak lands in both modes instead of silently drifting apart.
 
 /** How to read the activity JSON — zone units, rpe/feeling scales and how to weight them. */
-const ACTIVITY_DATA_NOTES = `Note: zonesMin shows minutes spent in each Garmin HR zone (z1=lowest, z5=highest intensity).
-Zone data is from Garmin's default 5-zone system based on max HR — boundaries may differ slightly from the athlete's custom LTHR zones below.
+const ACTIVITY_DATA_NOTES = `How to read RECENT ACTIVITIES — one line per ride, columns in this order:
+  date | duration | average HR | distance | minutes per HR zone | athlete rating
+Zone figures are minutes spent in each Garmin HR zone (z1=lowest, z5=highest intensity), from Garmin's default 5-zone system based on max HR — boundaries may differ slightly from the athlete's custom LTHR zones. "zones=n/a" means Garmin supplied no zone breakdown for that ride; "unrated" means the athlete answered neither post-ride prompt.
 rpe = athlete-reported perceived exertion after the ride (1=very easy, 5=moderate, 10=maximal effort). Absent = not rated.
 feeling = athlete-reported post-ride feeling (1=exhausted/very tired, 2=tired, 3=normal, 4=good, 5=strong/excellent). Absent = not rated.
 When rpe and feeling are present, weight them heavily — they are direct athlete feedback on recovery state. High rpe (≥8) or low feeling (≤2) after a session signals real fatigue even if HR data looks moderate.`;
+
+/**
+ * How to weigh a daily check-in.
+ *
+ * Deliberately strong: a check-in is the athlete speaking directly, which is the whole
+ * premise of the app. Without this the model treats it as one more data point next to HR
+ * and volume, and quietly lets the numbers win.
+ *
+ * Mode-aware because the two modes can act on it in completely different ways. The planned
+ * week can turn today into a Rest day; free mode has no day to rest and no Rest type, so
+ * the same signal has to come out as a gentler session held back by coachNote. Saying
+ * "make it Rest" to free mode would be an instruction it is forbidden to follow.
+ */
+const buildCheckinNotes = (freeMode: boolean): string => `DAILY CHECK-INS — how to weigh them:
+A check-in is the athlete telling you directly how they feel, on a day that may or may not contain a ride.
+It is the most direct signal you get, and it OUTRANKS anything you would infer from heart rate or volume.
+Scale: 1=exhausted, 2=tired, 3=normal, 4=good, 5=strong. A free-text note may explain why.
+- A check-in marked TODAY is their current recovery state${freeMode
+  ? ', and it decides BOTH what the next session should be and how long they should wait before riding it. At 1 or 2, choose a gentler session than the load figures alone would justify, set priority to "low", and say plainly in coachNote that they should not ride it yet and what has to be true first.'
+  : ". At 1 or 2, lower today's intensity or make today a Rest day, regardless of what the load figures suggest."}
+  Name the check-in in your reason, so the athlete can see you listened.
+- Two or more consecutive days at 1-2 are genuine accumulated fatigue even when the ride data looks unremarkable. ${freeMode ? 'Hold the next session back further — not merely make it lighter.' : 'Ease off the coming days, not only today.'}
+- A 4 or 5 is permission to go ahead as planned. It is not an instruction to add load.
+- Days without a check-in carry NO information. Never read a missing day as either good or bad.
+- Notes often mention things outside cycling — sleep, work, illness, another sport. Take them at face value: they are usually the reason the numbers look the way they do. Velomate deliberately does not import non-cycling activities, so a note is the only way you will hear about them.`;
 
 /** The six workout types and their step templates. Caller supplies the header line. */
 const WORKOUT_TYPE_GUIDELINES = `Sprint (requires neuromuscular recovery — use athlete's own history to judge adequate rest):
@@ -166,8 +374,9 @@ const WORKOUT_TYPE_GUIDELINES = `Sprint (requires neuromuscular recovery — use
   Intervals: 4-8 sets of [Sprint [Run] 20-45 sec Z5 → Recovery [Recovery] 180-300 sec Z1]
   Cool-down [Cooldown]: 480-720 sec Z1
   Short maximal bursts — trains neuromuscular power. Fewer/shorter when less fresh.
-  Recovery window: for high-volume athletes who regularly train daily, 24-36h between hard sessions may be their normal pattern.
-  For lower-volume athletes, 48h+ rest before a sprint session is appropriate.
+  Recovery window: judge this from the TRAINING LOAD figures. At 5 or more rides per week with no
+  negative recovery signals, 24-36h between hard sessions is this athlete's established pattern.
+  At 4 or fewer rides per week, allow 48h+ before a sprint session.
 
 VO2Max (requires good recovery — sustained Z5 is more demanding than Sprint):
   Warm-up [WarmUp]: 480-720 sec Z2
@@ -196,16 +405,26 @@ LongRide (safe even when moderately fatigued):
 
 Rest: no structure needed — set structure to null.`;
 
-/** How hard to push: match demonstrated capacity first, progress from there. */
-const PROGRESSION_GUIDELINES = `PROGRESSION GOAL: Match the athlete's established training level, then progress from there:
-  Training pyramid: Rest → LongRide (Z2 base) → Tempo (Z3 fatigue resistance) → Threshold (Z4 aerobic power) → VO2Max (Z5 aerobic ceiling) → Sprint (Z5+ neuromuscular)
+/**
+ * How to pitch the load: match what this athlete is actually doing and feeling.
+ *
+ * Deliberately NOT framed as progression. Velomate follows the athlete rather than a
+ * training goal — an easier week in response to poor recovery signals is a correct answer,
+ * not a failure to progress. The old "PROGRESSION GOAL … then progress from there" heading
+ * biased the model toward adding load whenever nothing was visibly wrong, which is the
+ * opposite of the product. Shared by both modes, and free mode has no schedule to build
+ * progressive overload across in the first place.
+ */
+const CALIBRATION_GUIDELINES = `CALIBRATION: Pitch every session at what this athlete is currently doing and feeling. Progression is not a goal in itself — following their signals is.
+  Training pyramid — use it to judge where a session sits, NOT as a ladder to climb: Rest → LongRide (Z2 base) → Tempo (Z3 fatigue resistance) → Threshold (Z4 aerobic power) → VO2Max (Z5 aerobic ceiling) → Sprint (Z5+ neuromuscular)
 
-- If the athlete's history already shows regular Sprint/Threshold/VO2Max work: continue at that level — do NOT reset to base.
-  - Rule: Do NOT prescribe high-intensity interval sessions (Tempo, Threshold, VO2Max, Sprint) if the athlete's recent ride history consists exclusively of 'easy' or 'moderate' aerobic rides, unless their specific goals require race preparation.
-  - Only stack VO2Max + Threshold + Sprint in the same week when the athlete is demonstrably managing that load (history shows it, rpe/feeling are fine).
-  - If the athlete is already at a consistently high load with no negative signals, the goal is quality maintenance — not pushing further volume or intensity.
-  - Increase intensity/frequency only when fatigue signals are low AND current load is below the athlete's demonstrated ceiling.
-If execution scores are consistently below 60, prioritise consolidation over progression — the athlete is not absorbing the current load.`;
+- If the athlete's history already shows regular Sprint/Threshold/VO2Max work: keep working at that level — do NOT reset to base.
+  - Rule: Do NOT prescribe high-intensity interval sessions (Tempo, Threshold, VO2Max, Sprint) if the recent history is purely aerobic — meaning no ride shows more than roughly 5 minutes of combined Z4+Z5 time — unless their specific goals require race preparation.
+  - Only stack VO2Max + Threshold + Sprint in the same period when the athlete is demonstrably managing that load (history shows it, rpe/feeling are fine).
+  - If the athlete is already at a consistently high load with no negative signals, the right answer is to hold there. Adding volume or intensity because things are going well is not the goal.
+  - Raise intensity or frequency only when recovery signals are good AND current load sits below what this athlete has already shown they can handle.
+  - When recovery signals say back off, back off — a lighter week than the last one is a correct answer, not a failure. Do not treat reducing load as something to apologise for or recover from quickly.
+If execution scores are consistently below 60, ease the load — the athlete is not absorbing what they are being given.`;
 
 /** The 0-100 execution-quality bands. Identical in both modes so scores stay comparable. */
 const SCORING_RUBRIC = `Score on a 0-100 scale based on zone distribution, duration, rpe, and feeling:
@@ -214,6 +433,19 @@ const SCORING_RUBRIC = `Score on a 0-100 scale based on zone distribution, durat
   60-74  : Partial — significant reduction (e.g. 1-2 fewer intervals, ~30% short)
   40-59  : Poor — major deviations, wrong intensity, substantial shortfall
   0-39   : Mismatch — activity bears little resemblance to the planned workout
+HEART RATE LAGS EFFORT — do not penalise a session for that:
+For work intervals shorter than about 3 minutes, heart rate physically cannot reach the target
+zone for much of the interval. All Sprint work falls in this category, as does the opening minute
+of every VO2Max interval. Zone time therefore UNDERSTATES a correctly executed short-interval
+session. Score those on total ride duration and on how many intervals were completed, and never
+mark a Sprint session down for missing Z5 minutes. Zone time is a trustworthy signal only for
+blocks of 3 minutes or longer — Tempo, Threshold and LongRide.
+
+Worked examples — anchor your scale to these:
+  Planned Threshold 3x8 min Z4; rode 54 min, z4=25, rpe=7, feeling=3      -> 92 (full session, target Z4 time met)
+  Planned Threshold 3x8 min Z4; rode 41 min, z4=14, rpe=9, feeling=2      -> 66 (roughly two intervals of three, and it cost them)
+  Planned VO2Max 4x4 min Z5;    rode 35 min, z1=20 z2=14 z3=1, no Z5      -> 25 (an easy ride, not the prescribed session)
+  Planned Sprint 6x30s Z5;      rode 48 min, z1=30 z2=14 z3=2 z4=2 z5=0  -> 88 (HR cannot reach Z5 in 30s — duration and shape match the session)
 Be honest — do not inflate scores. Reference specific data in the note (1 sentence, e.g. "12 min in Z4 vs target 24 min — significant shortfall").`;
 
 /** Recent rides shaped for the prompt: zone minutes, rpe and feeling where available. */
@@ -275,7 +507,7 @@ const buildPreferenceLines = (freeMode = false): { prefLine: string; goalsBlock:
 
   const rawGoals = getSetting('user_goals') || '';
   const goalsBlock = rawGoals.trim()
-    ? `\nATHLETE GOALS & PREFERENCES:\n${rawGoals.trim()}\nNote: treat the above as secondary context. Reflect it in the plan where appropriate (e.g. event timing, day preferences, duration constraints), but always prioritise objective load data, HR signals, and compliance history over these stated preferences.\n\n`
+    ? `\nATHLETE GOALS & PREFERENCES:\n${rawGoals.trim()}\nNote: treat the above as secondary context. Reflect it ${freeMode ? 'in the session you prescribe' : 'in the plan'} where appropriate (e.g. event timing, ${freeMode ? 'session length' : 'day preferences, duration constraints'}), but always prioritise objective load data, HR signals, and compliance history over these stated preferences.\n\n`
     : '';
 
   return { prefLine, goalsBlock };
@@ -289,6 +521,106 @@ const buildPauseBlock = (pauseContext: PauseContext | undefined, today: string):
   );
   return `TRAINING PAUSE:\nThe athlete paused training from ${pauseContext.pausedSince} to ${today} (${pauseDays} day${pauseDays !== 1 ? 's' : ''})${pauseContext.pauseReason ? ` — reason: ${pauseContext.pauseReason}` : ''}.\n${pauseContext.activitiesCount > 0 ? `They recorded ${pauseContext.activitiesCount} ride(s) during the pause period.` : 'No rides were recorded during the pause period.'}\nConsider the duration, reason, and the athlete's prior training history to judge whether and how much re-adaptation is needed before resuming normal load.\n\n`;
 };
+
+/**
+ * Everything in the plan prompt that never changes: the coaching role, how to read the data,
+ * the workout vocabulary, the scoring rubric, the output schema and the rules.
+ *
+ * It lives in systemInstruction rather than in the user turn for two reasons. Gemini adheres
+ * to instructions placed there more reliably than to the same text buried in a long user
+ * message; and because it is byte-identical on every call, keeping it out of the per-call
+ * text is what makes a shared prefix — and therefore caching — possible at all. The user turn
+ * now carries only this athlete, today.
+ */
+const PLAN_SYSTEM_INSTRUCTION = `You are a professional cycling coach AI specializing in heart-rate based training.
+Analyze the athlete's data and generate an adaptive training plan with exact, personalised workout structures.
+Calibrate training volume and intensity to the athlete's demonstrated capacity from their recent history.
+An athlete who consistently trains at high frequency and intensity has established that as their sustainable baseline — match that load.
+Only reduce volume when recovery signals (rpe ≥ 8, feeling ≤ 2, HR drift upward over successive rides) indicate genuine fatigue accumulation.
+High training volume alone is not a reason to prescribe rest — look at the quality signals.
+
+${ACTIVITY_DATA_NOTES}
+
+${buildCheckinNotes(false)}
+
+WORKOUT TYPE GUIDELINES — you decide the exact structure for each day based on athlete load:
+
+${WORKOUT_TYPE_GUIDELINES}
+
+${CALIBRATION_GUIDELINES}
+
+EXECUTION SCORING — for every entry marked "NEEDS SCORING" in the PREVIOUS PLAN COMPLIANCE block:
+${SCORING_RUBRIC}
+Use your scoring assessment DIRECTLY when deciding load, recovery, and session types for the new plan.
+
+Where to put scores:
+- NEEDS SCORING entries dated before TODAY: add to executionScores[] with date, score, note.
+- Today's entry (weeklyPlan[0]) if its status was 'completed' (shown as NEEDS SCORING): set executionScore + executionNote inside weeklyPlan[0], NOT in executionScores[].
+- Already SCORED entries: output their existing score in executionScores[] unchanged.
+- Planned / skipped / Rest entries: executionScore = null, executionNote = null.
+
+OUTPUT: Respond ONLY with this exact JSON schema, emitting the keys in exactly this order:
+{
+  "executionScores": [
+    {
+      "date": "YYYY-MM-DD",
+      "score": <integer 0-100>,
+      "note": "<1-sentence rationale>"
+    }
+  ],
+  "loadAssessment": {
+    "fatigue": "low|moderate|high",
+    "weeklyLoadTrend": "increasing|stable|decreasing",
+    "insight": "1-2 sentences about current training state and progression direction"
+  },
+  "today": {
+    "type": "Sprint|VO2Max|Threshold|Tempo|LongRide|Rest",
+    "reason": "2-3 sentences referencing specific data (last activity date, HR trend, etc.)",
+    "priority": "high|medium|low"
+  },
+  "weeklyPlan": [
+    {
+      "date": "YYYY-MM-DD",
+      "type": "Sprint|VO2Max|Threshold|Tempo|LongRide|Rest",
+      "reason": "1 sentence",
+      "executionScore": <integer 0-100 or null>,
+      "executionNote": "<1-sentence scoring rationale or null>",
+      "structure": {
+        "totalMinutes": <sum of all durationSec values divided by 60, rounded to integer>,
+        "steps": [
+          { "stepType": "WarmUp|Run|Recovery|Cooldown", "durationSec": <positive integer seconds>, "zone": "z1|z2|z3|z4|z5", "label": "<short label>" }
+        ]
+      }
+    }
+  ],
+  "nextWeekFocus": "1-2 sentences on the DIRECTION the second week (weeklyPlan[7..13]) is heading in — what ties those days together and why. Write it as a direction that will be revised as new rides and feedback arrive, not as a commitment."
+}
+
+THE KEY ORDER IS NOT COSMETIC — assess before you plan:
+- Score the past first (executionScores), because those scores are the evidence.
+- Then write loadAssessment as your actual judgement of the current state, based on that evidence and the TRAINING LOAD figures.
+- Only then plan. today and weeklyPlan must FOLLOW from loadAssessment. Do not write a plan first and justify it afterwards.
+
+STRICT RULES:
+- PLAN STABILITY: If an EXISTING SCHEDULED WORKOUTS block is present in the athlete data, you MUST keep the same workout type for each date UNLESS at least one of these conditions applies:
+    (a) A new execution score below 60 reveals the athlete cannot absorb that intensity
+    (b) A skip or auto-skip has disrupted the recovery balance for that day
+    (c) A recent feeling ≤2 or rpe ≥8 directly contradicts the planned intensity
+    (d) Your loadAssessment differs from the one shown in PREVIOUS ASSESSMENT
+  If none of these apply, output the same type. You may still adjust the workout structure (interval count, duration) based on new data.
+- STRUCTURE WINDOW: only weeklyPlan[0..${STRUCTURED_WINDOW_DAYS - 1}] carry a "structure". weeklyPlan[${STRUCTURED_WINDOW_DAYS}..${PLAN_WINDOW_DAYS - 1}] MUST have "structure": null — the second week is a forward outline, and every one of its days is re-planned (and given its structure then) before it can be ridden. Give those entries date, type, reason and null scores only.
+- For Rest days: set "structure": null
+- For entries whose status is completed, skipped, or auto-skipped: set "structure": null (done — no workout to sync)
+- executionScores[]: include ALL NEEDS SCORING entries dated before TODAY + already-SCORED entries. Empty array if none.
+- weeklyPlan[0].executionScore: integer 0-100 ONLY if today's entry is completed and needs scoring. All others: null.
+- weeklyPlan[0].executionNote: matching 1-sentence string if scored. All others: null.
+- stepType MUST be one of: WarmUp, Run, Recovery, Cooldown
+- zone MUST be one of: z1, z2, z3, z4, z5
+- durationSec MUST be a positive integer (minimum 20 for sprint intervals)
+- weeklyPlan MUST contain exactly ${PLAN_WINDOW_DAYS} entries, starting from the TODAY date given in the athlete data, one per consecutive calendar day
+- nextWeekFocus describes weeklyPlan[7..13] AS A WHOLE (the training theme/rationale) — it is not a day-by-day recap, those already have their own "reason"
+- totalMinutes MUST equal Math.round(sum(durationSec) / 60)
+- COMPACT STRUCTURES: Sprint max 6 interval sets, Threshold max 3 sets, VO2Max max 4 sets. Step labels must be ≤ 4 words. reason fields: 1 short sentence only.`;
 
 const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, activityDays = 21, pinnedTodayType?: string): string => {
   const today     = localDate();
@@ -374,11 +706,11 @@ const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, ac
       lines.unshift(`- ${today} (${todayDow}): ${pinnedTodayType} ← RESCHEDULED BY USER — MANDATORY`);
     }
     if (lines.length > 0) {
-      plannedBlock = `EXISTING SCHEDULED WORKOUTS (keep unless explicitly justified — see rules below):\n${lines.join('\n')}\n\n`;
+      plannedBlock = `EXISTING SCHEDULED WORKOUTS (keep unless explicitly justified — see the PLAN STABILITY rule):\n${lines.join('\n')}\n\n`;
     }
   } else if (pinnedTodayType) {
     const todayDow = new Date(today + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short' });
-    plannedBlock = `EXISTING SCHEDULED WORKOUTS (keep unless explicitly justified — see rules below):\n- ${today} (${todayDow}): ${pinnedTodayType} ← RESCHEDULED BY USER — MANDATORY\n\n`;
+    plannedBlock = `EXISTING SCHEDULED WORKOUTS (keep unless explicitly justified — see the PLAN STABILITY rule):\n- ${today} (${todayDow}): ${pinnedTodayType} ← RESCHEDULED BY USER — MANDATORY\n\n`;
   }
 
   const pinnedTodayBlock = pinnedTodayType
@@ -388,24 +720,18 @@ const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, ac
   const { prefLine, goalsBlock } = buildPreferenceLines();
   const pauseBlock = buildPauseBlock(pauseContext, today);
 
-  return `You are a professional cycling coach AI specializing in heart-rate based training.
-Analyze the athlete's data and generate an adaptive training plan with exact, personalised workout structures.
-Calibrate training volume and intensity to the athlete's demonstrated capacity from their recent history.
-An athlete who consistently trains at high frequency and intensity has established that as their sustainable baseline — match that load.
-Only reduce volume when recovery signals (rpe ≥ 8, feeling ≤ 2, HR drift upward over successive rides) indicate genuine fatigue accumulation.
-High training volume alone is not a reason to prescribe rest — look at the quality signals.
+  // A pinned type is stated twice on purpose — once up front, and once as the last thing the
+  // model reads before answering. It is the only instruction here that overrides the data.
+  const pinnedTail = pinnedTodayType
+    ? `\nREMINDER — PINNED TODAY: today (${today}) MUST be "${pinnedTodayType}" in both today.type and weeklyPlan[0].type. No exceptions — not fatigue, not load assessment.\n`
+    : '';
 
-TODAY: ${today} (${dayOfWeek})
+  return `TODAY: ${today} (${dayOfWeek})
 
 ATHLETE PREFERENCES:
 ${prefLine}${goalsBlock}
 
-${pauseBlock}${prevBlock}${pinnedTodayBlock}${plannedBlock}RECENT ACTIVITIES (last 21 days):
-${JSON.stringify(recentActivities, null, 2)}
-
-${ACTIVITY_DATA_NOTES}
-
-HR PROFILE:
+${pauseBlock}${buildPreviousAssessmentBlock()}${prevBlock}${pinnedTodayBlock}${plannedBlock}HR PROFILE:
 - Max HR: ${profile?.maxHr ?? 'unknown'} bpm | LTHR: ${profile?.lthr ?? 'unknown'} bpm
 - Zones: ${zoneString}
 
@@ -413,83 +739,39 @@ TRAINING ANALYSIS (last 90 days):
 - Total rides: ${analysis?.totalCyclingRides ?? 0} | Peak HR recorded: ${analysis?.maxRecordedHr ?? 0} bpm
 - Average ride duration: ${analysis?.averageRideDurationMinutes ?? 0} min
 
-WORKOUT TYPE GUIDELINES — you decide the exact structure for each day based on athlete load:
-
-${WORKOUT_TYPE_GUIDELINES}
-
-${PROGRESSION_GUIDELINES}
-
-EXECUTION SCORING — for ALL entries marked "NEEDS SCORING" above:
-${SCORING_RUBRIC}
-Use your scoring assessment DIRECTLY when deciding load, recovery, and session types for the new plan.
-
-Where to put scores:
-- NEEDS SCORING entries where date < TODAY: add to executionScores[] with date, score, note.
-- Today's entry (weeklyPlan[0]) if its status was 'completed' (shown as NEEDS SCORING): set executionScore + executionNote inside weeklyPlan[0], NOT in executionScores[].
-- Already SCORED entries: output their existing score in executionScores[] unchanged.
-- Planned / skipped / Rest entries: executionScore = null, executionNote = null.
-
-OUTPUT: Respond ONLY with this exact JSON schema:
-{
-  "today": {
-    "type": "Sprint|VO2Max|Threshold|Tempo|LongRide|Rest",
-    "reason": "2-3 sentences referencing specific data (last activity date, HR trend, etc.)",
-    "priority": "high|medium|low"
-  },
-  "executionScores": [
-    {
-      "date": "YYYY-MM-DD",
-      "score": <integer 0-100>,
-      "note": "<1-sentence rationale>"
-    }
-  ],
-  "weeklyPlan": [
-    {
-      "date": "YYYY-MM-DD",
-      "type": "Sprint|VO2Max|Threshold|Tempo|LongRide|Rest",
-      "reason": "1 sentence",
-      "executionScore": <integer 0-100 or null>,
-      "executionNote": "<1-sentence scoring rationale or null>",
-      "structure": {
-        "totalMinutes": <sum of all durationSec values divided by 60, rounded to integer>,
-        "steps": [
-          { "stepType": "WarmUp|Run|Recovery|Cooldown", "durationSec": <positive integer seconds>, "zone": "z1|z2|z3|z4|z5", "label": "<short label>" }
-        ]
-      }
-    }
-  ],
-  "nextWeekFocus": "1-2 sentences on the training theme of the SECOND week (weeklyPlan[7..13]) — what ties its sessions together and why, e.g. 'Introduce structured Tempo intervals to build fatigue resistance while keeping overall volume low.'",
-  "loadAssessment": {
-    "fatigue": "low|moderate|high",
-    "weeklyLoadTrend": "increasing|stable|decreasing",
-    "insight": "1-2 sentences about current training state and progression direction"
-  }
-}
-
-STRICT RULES:
-- PLAN STABILITY: If EXISTING SCHEDULED WORKOUTS are listed above, you MUST keep the same workout type for each date UNLESS at least one of these conditions applies:
-    (a) A new execution score below 60 reveals the athlete cannot absorb that intensity
-    (b) A skip or auto-skip has disrupted the recovery balance for that day
-    (c) A recent feeling ≤2 or rpe ≥8 directly contradicts the planned intensity
-    (d) The athlete's fatigue assessment has changed from the previous plan
-  If none of these apply, output the same type. You may still adjust the workout structure (interval count, duration) based on new data.
-- For Rest days: set "structure": null
-- For entries whose status is completed, skipped, or auto-skipped: set "structure": null (done — no workout to sync)
-- executionScores[]: include ALL past (date < TODAY) NEEDS SCORING entries + already-SCORED entries. Empty array if none.
-- weeklyPlan[0].executionScore: integer 0-100 ONLY if today's entry is completed and needs scoring. All others: null.
-- weeklyPlan[0].executionNote: matching 1-sentence string if scored. All others: null.
-- stepType MUST be one of: WarmUp, Run, Recovery, Cooldown
-- zone MUST be one of: z1, z2, z3, z4, z5
-- durationSec MUST be a positive integer (minimum 20 for sprint intervals)
-- weeklyPlan MUST contain exactly ${PLAN_WINDOW_DAYS} entries starting from TODAY (${today})
-- nextWeekFocus describes weeklyPlan[7..13] AS A WHOLE (the training theme/rationale) — it is not a day-by-day recap, those already have their own "reason"
-- totalMinutes MUST equal Math.round(sum(durationSec) / 60)
-- COMPACT STRUCTURES: Sprint max 6 interval sets, Threshold max 3 sets, VO2Max max 4 sets. Step labels must be ≤ 4 words. reason fields: 1 short sentence only.${pinnedTodayType ? `\n- PINNED TODAY: A "CRITICAL — USER RESCHEDULED TODAY" block is present above. You MUST output "${pinnedTodayType}" for today.type and weeklyPlan[0].type. No exceptions — not fatigue, not load assessment.` : ''}`;
+${buildCheckinBlock()}${buildTrainingLoadBlock()}RECENT ACTIVITIES (last ${activityDays} days):
+${formatActivityLines(recentActivities)}
+${pinnedTail}`;
 };
 
 // ── Main generation function ──────────────────────────────────────────────────
 
-export const generateRecommendation = async (previousPlan?: PlanEntry[], pauseContext?: PauseContext, pinnedTodayType?: string): Promise<any> => {
+/**
+ * At most one plan generation runs at a time.
+ *
+ * Six paths can start one — manual refresh, skip, reschedule, resume, activity sync and the
+ * hourly auto-check — and most of them fire without awaiting. An ordinary app launch alone
+ * triggers two (the backend's startup auto-check and the dashboard's own Garmin sync), which
+ * means two full Gemini calls that both write recommendation.id=1. A second caller joins the
+ * run already in flight instead of starting its own.
+ */
+let planGenerationInFlight: Promise<any> | null = null;
+
+/** True while a plan or free suggestion is being generated — lets the API tell the UI the truth. */
+export const isGenerationInFlight = (): boolean =>
+  planGenerationInFlight !== null || freeGenerationInFlight !== null;
+
+export const generateRecommendation = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, pinnedTodayType?: string): Promise<any> => {
+  if (planGenerationInFlight) {
+    logger.info('[Gemini] Plan generation already in flight — joining it instead of starting a second');
+    return planGenerationInFlight;
+  }
+  planGenerationInFlight = _generatePlan(previousPlan, pauseContext, pinnedTodayType)
+    .finally(() => { planGenerationInFlight = null; });
+  return planGenerationInFlight;
+};
+
+const _generatePlan = async (previousPlan?: PlanEntry[], pauseContext?: PauseContext, pinnedTodayType?: string): Promise<any> => {
   const key = getGeminiKey();
   if (!key) throw new Error('GEMINI_KEY_NOT_CONFIGURED');
 
@@ -524,7 +806,7 @@ const _attemptGeneration = async (
   logger.info('─'.repeat(72) + '\n');
 
   const model = getGeminiModel();
-  logger.info(`[Gemini] Model: ${model}`);
+  logger.info(`[Gemini] Model: ${model} | system instruction: ${PLAN_SYSTEM_INSTRUCTION.length} chars (static, not repeated here)`);
 
   // Retry up to 3 times on 429 (rate limit) with exponential backoff.
   // Quota exhaustion (daily limit) also returns 429 but with a longer Retry-After —
@@ -536,10 +818,12 @@ const _attemptGeneration = async (
       response = await axios.post(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
         {
+          systemInstruction: { parts: [{ text: PLAN_SYSTEM_INSTRUCTION }] },
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
             responseMimeType: 'application/json',
-            temperature: 0.4,
+            // Plan stability is an explicit goal of the prompt; 0.4 sampled against it.
+            temperature: 0.2,
             maxOutputTokens: 16384
           }
         }
@@ -593,11 +877,15 @@ const _attemptGeneration = async (
     throw new Error(`weeklyPlan must be an array of ${PLAN_WINDOW_DAYS} entries, got ${parsed?.weeklyPlan?.length}`);
   }
 
-  // Build a lookup of the previous plan for status + score preservation
+  // Status + score preservation reads the plan as it stands RIGHT NOW, not the snapshot this
+  // call opened with. The Gemini round trip takes many seconds, and a skip, a reschedule or a
+  // completed-ride classification committed in the meantime would otherwise be silently
+  // overwritten by the stale snapshot. `previousPlan` remains the prompt's view of the world;
+  // the database is the authority on what actually happened.
+  const livePlan     = getStoredRecommendation()?.weeklyPlan as PlanEntry[] | undefined;
+  const statusSource = livePlan ?? previousPlan ?? [];
   const prevEntryMap = new Map<string, PlanEntry>();
-  if (previousPlan) {
-    previousPlan.forEach(e => prevEntryMap.set(e.date, e));
-  }
+  statusSource.forEach(e => prevEntryMap.set(e.date, e));
 
   // Merge into the new plan window:
   //  - Preserve non-planned statuses (completed/skipped/auto-skipped)
@@ -657,7 +945,7 @@ const _attemptGeneration = async (
   histCutoff.setDate(histCutoff.getDate() - 14);
   const histCutoffStr = localDate(histCutoff);
 
-  const pastEntries: PlanEntry[] = (previousPlan || [])
+  const pastEntries: PlanEntry[] = statusSource
     .filter(e => !newPlanDates.has(e.date) && e.date >= histCutoffStr)
     .map(e => {
       const s = scoredMap.get(e.date);
@@ -792,6 +1080,7 @@ const buildFreeHistoryBlock = (
     }
     if (s.status === 'dismissed')  return `- [id ${s.id}] ${suggested}${synced} → NOT RIDDEN (athlete moved on without doing it)`;
     if (s.status === 'superseded') return `- [id ${s.id}] ${suggested}${synced} → REPLACED (athlete asked for a different suggestion)`;
+    if (s.status === 'expired')    return `- [id ${s.id}] ${suggested}${synced} → SUPERSEDED automatically (a newer read of the same data replaced it — the athlete never rejected it, so draw no compliance conclusion from this line)`;
     return `- [id ${s.id}] ${suggested}${synced} → ${s.status.toUpperCase()}`;
   };
 
@@ -807,6 +1096,86 @@ const buildFreeHistoryBlock = (
   if (lines.length === 0) return '';
   return `PREVIOUS SUGGESTIONS (most recent first — this is the athlete's compliance history in free mode):\n${lines.join('\n')}\n\n`;
 };
+
+/**
+ * The free-mode counterpart of PLAN_SYSTEM_INSTRUCTION: same coaching voice, same workout
+ * vocabulary, same scoring scale — a different job (one session, no calendar) and a
+ * different schema. Static for the same reason: adherence and a cacheable prefix.
+ */
+const FREE_SYSTEM_INSTRUCTION = `You are a professional cycling coach AI specializing in heart-rate based training.
+This athlete trains in FREE TRAINING MODE: they have no fixed weekly schedule and ride when it suits them.
+Your job is to prescribe exactly ONE workout — the single best next session for them right now — not a multi-day plan.
+Calibrate training volume and intensity to the athlete's demonstrated capacity from their recent history.
+An athlete who consistently trains at high frequency and intensity has established that as their sustainable baseline — match that load.
+Only reduce volume when recovery signals (rpe ≥ 8, feeling ≤ 2, HR drift upward over successive rides) indicate genuine fatigue accumulation.
+High training volume alone is not a reason to prescribe rest — look at the quality signals.
+
+IMPORTANT — no fixed date: the athlete decides when to ride this session. Do NOT assume it happens today.
+Because you cannot pick the day for them, use coachNote to tell them WHEN this session makes sense
+(how recovered they should be, how long after their last hard effort, what to do instead if they feel worse than expected).
+
+${ACTIVITY_DATA_NOTES}
+
+${buildCheckinNotes(true)}
+
+WORKOUT TYPE GUIDELINES — you decide the exact structure based on athlete load:
+
+${WORKOUT_TYPE_GUIDELINES}
+
+${CALIBRATION_GUIDELINES}
+
+EXECUTION SCORING — for every past suggestion marked "NEEDS SCORING" in PREVIOUS SUGGESTIONS:
+${SCORING_RUBRIC}
+Use your scoring assessment DIRECTLY when deciding the type and load of the next suggestion.
+A suggestion marked NOT RIDDEN or REPLACED carries no score, and one marked SUPERSEDED automatically says nothing about the athlete at all — but repeated non-compliance with a given
+workout type is a signal it does not fit this athlete right now, so prefer something they will actually do.
+
+OUTPUT: Respond ONLY with this exact JSON schema, emitting the keys in exactly this order:
+{
+  "executionScores": [
+    {
+      "suggestionId": <integer id from the PREVIOUS SUGGESTIONS list>,
+      "score": <integer 0-100>,
+      "note": "<1-sentence rationale>"
+    }
+  ],
+  "loadAssessment": {
+    "fatigue": "low|moderate|high",
+    "weeklyLoadTrend": "increasing|stable|decreasing",
+    "insight": "1-2 sentences about current training state and progression direction"
+  },
+  "suggestion": {
+    "type": "Sprint|VO2Max|Threshold|Tempo|LongRide",
+    "reason": "2-3 sentences referencing specific data (last activity date, HR trend, recent scores)",
+    "priority": "high|medium|low",
+    "coachNote": "1-2 sentences on WHEN to ride this and how to adjust if recovery is worse than expected",
+    "structure": {
+      "totalMinutes": <sum of all durationSec values divided by 60, rounded to integer>,
+      "steps": [
+        { "stepType": "WarmUp|Run|Recovery|Cooldown", "durationSec": <positive integer seconds>, "zone": "z1|z2|z3|z4|z5", "label": "<short label>" }
+      ]
+    }
+  }
+}
+
+THE KEY ORDER IS NOT COSMETIC — assess before you prescribe:
+- Score the past first (executionScores), because those scores are the evidence.
+- Then write loadAssessment as your actual judgement of the current state, based on that evidence and the TRAINING LOAD figures.
+- Only then choose the session. suggestion must FOLLOW from loadAssessment, not be justified by it after the fact.
+
+STRICT RULES:
+- Output exactly ONE suggestion — never an array of days, never a weekly plan.
+- executionScores[]: include ONLY entries marked NEEDS SCORING in PREVIOUS SUGGESTIONS, keyed by their [id N]. Empty array if none.
+- Never re-score a suggestion already shown as SCORED — leave it out entirely.
+- NEVER output "Rest". There is no calendar here, so a dateless rest suggestion is something the athlete cannot ride, cannot sync and can never complete — it would sit in the one slot this mode has until it expires.
+- When the honest answer is that they need recovery, still name the session they should come back to: pick the gentlest option that fits, set "priority" to "low", and use coachNote to say plainly that they should NOT ride it yet and what has to be true before they do (symptoms gone, check-in back to normal, a given number of easy days). The reason field explains why you are holding them back.
+- "structure" MUST always be present, with at least one step.
+- stepType MUST be one of: WarmUp, Run, Recovery, Cooldown
+- zone MUST be one of: z1, z2, z3, z4, z5
+- durationSec MUST be a positive integer (minimum 20 for sprint intervals)
+- totalMinutes MUST equal Math.round(sum(durationSec) / 60)
+- COMPACT STRUCTURES: Sprint max 6 interval sets, Threshold max 3 sets, VO2Max max 4 sets. Step labels must be ≤ 4 words.
+- Do NOT reference a specific weekday or date inside reason/coachNote — the athlete picks the day.`;
 
 const buildFreePrompt = (
   history: FreeSuggestion[],
@@ -826,29 +1195,12 @@ const buildFreePrompt = (
   const pauseBlock   = buildPauseBlock(pauseContext, today);
   const historyBlock = buildFreeHistoryBlock(history, current);
 
-  return `You are a professional cycling coach AI specializing in heart-rate based training.
-This athlete trains in FREE TRAINING MODE: they have no fixed weekly schedule and ride when it suits them.
-Your job is to prescribe exactly ONE workout — the single best next session for them right now — not a multi-day plan.
-Calibrate training volume and intensity to the athlete's demonstrated capacity from their recent history.
-An athlete who consistently trains at high frequency and intensity has established that as their sustainable baseline — match that load.
-Only reduce volume when recovery signals (rpe ≥ 8, feeling ≤ 2, HR drift upward over successive rides) indicate genuine fatigue accumulation.
-High training volume alone is not a reason to prescribe rest — look at the quality signals.
-
-IMPORTANT — no fixed date: the athlete decides when to ride this session. Do NOT assume it happens today.
-Because you cannot pick the day for them, use coachNote to tell them WHEN this session makes sense
-(how recovered they should be, how long after their last hard effort, what to do instead if they feel worse than expected).
-
-TODAY: ${today} (${dayOfWeek}) — use this only to judge how recent their last rides are.
+  return `TODAY: ${today} (${dayOfWeek}) — use this only to judge how recent their last rides are.
 
 ATHLETE PREFERENCES:
 ${prefLine}${goalsBlock}
 
-${pauseBlock}${historyBlock}RECENT ACTIVITIES (last ${activityDays} days):
-${JSON.stringify(recentActivities, null, 2)}
-
-${ACTIVITY_DATA_NOTES}
-
-HR PROFILE:
+${pauseBlock}${historyBlock}HR PROFILE:
 - Max HR: ${profile?.maxHr ?? 'unknown'} bpm | LTHR: ${profile?.lthr ?? 'unknown'} bpm
 - Zones: ${zoneString}
 
@@ -856,59 +1208,16 @@ TRAINING ANALYSIS (last 90 days):
 - Total rides: ${analysis?.totalCyclingRides ?? 0} | Peak HR recorded: ${analysis?.maxRecordedHr ?? 0} bpm
 - Average ride duration: ${analysis?.averageRideDurationMinutes ?? 0} min
 
-WORKOUT TYPE GUIDELINES — you decide the exact structure based on athlete load:
-
-${WORKOUT_TYPE_GUIDELINES}
-
-${PROGRESSION_GUIDELINES}
-
-EXECUTION SCORING — for every past suggestion marked "NEEDS SCORING" above:
-${SCORING_RUBRIC}
-Use your scoring assessment DIRECTLY when deciding the type and load of the next suggestion.
-A suggestion marked NOT RIDDEN or REPLACED carries no score — but repeated non-compliance with a given
-workout type is a signal it does not fit this athlete right now, so prefer something they will actually do.
-
-OUTPUT: Respond ONLY with this exact JSON schema:
-{
-  "executionScores": [
-    {
-      "suggestionId": <integer id from the PREVIOUS SUGGESTIONS list>,
-      "score": <integer 0-100>,
-      "note": "<1-sentence rationale>"
-    }
-  ],
-  "suggestion": {
-    "type": "Sprint|VO2Max|Threshold|Tempo|LongRide|Rest",
-    "reason": "2-3 sentences referencing specific data (last activity date, HR trend, recent scores)",
-    "priority": "high|medium|low",
-    "coachNote": "1-2 sentences on WHEN to ride this and how to adjust if recovery is worse than expected",
-    "structure": {
-      "totalMinutes": <sum of all durationSec values divided by 60, rounded to integer>,
-      "steps": [
-        { "stepType": "WarmUp|Run|Recovery|Cooldown", "durationSec": <positive integer seconds>, "zone": "z1|z2|z3|z4|z5", "label": "<short label>" }
-      ]
-    }
-  },
-  "loadAssessment": {
-    "fatigue": "low|moderate|high",
-    "weeklyLoadTrend": "increasing|stable|decreasing",
-    "insight": "1-2 sentences about current training state and progression direction"
-  }
-}
-
-STRICT RULES:
-- Output exactly ONE suggestion — never an array of days, never a weekly plan.
-- executionScores[]: include ONLY entries marked NEEDS SCORING above, keyed by their [id N]. Empty array if none.
-- Never re-score a suggestion already shown as SCORED — leave it out entirely.
-- If the honest answer is that the athlete needs recovery, suggest "Rest" with "structure": null and explain why in reason.
-- For every other type, "structure" MUST be present with at least one step.
-- stepType MUST be one of: WarmUp, Run, Recovery, Cooldown
-- zone MUST be one of: z1, z2, z3, z4, z5
-- durationSec MUST be a positive integer (minimum 20 for sprint intervals)
-- totalMinutes MUST equal Math.round(sum(durationSec) / 60)
-- COMPACT STRUCTURES: Sprint max 6 interval sets, Threshold max 3 sets, VO2Max max 4 sets. Step labels must be ≤ 4 words.
-- Do NOT reference a specific weekday or date inside reason/coachNote — the athlete picks the day.`;
+${buildCheckinBlock()}${buildTrainingLoadBlock()}RECENT ACTIVITIES (last ${activityDays} days):
+${formatActivityLines(recentActivities)}`;
 };
+
+/**
+ * Free mode's counterpart to planGenerationInFlight. Two concurrent runs would each insert a
+ * row and each retire the other's as superseded, burning two Gemini calls to end up with one
+ * suggestion and a confusing history.
+ */
+let freeGenerationInFlight: Promise<FreeSuggestion | null> | null = null;
 
 /**
  * Generate the next free-mode suggestion and store it.
@@ -916,7 +1225,22 @@ STRICT RULES:
  * (which retires the previous current suggestion — see insertFreeSuggestion).
  * Always returns what was actually saved.
  */
-export const generateFreeSuggestion = async (pauseContext?: PauseContext): Promise<FreeSuggestion | null> => {
+/**
+ * @param athleteRequested true when the athlete asked for a different suggestion (refresh),
+ *   false for an automatic regeneration. Decides how the outgoing suggestion is recorded,
+ *   and therefore whether the AI reads it as a rejection.
+ */
+export const generateFreeSuggestion = (pauseContext?: PauseContext, athleteRequested = false): Promise<FreeSuggestion | null> => {
+  if (freeGenerationInFlight) {
+    logger.info('[Gemini] Free suggestion generation already in flight — joining it instead of starting a second');
+    return freeGenerationInFlight;
+  }
+  freeGenerationInFlight = _generateFree(pauseContext, athleteRequested)
+    .finally(() => { freeGenerationInFlight = null; });
+  return freeGenerationInFlight;
+};
+
+const _generateFree = async (pauseContext?: PauseContext, athleteRequested = false): Promise<FreeSuggestion | null> => {
   const key = getGeminiKey();
   if (!key) throw new Error('GEMINI_KEY_NOT_CONFIGURED');
 
@@ -925,7 +1249,7 @@ export const generateFreeSuggestion = async (pauseContext?: PauseContext): Promi
   const ACTIVITY_WINDOWS = [21, 14, 10];
 
   for (const activityDays of ACTIVITY_WINDOWS) {
-    const result = await _attemptFreeGeneration(pauseContext, activityDays);
+    const result = await _attemptFreeGeneration(pauseContext, activityDays, athleteRequested);
     if (result.truncated) {
       logger.warn(`[Gemini] Free suggestion truncated (MAX_TOKENS) with ${activityDays}-day window — retrying with fewer activities`);
       continue;
@@ -937,7 +1261,8 @@ export const generateFreeSuggestion = async (pauseContext?: PauseContext): Promi
 
 const _attemptFreeGeneration = async (
   pauseContext: PauseContext | undefined,
-  activityDays: number
+  activityDays: number,
+  athleteRequested = false
 ): Promise<{ truncated: true } | { truncated: false; value: FreeSuggestion | null }> => {
   const key     = getGeminiKey()!;
   const current = getCurrentFreeSuggestion();
@@ -951,7 +1276,7 @@ const _attemptFreeGeneration = async (
   logger.info('─'.repeat(72) + '\n');
 
   const model = getGeminiModel();
-  logger.info(`[Gemini] Model: ${model} (free training mode)`);
+  logger.info(`[Gemini] Model: ${model} (free training mode) | system instruction: ${FREE_SYSTEM_INSTRUCTION.length} chars (static, not repeated here)`);
 
   const MAX_RATE_RETRIES = 3;
   let response: any;
@@ -960,10 +1285,12 @@ const _attemptFreeGeneration = async (
       response = await axios.post(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
         {
+          systemInstruction: { parts: [{ text: FREE_SYSTEM_INSTRUCTION }] },
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
             responseMimeType: 'application/json',
-            temperature: 0.4,
+            // Plan stability is an explicit goal of the prompt; 0.4 sampled against it.
+            temperature: 0.2,
             maxOutputTokens: 16384
           }
         }
@@ -1002,10 +1329,12 @@ const _attemptFreeGeneration = async (
     throw new Error(`Gemini returned invalid JSON (${rawText.length} chars, finishReason: ${finishReason}):\n${rawText}`);
   }
 
-  const validTypes = ['Sprint', 'VO2Max', 'Threshold', 'Tempo', 'LongRide', 'Rest'];
+  // Rest is deliberately absent: free mode has no day to rest on, and a Rest suggestion
+  // can never be synced, ridden or scored. Recovery advice belongs in coachNote instead.
+  const validTypes = ['Sprint', 'VO2Max', 'Threshold', 'Tempo', 'LongRide'];
   const s = parsed?.suggestion;
   if (!validTypes.includes(s?.type)) {
-    throw new Error(`Invalid suggestion.type: ${s?.type}`);
+    throw new Error(`Invalid suggestion.type: ${s?.type}${s?.type === 'Rest' ? ' — free mode has no Rest; recovery goes in coachNote' : ''}`);
   }
 
   // ── Apply execution scores to past suggestions ────────────────────────────
@@ -1032,7 +1361,7 @@ const _attemptFreeGeneration = async (
       }
     : null;
 
-  if (s.type !== 'Rest' && !structure) {
+  if (!structure) {
     throw new Error(`Suggestion type ${s.type} came back without a workout structure`);
   }
 
@@ -1043,7 +1372,7 @@ const _attemptFreeGeneration = async (
     coachNote:      typeof s.coachNote === 'string' ? s.coachNote : null,
     structure,
     loadAssessment: parsed.loadAssessment ?? null
-  });
+  }, athleteRequested ? 'superseded' : 'expired');
 
   logger.info('[Gemini] ── FREE SUGGESTION PARSED ──────────────────────────────────');
   logger.info(`  Suggestion #${newId}: ${s.type} (priority: ${s.priority})`);

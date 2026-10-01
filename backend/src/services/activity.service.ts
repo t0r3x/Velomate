@@ -156,6 +156,40 @@ export const assessProgression = (activities: any[], realLthr?: number | null) =
  */
 const FEEDBACK_FETCH_LIMIT = 5;
 
+/**
+ * Write an athlete-entered RPE / feeling back to Garmin.
+ *
+ * These fields normally come FROM the watch, and fetchAndStoreRecentFeedback() reads them
+ * back from there — so storing a value only in Velomate would put the two out of step the
+ * moment the athlete opens Garmin Connect. Garmin stays the single source of truth: the
+ * caller writes here first and only persists locally once this succeeded.
+ *
+ * Garmin accepts a partial activity PUT (the same mechanism the library uses to rename an
+ * activity), so only the two summary fields are sent — nothing else about the ride is touched.
+ * Values are on Garmin's internal 0-100 scale; see fromRpe()/fromFeeling().
+ */
+export const pushActivityFeedback = async (
+  activityId: string,
+  rawRpe: number | null,
+  rawFeel: number | null
+): Promise<void> => {
+  const isAuthenticated = await trySessionAuth();
+  if (!isAuthenticated) throw new Error('Not authenticated with Garmin Connect.');
+
+  const summaryDTO: Record<string, number> = {};
+  if (rawRpe  != null) summaryDTO.directWorkoutRpe  = rawRpe;
+  if (rawFeel != null) summaryDTO.directWorkoutFeel = rawFeel;
+  if (Object.keys(summaryDTO).length === 0) throw new Error('No feedback values to write.');
+
+  const client = getGarminClient();
+  const url    = `https://connectapi.garmin.com/activity-service/activity/${activityId}`;
+  const body   = { activityId: Number(activityId), summaryDTO };
+
+  logger.info(`[Feedback] PUT ${url} — ${JSON.stringify(body)}`);
+  await client.put(url, body);
+  logger.info(`[Feedback] Garmin accepted feedback for activity ${activityId}`);
+};
+
 export const fetchAndStoreRecentFeedback = async (storedActivities: any[]): Promise<void> => {
   const missing = storedActivities
     .filter(a => a.perceivedExertion == null)

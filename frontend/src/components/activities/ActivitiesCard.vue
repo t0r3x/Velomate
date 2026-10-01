@@ -26,6 +26,7 @@
             :key="act.activityId"
             :activity="act"
             :planEntry="scoreByDate.get(act.startTime?.slice(0, 10) ?? '') ?? null"
+            @rated="handleRated"
           />
         </ul>
       </div>
@@ -54,6 +55,20 @@ const { show }           = useToast()
 const { timeAgo }        = useTimeAgo()
 
 const syncing = ref(false)
+
+/**
+ * A rating is the athlete telling the app how the ride actually felt, so it feeds the same
+ * re-evaluation a newly completed ride does. Reuses the sync path's polling so the updated
+ * plan arrives without a reload.
+ */
+function handleRated(regenerating: boolean) {
+  if (!regenerating) return
+  if (settingsStore.freeTrainingMode) {
+    freeTrainingStore.pollForUpdate(freeTrainingStore.suggestion?.generatedAt, 20, true)
+  } else {
+    recommendationStore.pollForUpdate(recommendationStore.recommendation?.generatedAt, 20, true)
+  }
+}
 
 const lastSyncedLabel = computed(() => {
   const updatedAt = activitiesStore.analysis?.updatedAt
@@ -106,8 +121,11 @@ async function handleSync() {
       }
     }
     const total = activitiesStore.activities.length
-    show('success', 'Synced from Garmin',
-      `${newCount} new ${newCount === 1 ? 'ride' : 'rides'} added — ${total} total stored.`)
+    // "0 new rides added" is the common case and reads like a failure — name it plainly.
+    const added = newCount === 0
+      ? 'No new rides'
+      : `${newCount} new ${newCount === 1 ? 'ride' : 'rides'} added`
+    show('success', 'Synced from Garmin', `${added} — ${total} total stored.`)
   } catch {
     show('error', 'Refresh Failed', 'Could not reach the backend.')
   } finally {

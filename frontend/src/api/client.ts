@@ -3,6 +3,9 @@
  * All calls use relative URLs so the app works on any hostname/port.
  */
 import type {
+  Activity,
+  DailyCheckin,
+  ReplacedSyncedWorkout,
   UserHRProfile,
   FreeTraining,
   Recommendation,
@@ -73,6 +76,35 @@ export const getDashboard = () =>
 
 export const postActivitiesRefresh = () =>
   request<ActivitiesRefreshResponse>('/api/activities/refresh', { method: 'POST' })
+
+/** Rate a ride. Written to Garmin first; a rejection there means nothing was saved. */
+export const postActivityFeedback = (
+  activityId: string,
+  feedback: { rpe?: number | null; feeling?: number | null }
+) =>
+  request<{ success: boolean; activities: Activity[]; regenerating: boolean; replacedSyncedWorkout: ReplacedSyncedWorkout | null }>(
+    `/api/activities/${activityId}/feedback`,
+    { method: 'POST', body: JSON.stringify(feedback) }
+  )
+
+// ── Daily check-in ────────────────────────────────────────────────────────────
+
+export const getCheckin = () =>
+  request<{ today: DailyCheckin | null; history: DailyCheckin[] }>('/api/checkin')
+
+/** Record (or correct) today's answer. `regenerating` says whether the plan is adapting to it. */
+export const postCheckin = (feeling: number, note?: string) =>
+  request<{ saved: boolean; today: DailyCheckin; history: DailyCheckin[]; regenerating: boolean; replacedSyncedWorkout: ReplacedSyncedWorkout | null }>(
+    '/api/checkin',
+    { method: 'POST', body: JSON.stringify({ feeling, note }) }
+  )
+
+/** Clear today's rating so the next generation runs as if it was never entered. */
+export const deleteCheckin = () =>
+  request<{ cleared: boolean; today: null; history: DailyCheckin[]; regenerating: boolean; replacedSyncedWorkout: ReplacedSyncedWorkout | null }>(
+    '/api/checkin',
+    { method: 'DELETE' }
+  )
 
 // ── Profile ───────────────────────────────────────────────────────────────────
 

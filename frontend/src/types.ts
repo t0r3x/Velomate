@@ -83,6 +83,24 @@ export interface Recommendation {
 
 // ── Activity types ────────────────────────────────────────────────────────────
 
+/**
+ * Reported when reacting to new athlete input replaced a free-mode suggestion that was
+ * already on the watch. The Garmin workout stays on their calendar, so only they can
+ * clean it up — the UI has to say so.
+ */
+export interface ReplacedSyncedWorkout {
+  type: string
+  date: string
+}
+
+/** How the athlete said they felt on a given day — recorded without needing a ride. */
+export interface DailyCheckin {
+  date:      string
+  feeling:   number   // 1 = exhausted … 5 = strong
+  note:      string | null
+  updatedAt: string
+}
+
 export interface Activity {
   activityId: string
   name: string

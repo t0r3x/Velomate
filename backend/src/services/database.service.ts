@@ -123,6 +123,17 @@ db.exec(`
     generatedAt      TEXT
   );
 
+  -- How the athlete feels on a given day, said in their own words rather than inferred
+  -- from a ride. Date is the primary key: one standing answer per day, which re-submitting
+  -- updates — a check-in is a present-tense statement and they are allowed to change it.
+  CREATE TABLE IF NOT EXISTS daily_checkin (
+    date      TEXT    PRIMARY KEY,
+    feeling   INTEGER NOT NULL,
+    note      TEXT,
+    createdAt TEXT,
+    updatedAt TEXT
+  );
+
   CREATE TABLE IF NOT EXISTS free_suggestion (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     workoutType         TEXT,
@@ -449,6 +460,54 @@ export const swapPlanEntryDates = (date1: string, date2: string): boolean => {
   return true;
 };
 
+// ── Daily check-ins ───────────────────────────────────────────────────────────
+// The one signal that does not require riding. Everything else Velomate knows about an
+// athlete's state is attached to an activity, which leaves every rest day — and every bad
+// night before one — completely silent.
+
+export interface DailyCheckin {
+  date:      string;   // YYYY-MM-DD, local
+  feeling:   number;   // 1 = exhausted … 5 = strong (same scale as post-ride feeling)
+  note:      string | null;
+  updatedAt: string;
+}
+
+/** Record (or correct) how the athlete feels on a given day. */
+export const upsertCheckin = (date: string, feeling: number, note: string | null): void => {
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO daily_checkin (date, feeling, note, createdAt, updatedAt)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(date) DO UPDATE SET
+      feeling   = excluded.feeling,
+      note      = excluded.note,
+      updatedAt = excluded.updatedAt
+  `).run(date, feeling, note, now, now);
+};
+
+export const getCheckin = (date: string): DailyCheckin | null => {
+  const row = db.prepare('SELECT * FROM daily_checkin WHERE date = ?').get(date) as any;
+  if (!row) return null;
+  return { date: row.date, feeling: row.feeling, note: row.note ?? null, updatedAt: row.updatedAt };
+};
+
+/**
+ * Remove a day's check-in entirely, putting that day back to "never answered".
+ * Distinct from setting it to 3/Normal: a cleared day carries no information at all, which
+ * is exactly what CHECKIN_NOTES tells the model to infer nothing from.
+ * Returns whether a row was actually removed.
+ */
+export const deleteCheckin = (date: string): boolean => {
+  const info = db.prepare('DELETE FROM daily_checkin WHERE date = ?').run(date);
+  return info.changes > 0;
+};
+
+/** Most recent check-ins, newest first. */
+export const getRecentCheckins = (limit = 10): DailyCheckin[] => {
+  const rows = db.prepare('SELECT * FROM daily_checkin ORDER BY date DESC LIMIT ?').all(limit) as any[];
+  return rows.map(r => ({ date: r.date, feeling: r.feeling, note: r.note ?? null, updatedAt: r.updatedAt }));
+};
+
 // ── Free training suggestions ─────────────────────────────────────────────────
 // Free training mode replaces the fixed 14-day plan with a single, dateless "next
 // workout" suggestion. Suggestions live in their OWN table rather than in the
@@ -460,10 +519,14 @@ export const swapPlanEntryDates = (date1: string, date2: string): boolean => {
 //   synced     → uploaded + scheduled to Garmin on the date the button was pressed
 //   completed  → a ride was matched to it (scored by the AI on the next generation)
 //   dismissed  → user explicitly asked for a different suggestion
-//   superseded → replaced by a newer suggestion without ever being synced or dismissed
+//   superseded → the athlete asked for a different one (refresh) before syncing it
+//   expired    → replaced by an automatic regeneration (staleness, a new ride, a check-in).
+//                NOT a rejection — the athlete never saw a decision to make. Keeping this
+//                apart from superseded matters because the prompt reads non-compliance as a
+//                signal to stop offering that workout type.
 
 export type FreeSuggestionStatus =
-  | 'open' | 'synced' | 'completed' | 'dismissed' | 'superseded';
+  | 'open' | 'synced' | 'completed' | 'dismissed' | 'superseded' | 'expired';
 
 export interface FreeSuggestion {
   id: number;
@@ -528,10 +591,14 @@ export const getFreeSuggestionHistory = (limit = 10): FreeSuggestion[] => {
 };
 
 /**
- * Store a freshly generated suggestion. Any still-current suggestion is retired first:
- * a never-synced one is 'superseded' (it was only ever a proposal), while a synced one
- * that was never matched to a ride becomes 'dismissed' — the athlete had it on their
- * watch and moved on, which is the free-mode equivalent of an auto-skip.
+ * Store a freshly generated suggestion, retiring any still-current one first.
+ *
+ * A synced suggestion that was never ridden becomes 'dismissed' — it sat on the athlete's
+ * watch and they moved on, which is the free-mode equivalent of an auto-skip. An unsynced
+ * one becomes 'superseded' when the athlete asked for something else, and 'expired' when
+ * the app regenerated by itself. That distinction is not cosmetic: the prompt treats
+ * repeated rejection of a workout type as a reason to stop offering it, so recording an
+ * automatic refresh as a rejection teaches the AI something that never happened.
  */
 export const insertFreeSuggestion = (s: {
   workoutType: string;
@@ -540,13 +607,13 @@ export const insertFreeSuggestion = (s: {
   coachNote: string | null;
   structure: WorkoutStructure | null;
   loadAssessment: any;
-}): number => {
+}, retireUnsyncedAs: 'superseded' | 'expired' = 'expired'): number => {
   const insert = db.transaction(() => {
     db.prepare(
       `UPDATE free_suggestion
-          SET status = CASE WHEN status = 'synced' THEN 'dismissed' ELSE 'superseded' END
+          SET status = CASE WHEN status = 'synced' THEN 'dismissed' ELSE ? END
         WHERE status IN ('open', 'synced')`
-    ).run();
+    ).run(retireUnsyncedAs);
     const info = db.prepare(`
       INSERT INTO free_suggestion
         (workoutType, reason, priority, coachNote, structure, loadAssessment, status, generatedAt)

@@ -7,11 +7,16 @@ import { getGarminClient, trySessionAuth, invalidateAuthCache } from './services
 import { GarminSSOClient } from './services/sso.service';
 import { finalizeLogin } from './services/garmin.service';
 import { loadProfile, saveProfile, calculateDefaultZones } from './services/profile.service';
-import { fetchCyclingActivities, assessProgression, fetchAndStoreRecentFeedback } from './services/activity.service';
+import { fetchCyclingActivities, assessProgression, fetchAndStoreRecentFeedback, pushActivityFeedback } from './services/activity.service';
 import { syncAndScheduleWorkouts, syncFreeWorkout } from './services/workout.service';
 import {
   upsertActivities,
   getStoredActivities,
+  updateActivityFeedback,
+  upsertCheckin,
+  getCheckin,
+  deleteCheckin,
+  getRecentCheckins,
   upsertAnalysis,
   getStoredAnalysis,
   upsertProfileDB,
@@ -38,16 +43,28 @@ import {
   isValidModelId,
   generateFreeSuggestion,
   isFreeTrainingMode,
-  findRideForFreeSuggestion
+  findRideForFreeSuggestion,
+  isGenerationInFlight
 } from './services/gemini.service';
 import { UserHRProfile } from './types';
-import { localDate, APP_NAME } from './utils';
+import { localDate, APP_NAME, fromRpe, fromFeeling } from './utils';
 import logger from './logger';
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 2012;
+const PORT = Number(process.env.PORT) || 2012;
+
+/**
+ * Network interface to listen on.
+ *
+ * Loopback by default: no API route is authenticated, and Electron only ever talks to
+ * 127.0.0.1 (see electron-main.js), so a 0.0.0.0 bind buys nothing and lets anyone on the
+ * same network read the athlete's ride history, dump the debug endpoints, overwrite the AI
+ * key or push workouts to their Garmin account. Deployments that genuinely need remote
+ * access — Docker port mapping, a Pi on the LAN — opt in with BIND_HOST=0.0.0.0.
+ */
+const BIND_HOST = process.env.BIND_HOST || '127.0.0.1';
 
 app.use(cors());
 app.use(express.json());
@@ -392,9 +409,13 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
     // Same trick for free mode: the sync calls settleFreeSuggestion() internally, which
     // flips a synced suggestion to 'completed' and thus out of getCurrentFreeSuggestion().
     const preSyncFreeId = getCurrentFreeSuggestion()?.id ?? null;
+    // Row count before and after is the only honest source for "how many new rides" — the
+    // upsert overwrites existing rows silently, so the Garmin payload size says nothing.
+    const preSyncActivityCount = getStoredActivities().length;
 
     // syncActivitiesFromGarmin handles fetch → upsert → analysis → classify
     await syncActivitiesFromGarmin();
+    const newCount = Math.max(0, getStoredActivities().length - preSyncActivityCount);
 
     // Non-blocking: trigger AI regen if any previously-planned dates are now 'completed'
     // (gated by 'instant_score_on_new_activity', default on)
@@ -439,6 +460,7 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
       activities:        getStoredActivities(),
       analysis:          getStoredAnalysis(),
       currentProfile:    profile,
+      newCount,
       planRegenTriggered,
     });
   } catch (error: any) {
@@ -448,6 +470,177 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
       details: error.message
     });
   }
+});
+
+/**
+ * Re-evaluate the plan (or free suggestion) because the athlete told us something new
+ * about their own state — a ride rating, or a daily check-in.
+ *
+ * Non-blocking: the caller has already committed what the athlete said, and the UI polls
+ * for the result. Reacting to this is the point of the app, so the only reasons not to are
+ * no API key, paused training, or the athlete opting out to save calls.
+ *
+ * In free mode this can displace a suggestion the athlete has already pushed to their
+ * watch. The hourly auto-check refuses to do that on staleness alone, but reacting to how
+ * someone actually feels is the point of the app, so here it goes ahead — and reports what
+ * it displaced, because the Garmin workout stays on their calendar and only they can
+ * remove it. Silently orphaning it would be the worst of both.
+ */
+interface AdaptiveRegenResult {
+  regenerating: boolean;
+  /** Set only when a synced free-mode workout was replaced — the athlete must be told. */
+  replacedSyncedWorkout: { type: string; date: string } | null;
+}
+
+const triggerAdaptiveRegen = (context: string): AdaptiveRegenResult => {
+  const none: AdaptiveRegenResult = { regenerating: false, replacedSyncedWorkout: null };
+
+  if (!getGeminiKey()) return none;
+  if (getSetting('training_paused') === '1') return none;
+  if (getSetting('instant_score_on_new_activity') === '0') {
+    logger.info(`[${context}] Instant re-evaluation is disabled — leaving it to the next cycle`);
+    return none;
+  }
+
+  const freeMode = isFreeTrainingMode();
+  let replacedSyncedWorkout: AdaptiveRegenResult['replacedSyncedWorkout'] = null;
+
+  if (freeMode) {
+    const current = getCurrentFreeSuggestion();
+    if (current?.status === 'synced' && current.syncedForDate) {
+      replacedSyncedWorkout = { type: current.workoutType, date: current.syncedForDate };
+      logger.warn(`[${context}] Replacing suggestion #${current.id} (${current.workoutType}) that was synced for ${current.syncedForDate} — the Garmin workout is left behind for the athlete to remove`);
+    }
+  }
+
+  const regen = freeMode
+    ? generateFreeSuggestion()
+    : generateRecommendation(getStoredRecommendation()?.weeklyPlan);
+  regen
+    .then(() => setSetting('gemini_last_generated', new Date().toISOString()))
+    .catch((err: any) => logger.warn(`[${context}] Regen failed: ${err.message}`));
+
+  return { regenerating: true, replacedSyncedWorkout };
+};
+
+// ── Daily check-in ────────────────────────────────────────────────────────────
+//
+// The only way the athlete can say how they feel without riding. Every other signal in
+// Velomate hangs off an activity, which leaves rest days — and the bad night before one —
+// silent. One standing answer per day; re-submitting corrects it.
+
+app.get('/api/checkin', (_req: Request, res: Response) => {
+  res.json({
+    today:   getCheckin(localDate()),
+    history: getRecentCheckins(10)
+  });
+});
+
+app.post('/api/checkin', (req: Request, res: Response) => {
+  const { feeling, note } = req.body ?? {};
+
+  if (!Number.isInteger(feeling) || feeling < 1 || feeling > 5) {
+    return res.status(400).json({ error: 'feeling must be an integer from 1 to 5.' });
+  }
+  if (note != null && typeof note !== 'string') {
+    return res.status(400).json({ error: 'note must be a string.' });
+  }
+
+  const today   = localDate();
+  const trimmed = note ? note.trim().slice(0, 200) : null;
+
+  // Re-planning is only justified when the athlete is telling us something new. If they
+  // submit the same answer again — correcting a typo, or just pressing Save twice — the
+  // plan was already built on exactly this input, so regenerating would spend an API call
+  // to arrive at the same place.
+  const existing  = getCheckin(today);
+  const unchanged = existing !== null
+    && existing.feeling === feeling
+    && (existing.note ?? null) === (trimmed || null);
+
+  upsertCheckin(today, feeling, trimmed || null);
+  logger.info(`[Check-in] ${today}: ${feeling}/5${trimmed ? ` — "${trimmed}"` : ''}${unchanged ? ' (unchanged)' : ''}`);
+
+  if (unchanged) logger.info('[Check-in] Same answer as before — no re-evaluation needed');
+  const regen = unchanged
+    ? { regenerating: false, replacedSyncedWorkout: null }
+    : triggerAdaptiveRegen('Check-in');
+
+  res.json({ saved: true, today: getCheckin(today), history: getRecentCheckins(10), ...regen });
+});
+
+/**
+ * Clear today's rating, so the plan can be generated as if the athlete never answered.
+ *
+ * Not the same as rating yourself Normal — that is still an answer, and the prompt weighs it.
+ * Removing the line is itself new information (the plan was built on it), so this re-plans too,
+ * but only when there was actually something to remove.
+ */
+app.delete('/api/checkin', (_req: Request, res: Response) => {
+  const today   = localDate();
+  const removed = deleteCheckin(today);
+
+  if (removed) logger.info(`[Check-in] ${today} cleared — regenerating without it`);
+  else         logger.info(`[Check-in] ${today} cleared, but there was nothing to clear`);
+
+  const regen = removed
+    ? triggerAdaptiveRegen('Check-in cleared')
+    : { regenerating: false, replacedSyncedWorkout: null };
+
+  res.json({ cleared: removed, today: null, history: getRecentCheckins(10), ...regen });
+});
+
+// ── Activity feedback (RPE / feeling) ─────────────────────────────────────────
+//
+// How the athlete's own read on a ride gets in. Until now it could only be entered on
+// the watch, which made the single most important signal in the app — how the ride
+// actually felt, including the toll of whatever non-cycling training preceded it —
+// dependent on remembering to answer a prompt on another device.
+//
+// Garmin is written FIRST and the local row only follows on success, so the two can
+// never silently disagree. A failed write leaves everything exactly as it was.
+
+app.post('/api/activities/:activityId/feedback', async (req: Request, res: Response) => {
+  const { activityId } = req.params;
+  const { rpe, feeling } = req.body ?? {};
+
+  const validScale = (v: any, min: number, max: number) =>
+    v === null || v === undefined || (Number.isInteger(v) && v >= min && v <= max);
+
+  if (!validScale(rpe, 1, 10)) {
+    return res.status(400).json({ error: 'rpe must be an integer from 1 to 10, or null.' });
+  }
+  if (!validScale(feeling, 1, 5)) {
+    return res.status(400).json({ error: 'feeling must be an integer from 1 to 5, or null.' });
+  }
+  if (rpe == null && feeling == null) {
+    return res.status(400).json({ error: 'Provide rpe, feeling, or both.' });
+  }
+
+  const activity = getStoredActivities().find((a: any) => String(a.activityId) === String(activityId));
+  if (!activity) return res.status(404).json({ error: 'Unknown activity.' });
+
+  // Keep whichever value the athlete did not touch — a partial update must not blank the other.
+  const rawRpe  = rpe     != null ? fromRpe(rpe)         : activity.perceivedExertion ?? null;
+  const rawFeel = feeling != null ? fromFeeling(feeling) : activity.feelingAfterExercise ?? null;
+
+  try {
+    await pushActivityFeedback(String(activityId), rawRpe, rawFeel);
+  } catch (error: any) {
+    logger.warn(`[Feedback] Garmin rejected feedback for ${activityId}: ${error.message}`);
+    return res.status(error.message.includes('authenticated') ? 401 : 502).json({
+      error: 'Could not save this to Garmin, so it was not saved here either.',
+      details: error.message
+    });
+  }
+
+  updateActivityFeedback(String(activityId), rawRpe, rawFeel);
+  logger.info(`[Feedback] Activity ${activityId}: rpe=${rpe ?? "-"}/10, feeling=${feeling ?? "-"}/5 (raw ${rawRpe ?? "-"}, ${rawFeel ?? "-"})`);
+
+  // How a ride felt is exactly the kind of signal the plan is supposed to react to.
+  const regen = triggerAdaptiveRegen('Feedback');
+
+  res.json({ success: true, activities: getStoredActivities(), ...regen });
 });
 
 // ── Sync Workouts ─────────────────────────────────────────────────────────────
@@ -686,7 +879,9 @@ app.get('/api/recommendation', (_req: Request, res: Response) => {
   const ageMs = Date.now() - new Date(rec.generatedAt).getTime();
   const stale = ageMs > 23 * 60 * 60 * 1000;
 
-  res.json({ ...rec, stale });
+  // Truthful answer to "is a new plan on its way?" — previously the frontend could only
+  // guess by polling for a changed generatedAt on every dashboard mount.
+  res.json({ ...rec, stale, regenerating: isGenerationInFlight() });
 });
 
 /** Extract the human-readable message from a Gemini API error response. */
@@ -833,8 +1028,9 @@ const freeTrainingPayload = () => {
   const ageMs = Date.now() - new Date(suggestion.generatedAt).getTime();
   return {
     suggestion,
-    history: getFreeSuggestionHistory(10),
-    stale:   ageMs > FREE_STALE_MS
+    history:      getFreeSuggestionHistory(10),
+    stale:        ageMs > FREE_STALE_MS,
+    regenerating: isGenerationInFlight()
   };
 };
 
@@ -870,7 +1066,7 @@ app.post('/api/free-training/refresh', async (_req: Request, res: Response) => {
     if (current) {
       // Non-blocking: there's already a suggestion to show — return it immediately
       // (marked regenerating) and let the frontend poll for the replacement.
-      generateFreeSuggestion()
+      generateFreeSuggestion(undefined, true)
         .then(() => setSetting('gemini_last_generated', new Date().toISOString()))
         .catch((err: any) => logger.warn(`[Free] Refresh regen failed: ${err.message}`));
       res.json({ ...freeTrainingPayload(), regenerating: true });
@@ -878,7 +1074,7 @@ app.post('/api/free-training/refresh', async (_req: Request, res: Response) => {
     }
 
     // First-ever suggestion: nothing to show yet, so this one has to block.
-    await generateFreeSuggestion();
+    await generateFreeSuggestion(undefined, true);
     setSetting('gemini_last_generated', new Date().toISOString());
     res.json(freeTrainingPayload());
   } catch (error: any) {
@@ -1299,7 +1495,7 @@ app.get('*', (_req: Request, res: Response) => {
   res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, BIND_HOST, () => {
   const profile   = getStoredProfile();
   const acts      = getStoredActivities();
   const rec       = getStoredRecommendation();
@@ -1308,7 +1504,7 @@ app.listen(PORT, () => {
   const lastGen   = getSetting('gemini_last_generated');
 
   logger.info('='.repeat(60));
-  logger.info(`${APP_NAME} backend started — listening on :${PORT}`);
+  logger.info(`${APP_NAME} backend started — listening on ${BIND_HOST}:${PORT}`);
   logger.info(`Profile: maxHR ${profile?.maxHr ?? '?'} bpm, LTHR ${profile?.lthr ?? '?'} bpm | Activities: ${acts.length} stored | Setup: ${setup ? 'yes' : 'no'}`);
   const freeMode  = isFreeTrainingMode();
   const freeSugg  = freeMode ? getCurrentFreeSuggestion() : null;

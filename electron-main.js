@@ -5,7 +5,7 @@
 // (process.type = 'browser'). Only act in the real main process.
 if (process.type !== 'browser') return
 
-const { app, BrowserWindow, Menu, ipcMain, shell, dialog } = require('electron')
+const { app, BrowserWindow, Menu, ipcMain, shell, dialog, screen } = require('electron')
 const { autoUpdater } = require('electron-updater')
 const path = require('path')
 const http = require('http')
@@ -66,10 +66,22 @@ app.on('window-all-closed', () => {
   if (!isMac) app.quit()
 })
 
+/** Preferred window size. Clamped to the screen below — see createWindow(). */
+const DEFAULT_WIDTH = 1400
+/**
+ * Taller than it used to be (was 900): the training card now carries the daily check-in
+ * above its scroll area, and at 900 the plan started out already scrolled.
+ */
+const DEFAULT_HEIGHT = 1040
+
 function createWindow() {
+  // workAreaSize excludes the taskbar/dock, so this never opens a window taller than the
+  // screen can actually show — which 1040 would be on a 1366x768 or 1080p laptop.
+  const { width: availableWidth, height: availableHeight } = screen.getPrimaryDisplay().workAreaSize
+
   const winOptions = {
-    width: 1400,
-    height: 900,
+    width:  Math.min(DEFAULT_WIDTH, availableWidth),
+    height: Math.min(DEFAULT_HEIGHT, availableHeight),
     minWidth: 1000,
     minHeight: 650,
     title: 'Velomate',

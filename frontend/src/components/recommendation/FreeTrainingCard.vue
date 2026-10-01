@@ -13,6 +13,10 @@
       </div>
     </div>
     <div class="card-body">
+      <!-- Sits above the scroll area, not inside it: how the athlete feels today is the
+           first input to everything below, and must not scroll out of view. -->
+      <DailyCheckinStrip v-if="freeStore.state === 'loaded'" />
+
       <div class="card-body-scroll scroll-panel">
 
       <!-- State: not-configured -->
@@ -74,9 +78,9 @@
           </p>
 
           <div class="week-preview-header">
-            <i class="fa-solid fa-dumbbell"></i>
-            <span>Your Next Workout</span>
-            <span class="week-label">Ride it whenever suits you</span>
+            <i class="fa-solid" :class="isRest ? 'fa-bed' : 'fa-dumbbell'"></i>
+            <span>{{ isRest ? 'Rest Day' : 'Your Next Workout' }}</span>
+            <span class="week-label">{{ isRest ? 'Recovery comes first' : 'Ride it whenever suits you' }}</span>
           </div>
 
           <!-- Same detail panel the weekly plan uses, minus everything date-bound -->
@@ -159,6 +163,7 @@ import WorkoutDetailPanel from './WorkoutDetailPanel.vue'
 import LoadAssessment     from './LoadAssessment.vue'
 import FreeHistoryList    from './FreeHistoryList.vue'
 import SyncResult         from './SyncResult.vue'
+import DailyCheckinStrip from '@/components/checkin/DailyCheckinStrip.vue'
 
 const emit = defineEmits<{ 'open-settings': [] }>()
 
@@ -168,6 +173,9 @@ const { confirm }         = useConfirm()
 const { promptForReason } = usePauseDialog()
 
 const suggestion = computed(() => freeStore.suggestion)
+
+/** Rest is not a workout, and the card must not keep calling it one. */
+const isRest = computed(() => suggestion.value?.workoutType === 'Rest')
 
 /**
  * Adapt the suggestion to the shape WorkoutDetailPanel expects. An empty date is the

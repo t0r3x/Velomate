@@ -13,6 +13,10 @@
       </div>
     </div>
     <div class="card-body">
+      <!-- Sits above the scroll area, not inside it: how the athlete feels today is the
+           first input to everything below, and must not scroll out of view. -->
+      <DailyCheckinStrip v-if="recStore.state === 'loaded'" />
+
       <div class="card-body-scroll scroll-panel">
 
       <!-- State: not-configured -->
@@ -128,6 +132,7 @@ import WeekGrid         from './WeekGrid.vue'
 import NextWeekSummary  from './NextWeekSummary.vue'
 import LoadAssessment   from './LoadAssessment.vue'
 import SyncResult       from './SyncResult.vue'
+import DailyCheckinStrip from '@/components/checkin/DailyCheckinStrip.vue'
 
 const emit = defineEmits<{ 'open-settings': [] }>()
 
