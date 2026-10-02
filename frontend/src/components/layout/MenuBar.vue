@@ -15,8 +15,8 @@
         <span>{{ profileStore.hrLabel }}</span>
       </button>
 
-      <button class="menu-item menu-item-icon" title="About Velomate" @click="aboutOpen = true">
-        <i class="fa-solid fa-circle-info"></i>
+      <button class="menu-item menu-item-icon" title="Preferences" @click="aboutOpen = true">
+        <i class="fa-solid fa-wrench"></i>
       </button>
     </nav>
   </Teleport>

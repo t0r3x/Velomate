@@ -1,55 +1,186 @@
 /* Modern premium CSS for dashboard */
 
 :root {
+  /* ── Global: identical in every theme ──────────────────────────────────── */
+
+  /* Zone ramp lives in the themes: on a light background the dark-mode values fail
+     contrast (z4 measured 2.15 against white). Hue identity and order are fixed — only
+     lightness moves — and the accent may never collide with them. */
+
+  /* Radius scale. Four steps, deliberately tight. Use a token, never a literal;
+     50% (circles) and 2px (caps on 4px-tall bars) stay literal because that is geometry. */
+  --radius-xs: 2px;    /* chips, badges, ticks, small toggles */
+  --radius-sm: 3px;    /* buttons, inputs, inline controls */
+  --radius-md: 4px;    /* cards, panels, dialogs, editors */
+  --radius-pill: 999px;/* only genuinely pill-shaped things */
+
+
+  --font-main: 'Outfit', sans-serif;
+  --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Legacy aliases. Plenty of rules still name these; they follow whichever theme is on. */
   --bg-color: var(--surface-0);
   --panel-bg: var(--surface-1);
   --panel-border: var(--hairline);
+}
 
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+/* ── Themes ───────────────────────────────────────────────────────────────────
+   Every theme defines exactly this set. Adding one means copying the block and
+   changing values — no rule anywhere else needs to know it exists.
 
-  /* Primary theme color — change these three to recolour the entire UI */
-  --primary-rgb: 59, 130, 246;
-  --primary-color: #3b82f6;
-  --primary-hover: #2563eb;
-  --primary-glow: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+   `slate` is the default and is bound to :root as well, so it is what renders before the
+   stored preference has loaded. */
 
-  --secondary-color: #1e293b;
-  --secondary-hover: #334155;
+/* The original cool navy, kept as a choice rather than discarded. */
+/* True black. Cheaper on OLED and the highest contrast of the set; hairlines are
+   stepped up because a 7% white edge disappears against #000. */
 
-  /* Zone Colors */
+/* Light. The only theme where 'raised' means darker, and the only one where the zone ramp
+   had to be re-picked: the dark-mode greens, cyans and ambers are unreadable on white. */
+html[data-theme='light'] {
+  --surface-0: #f4f4f5;  /* page */
+  --surface-1: #ffffff;  /* cards */
+  --surface-2: #f1f1f3;  /* raised inside a card */
+  --surface-3: #ffffff;  /* floating: dialogs, toasts */
+
+  --hairline: rgba(0, 0, 0, 0.12);
+  --hairline-strong: rgba(0, 0, 0, 0.22);
+
+  /* Inverted: on a light surface a raised element is darker, not lighter. */
+  --raise-subtle: rgba(0, 0, 0, 0.03);
+  --raise: rgba(0, 0, 0, 0.06);
+  --raise-strong: rgba(0, 0, 0, 0.11);
+
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-muted: #71717a;
+
+  --secondary-color: #e4e4e7;
+  --secondary-hover: #d4d4d8;
+
+  --primary-rgb: 29, 100, 212;
+  --primary-color: #1d64d4;
+  --primary-hover: #1750ad;
+  --primary-glow: linear-gradient(135deg, #3b82f6 0%, #1d64d4 100%);
+
+  /* Darkened to clear 4.5:1 on white while keeping the ramp recognisable. */
+  --z1-color: #52525b; /* Gray/Recovery */
+  --z2-color: #047857; /* Green/Aerobic */
+  --z3-color: #0e7490; /* Cyan/Tempo */
+  --z4-color: #b45309; /* Orange/Threshold */
+  --z5-color: #c62828; /* Red/Anaerobic */
+
+  --shadow-overlay: 0 16px 40px rgba(0, 0, 0, 0.18);
+}
+
+html[data-theme='midnight'] {
   --z1-color: #64748b; /* Gray/Recovery */
   --z2-color: #10b981; /* Green/Aerobic */
   --z3-color: #06b6d4; /* Cyan/Tempo */
   --z4-color: #f59e0b; /* Orange/Threshold */
   --z5-color: #ef4444; /* Red/Anaerobic */
-
-
-  /* Radius scale. Four steps, deliberately tight — the UI had fourteen ad-hoc values,
-     and oversized pill radii are most of what made it look bubbly. Circles (50%) and
-     2px bar caps stay literal: they are geometry, not style. */
-  --radius-xs: 3px;    /* chips, badges, ticks, small toggles */
-  --radius-sm: 5px;    /* buttons, inputs, inline controls */
-  --radius-md: 8px;    /* cards, panels, dialogs, editors */
-  --radius-pill: 999px;/* only genuinely pill-shaped things */
-
-  /* Surface ladder. Depth comes from these plus a 1px hairline, not from blur and
-     drop shadows — those read as dated and cost legibility on dark backgrounds. */
-  --surface-0: #080b14;  /* page */
-  --surface-1: #10141f;  /* cards sitting on the page */
-  --surface-2: #161b28;  /* raised inside a card: inputs, nested blocks, hover */
-  --surface-3: #1c2231;  /* floating above everything: dialogs, toasts, menus */
-
-  --hairline: rgba(255, 255, 255, 0.07);
-  --hairline-strong: rgba(255, 255, 255, 0.13);
-
-  /* The single remaining shadow, for genuinely floating layers only. A modal with no
-     separation at all reads as stuck to the page; everything else uses the ladder. */
+  --raise-subtle: rgba(255, 255, 255, 0.04);
+  --raise: rgba(255, 255, 255, 0.08);
+  --raise-strong: rgba(255, 255, 255, 0.15);
   --shadow-overlay: 0 16px 48px rgba(0, 0, 0, 0.55);
-  --font-main: 'Outfit', sans-serif;
-  --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  --surface-0: #000000;
+  --surface-1: #0a0a0a;
+  --surface-2: #141414;
+  --surface-3: #1c1c1c;
+
+  --hairline: rgba(255, 255, 255, 0.10);
+  --hairline-strong: rgba(255, 255, 255, 0.18);
+
+  --text-primary: #ffffff;
+  --text-secondary: #a3a3a3;
+  --text-muted: #737373;
+
+  --secondary-color: #1a1a1a;
+  --secondary-hover: #262626;
+
+  --primary-rgb: 59, 130, 246;
+  --primary-color: #3b82f6;
+  --primary-hover: #2563eb;
+  --primary-glow: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+}
+
+/* Mintberry Crunch. Hidden until the athlete finds it in Preferences — see the unlock in
+   settings.store.ts. It was a body class before; making it a real theme means it goes
+   through the same picker as the rest instead of being a parallel mechanism. */
+html[data-theme='mintberry'] {
+  /* Mint surfaces, berry writing. Light, so --raise inverts and the zone ramp uses the
+     light values — the dark ramp is unreadable on a pale background. */
+  --surface-0: #cdf2e0;  /* page */
+  --surface-1: #f3fffa;  /* cards */
+  --surface-2: #e4fbf0;  /* panel inside a card */
+  --surface-3: #ffffff;  /* floating: dialogs, toasts */
+
+  /* Berry edges on mint surfaces: where the two colours meet. */
+  --hairline: rgba(173, 20, 87, 0.22);
+  --hairline-strong: rgba(173, 20, 87, 0.42);
+
+  /* Inverted for a light theme, and tinted berry rather than neutral grey. */
+  --raise-subtle: rgba(173, 20, 87, 0.05);
+  --raise: rgba(173, 20, 87, 0.09);
+  --raise-strong: rgba(173, 20, 87, 0.17);
+
+  /* Primary is the darkest mint rather than black, so even the body text stays in key. */
+  --text-primary: #0f2a1e;
+  --text-secondary: #ad1457;
+  --text-muted: #c2185b;
+
+  --secondary-color: #bdf0d9;
+  --secondary-hover: #a5e8c8;
+
+  --primary-rgb: 214, 24, 127;
+  --primary-color: #d6187f;
+  --primary-hover: #b01267;
+  --primary-glow: linear-gradient(135deg, #0e9f6e 0%, #d6187f 100%);
+
+  /* Light-mode ramp: the vivid dark values wash out on pale mint. */
+  --z1-color: #52525b; /* Gray/Recovery */
+  --z2-color: #047857; /* Green/Aerobic */
+  --z3-color: #0e7490; /* Cyan/Tempo */
+  --z4-color: #b45309; /* Orange/Threshold */
+  --z5-color: #c62828; /* Red/Anaerobic */
+
+  --shadow-overlay: 0 16px 40px rgba(173, 20, 87, 0.20);
+}
+
+/* The default. */
+:root,
+html[data-theme='slate'] {
+  --z1-color: #64748b; /* Gray/Recovery */
+  --z2-color: #10b981; /* Green/Aerobic */
+  --z3-color: #06b6d4; /* Cyan/Tempo */
+  --z4-color: #f59e0b; /* Orange/Threshold */
+  --z5-color: #ef4444; /* Red/Anaerobic */
+  --raise-subtle: rgba(255, 255, 255, 0.04);
+  --raise: rgba(255, 255, 255, 0.08);
+  --raise-strong: rgba(255, 255, 255, 0.15);
+  --shadow-overlay: 0 16px 48px rgba(0, 0, 0, 0.55);
+
+  --surface-0: #080b14;
+  --surface-1: #10141f;
+  --surface-2: #161b28;
+  --surface-3: #1c2231;
+
+  --hairline: rgba(255, 255, 255, 0.09);
+  --hairline-strong: rgba(255, 255, 255, 0.15);
+
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  --secondary-color: #1e293b;
+  --secondary-hover: #334155;
+
+  --primary-rgb: 59, 130, 246;
+  --primary-color: #3b82f6;
+  --primary-hover: #2563eb;
+  --primary-glow: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
 }
 
 * {
@@ -95,14 +226,27 @@ body.is-electron .app-shell {
   width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.1);
+  background: transparent;
 }
+
+/* Overlay behaviour: the thumb only materialises while the pane is hovered, so a list
+   that happens to overflow does not carry a permanent stripe down its edge. */
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: transparent;
   border-radius: var(--radius-xs);
+  transition: background var(--transition-fast);
+}
+:hover::-webkit-scrollbar-thumb {
+  background: var(--raise-strong);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: var(--text-muted);
+}
+
+/* Firefox has no pseudo-elements for this; thin + a matching track is the closest. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--raise-strong) transparent;
 }
 
 /* Layout Containers */
@@ -189,7 +333,7 @@ body.is-electron .app-shell {
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 .menu-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--raise-subtle);
 }
 .menu-item-hr-icon { color: var(--z5-color); font-size: 0.95rem; }
 
@@ -284,7 +428,7 @@ body.is-electron .app-shell {
 .panel-close-btn {
   width: 32px; height: 32px;
   border-radius: var(--radius-md);
-  background: rgba(255,255,255,0.05);
+  background: var(--raise-subtle);
   border: 1px solid var(--panel-border);
   color: var(--text-muted);
   cursor: pointer;
@@ -292,7 +436,7 @@ body.is-electron .app-shell {
   display: flex; align-items: center; justify-content: center;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
-.panel-close-btn:hover { background: rgba(255,255,255,0.1); color: var(--text-primary); }
+.panel-close-btn:hover { background: var(--raise); color: var(--text-primary); }
 
 .settings-panel-body {
   flex: 1;
@@ -304,7 +448,8 @@ body.is-electron .app-shell {
 }
 .settings-panel-body::-webkit-scrollbar { width: 4px; }
 .settings-panel-body::-webkit-scrollbar-track { background: transparent; }
-.settings-panel-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+.settings-panel-body::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; }
+.settings-panel-body:hover::-webkit-scrollbar-thumb { background: var(--raise-strong); }
 
 .settings-panel-footer {
   flex-shrink: 0;
@@ -431,7 +576,7 @@ body.is-electron .app-shell {
 
 /* ── Device Selector Block ── */
 .device-selector-block {
-  background: rgba(var(--primary-rgb),0.06);
+  background: var(--surface-2);
   border: 1px solid rgba(var(--primary-rgb),0.2);
   border-radius: var(--radius-md);
   padding: 14px 16px;
@@ -439,7 +584,7 @@ body.is-electron .app-shell {
   transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 .device-selector-block:has(select:not(:disabled)) {
-  background: rgba(var(--primary-rgb),0.08);
+  background: var(--surface-2);
   border-color: rgba(var(--primary-rgb),0.35);
 }
 .device-selector-top {
@@ -475,8 +620,8 @@ body.is-electron .app-shell {
 }
 .device-sel-select-wrap select {
   width: 100%;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: var(--raise-subtle);
+  border: 1px solid var(--hairline);
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font-family: var(--font-main);
@@ -490,7 +635,7 @@ body.is-electron .app-shell {
 }
 .device-sel-select-wrap select:hover:not(:disabled) {
   border-color: rgba(var(--primary-rgb),0.4);
-  background: rgba(255,255,255,0.08);
+  background: var(--raise);
 }
 .device-sel-select-wrap select:focus {
   outline: none;
@@ -501,7 +646,7 @@ body.is-electron .app-shell {
   cursor: not-allowed;
 }
 .device-sel-select-wrap select option {
-  background: #141624;
+  background: var(--surface-2);
   color: var(--text-primary);
 }
 .device-sel-chevron {
@@ -519,7 +664,7 @@ body.is-electron .app-shell {
   height: 28px;
   border-radius: var(--radius-sm);
   border: 1px solid rgba(var(--primary-rgb),0.25);
-  background: rgba(var(--primary-rgb),0.08);
+  background: var(--surface-2);
   color: var(--primary-color);
   font-size: 0.75rem;
   cursor: pointer;
@@ -563,12 +708,23 @@ body.is-electron .app-shell {
   gap: 0.75rem;
   margin-bottom: 1.25rem;
   padding-bottom: 0.75rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--hairline);
 }
 
+/* The one place a container around an icon is right: a card header needs an anchor, and
+   a loose glyph beside the title reads as a sticker. Everything else lost its disc. */
 .header-icon {
-  font-size: 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: 0.9rem;
   color: var(--primary-color);
+  background: rgba(var(--primary-rgb), 0.12);
+  border: 1px solid rgba(var(--primary-rgb), 0.22);
+  border-radius: var(--radius-sm);
 }
 
 .pulsate {
@@ -677,7 +833,7 @@ body.is-electron .app-shell {
 
 .input-wrapper input {
   width: 100%;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--surface-2);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   padding: 0.75rem 1rem 0.75rem 2.5rem;
@@ -734,15 +890,21 @@ body.is-electron .app-shell {
   cursor: not-allowed;
 }
 
+/* One filled button per screen — the primary action. Everything else outlines. */
 .btn-secondary {
-  background: var(--secondary-color);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  border: 1px solid var(--hairline-strong);
+  color: var(--text-secondary);
+}
+
+.btn-secondary:hover {
+  background: var(--raise);
   color: var(--text-primary);
 }
 
 .btn-secondary:hover:not(:disabled) {
   background: var(--secondary-hover);
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: var(--hairline-strong);
 }
 
 .btn-secondary:disabled {
@@ -762,8 +924,8 @@ body.is-electron .app-shell {
   align-items: center;
   gap: 1rem;
   padding: 1rem;
-  background: rgba(16, 185, 129, 0.06);
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
   border-radius: var(--radius-md);
   margin-bottom: 0.5rem;
 }
@@ -851,7 +1013,7 @@ body.is-electron .app-shell {
   align-items: center;
   gap: 0.2rem;
   padding: 0.5rem 0.6rem;
-  background: rgba(var(--primary-rgb), 0.08);
+  background: var(--surface-2);
   border: 1px solid rgba(var(--primary-rgb), 0.25);
   border-radius: var(--radius-md);
   color: var(--primary-color);
@@ -872,7 +1034,7 @@ body.is-electron .app-shell {
 }
 
 .hr-stat-box {
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--surface-2);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   padding: 0.8rem;
@@ -1000,15 +1162,17 @@ body.is-electron .app-shell {
   grid-template-columns: 80px 1fr 180px;
   align-items: center;
   padding: 0.6rem 0.8rem;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--raise-subtle);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   gap: 1rem;
 }
 
+/* Kept filled on purpose: this is the legend for the zone bar, so the colour IS the
+   information. Everything else lost its fill. */
 .zone-badge {
   font-size: 0.7rem;
-  font-weight: 700;
+  font-weight: 600;
   padding: 0.25rem 0.5rem;
   border-radius: var(--radius-xs);
   text-align: center;
@@ -1037,7 +1201,7 @@ body.is-electron .app-shell {
 
 .zone-range-inputs input {
   width: 55px;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--surface-2);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-xs);
   padding: 0.3rem;
@@ -1087,14 +1251,14 @@ body.is-electron .app-shell {
   align-items: flex-start;
   gap: 1rem;
   padding: 0.75rem 1rem;
-  background: rgba(0,0,0,0.2);
+  background: var(--surface-2);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   transition: border-color var(--transition-fast);
 }
 
 .activity-item:hover {
-  border-color: rgba(255,255,255,0.15);
+  border-color: var(--hairline-strong);
 }
 
 .activity-icon-container {
@@ -1163,6 +1327,7 @@ body.is-electron .app-shell {
 
 /* ── Activity feedback badges (RPE + Feeling) ─────────────────────────────── */
 .act-feedback {
+  column-gap: 0.85rem;
   display: flex;
   gap: 0.4rem;
   flex-wrap: wrap;
@@ -1175,38 +1340,36 @@ body.is-electron .app-shell {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  padding: 0.1rem 0.45rem;
-  border-radius: var(--radius-md);
+  padding: 0.1rem 0;
   font-size: 0.68rem;
-  font-weight: 600;
-  border: 1px solid transparent;
+  font-weight: 500;
   white-space: nowrap;
 }
 
 /* RPE intensity colors */
-.act-rpe-badge.rpe-easy     { background: rgba(16,185,129,0.12); color: #10b981; border-color: rgba(16,185,129,0.25); }
-.act-rpe-badge.rpe-moderate { background: rgba(245,158,11,0.12);  color: #f59e0b; border-color: rgba(245,158,11,0.25); }
-.act-rpe-badge.rpe-hard     { background: rgba(249,115,22,0.12);  color: #f97316; border-color: rgba(249,115,22,0.25); }
-.act-rpe-badge.rpe-max      { background: rgba(239,68,68,0.12);   color: #ef4444; border-color: rgba(239,68,68,0.25); }
+.act-rpe-badge.rpe-easy     { color: #10b981; }
+.act-rpe-badge.rpe-moderate { color: #f59e0b; }
+.act-rpe-badge.rpe-hard     { color: #f97316; }
+.act-rpe-badge.rpe-max      { color: #ef4444; }
 
 /* Feeling scale colors */
-.act-feeling-badge.feeling-1 { background: rgba(239,68,68,0.12);   color: #ef4444; border-color: rgba(239,68,68,0.25); }
-.act-feeling-badge.feeling-2 { background: rgba(249,115,22,0.12);  color: #f97316; border-color: rgba(249,115,22,0.25); }
-.act-feeling-badge.feeling-3 { background: rgba(100,116,139,0.12); color: #94a3b8; border-color: rgba(100,116,139,0.2); }
-.act-feeling-badge.feeling-4 { background: rgba(16,185,129,0.12);  color: #10b981; border-color: rgba(16,185,129,0.25); }
-.act-feeling-badge.feeling-5 { background: rgba(var(--primary-rgb),0.12);  color: #818cf8; border-color: rgba(var(--primary-rgb),0.25); }
+.act-feeling-badge.feeling-1 { color: #ef4444; }
+.act-feeling-badge.feeling-2 { color: #f97316; }
+.act-feeling-badge.feeling-3 { color: var(--text-secondary); }
+.act-feeling-badge.feeling-4 { color: #10b981; }
+.act-feeling-badge.feeling-5 { color: #818cf8; }
 
 /* AI execution score badge */
-.act-score-badge.score-great { background: rgba(16,185,129,0.12); color: #10b981; border-color: rgba(16,185,129,0.25); }
-.act-score-badge.score-ok    { background: rgba(245,158,11,0.12);  color: #f59e0b; border-color: rgba(245,158,11,0.25); }
-.act-score-badge.score-poor  { background: rgba(239,68,68,0.12);   color: #ef4444; border-color: rgba(239,68,68,0.25); }
+.act-score-badge.score-great { color: #10b981; }
+.act-score-badge.score-ok    { color: #f59e0b; }
+.act-score-badge.score-poor  { color: #ef4444; }
 .act-score-type { opacity: 0.7; font-weight: 400; margin-left: 0.1rem; }
 
 /* Progression Assessment Card */
 .recommendation-box {
   margin-top: 1rem;
   padding: 1rem;
-  background: rgba(var(--primary-rgb), 0.04);
+  background: var(--surface-2);
   border: 1px solid rgba(var(--primary-rgb), 0.15);
   border-radius: var(--radius-md);
   display: flex;
@@ -1230,8 +1393,8 @@ body.is-electron .app-shell {
 }
 
 .rec-metric {
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.03);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
   padding: 0.6rem;
   border-radius: var(--radius-sm);
   display: flex;
@@ -1316,9 +1479,9 @@ body.is-electron .app-shell {
   height: 14px;
   border-radius: var(--radius-sm);
   background: linear-gradient(90deg,
-    rgba(255,255,255,0.04) 25%,
-    rgba(255,255,255,0.10) 50%,
-    rgba(255,255,255,0.04) 75%
+    var(--raise-subtle) 25%,
+    var(--raise) 50%,
+    var(--raise-subtle) 75%
   );
   background-size: 800px 100%;
   animation: shimmer 1.4s infinite linear;
@@ -1328,10 +1491,10 @@ body.is-electron .app-shell {
 /* ── Week Preview ── */
 .week-preview {
   margin: 16px 0;
-  border: 1px solid rgba(255,255,255,0.07);
+  border: 1px solid var(--hairline);
   border-radius: var(--radius-md);
   overflow: hidden;
-  background: rgba(10, 13, 26, 0.6);
+  background: var(--surface-2);
 }
 
 .week-preview-header {
@@ -1376,12 +1539,12 @@ body.is-electron .app-shell {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 1px;
-  background: rgba(255,255,255,0.04);
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  background: var(--raise-subtle);
+  border-bottom: 1px solid var(--hairline);
 }
 
 .week-day-cell {
-  background: rgba(10, 13, 26, 0.7);
+  background: var(--surface-2);
   padding: 10px 8px;
   text-align: center;
   font-size: 0.75rem;
@@ -1522,7 +1685,7 @@ body.is-electron .app-shell {
   left: 50%;
   transform: translateX(-50%);
   border: 5px solid transparent;
-  border-top-color: rgba(14, 18, 32, 0.97);
+  border-top-color: var(--surface-3);
 }
 
 /* Workout detail cards below the grid */
@@ -1534,11 +1697,11 @@ body.is-electron .app-shell {
 
 .workout-card {
   padding: 14px 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  border-bottom: 1px solid var(--hairline);
   transition: background var(--transition-fast);
 }
 .workout-card:last-child { border-bottom: none; }
-.workout-card:hover { background: rgba(255,255,255,0.02); }
+.workout-card:hover { background: var(--raise-subtle); }
 
 .wc-header {
   display: flex;
@@ -1554,11 +1717,11 @@ body.is-electron .app-shell {
   border-radius: var(--radius-md);
   flex-shrink: 0;
 }
-.wt-sprint    .wc-icon { color: var(--z5-color); background: rgba(239,68,68,0.12); }
-.wt-vo2max    .wc-icon { color: #a855f7;         background: rgba(168,85,247,0.12); }
-.wt-threshold .wc-icon { color: var(--z4-color); background: rgba(245,158,11,0.12); }
-.wt-tempo     .wc-icon { color: var(--z3-color); background: rgba(6,182,212,0.12); }
-.wt-longride  .wc-icon { color: var(--z2-color); background: rgba(16,185,129,0.12); }
+.wt-sprint    .wc-icon { color: var(--z5-color); }
+.wt-vo2max    .wc-icon { color: #a855f7; }
+.wt-threshold .wc-icon { color: var(--z4-color); }
+.wt-tempo     .wc-icon { color: var(--z3-color); }
+.wt-longride  .wc-icon { color: var(--z2-color); }
 
 .wc-title-block { flex: 1; }
 .wc-title { font-weight: 600; font-size: 0.85rem; display: block; }
@@ -1567,7 +1730,7 @@ body.is-electron .app-shell {
   font-size: 0.78rem;
   font-weight: 700;
   color: var(--text-secondary);
-  background: rgba(255,255,255,0.06);
+  background: var(--raise);
   border-radius: var(--radius-sm);
   padding: 3px 8px;
   white-space: nowrap;
@@ -1752,51 +1915,42 @@ body.is-electron .tp-backdrop.tp-modal-mode .tp-panel {
   text-shadow: 0 0 10px rgba(46, 213, 115, 0.6);
 }
 
-body.shablagoo-active .shablagoo-label {
+html[data-theme='mintberry'] .shablagoo-label {
   color: #ff4757;
   text-shadow: 0 0 10px rgba(255, 71, 87, 0.6);
 }
 
 /* 🍦 Mintberry Crunch easter egg — logo transforms when shablagoo is active */
-body.shablagoo-active .logo-icon {
-  background: linear-gradient(135deg, #34d399 0%, #f472b6 100%);
+html[data-theme='mintberry'] .logo-icon {
+  background: linear-gradient(135deg, #0e9f6e 0%, #d6187f 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   display: inline-block; /* Cruciaal om background-clip te laten werken op een <i> of SVG */
-  filter: drop-shadow(0 0 12px rgba(244, 114, 182, 0.6));
+  filter: drop-shadow(0 0 14px rgba(214, 24, 127, 0.45));
   transition: all 0.4s ease;
 }
 
 
-body.shablagoo-active .logo-section h1,
-body.shablagoo-active .setup-logo h1 {
-  color: #34d399;
+html[data-theme='mintberry'] .logo-section h1,
+html[data-theme='mintberry'] .setup-logo h1 {
+  color: #0e9f6e;
 }
 
-body.shablagoo-active .logo-section h1 span,
-body.shablagoo-active .setup-logo h1 span {
+html[data-theme='mintberry'] .logo-section h1 span,
+html[data-theme='mintberry'] .setup-logo h1 span {
   background: none;
-  -webkit-text-fill-color: #f472b6;
-  color: #f472b6;
+  -webkit-text-fill-color: #d6187f;
+  color: #d6187f;
 }
 
-/* 🍦 Shablagoo full theme — primary → pink, secondary → green */
-body.shablagoo-active {
-  --primary-rgb: 244, 114, 182;
-  --primary-color: #f472b6;
-  --primary-hover: #db2777;
-  --primary-glow: linear-gradient(135deg, #34d399 0%, #f472b6 100%);
-  --secondary-color: #0d2318;
-  --secondary-hover: #163324;
+
+html[data-theme='mintberry'] .bg-glow-1 {
+  background: radial-gradient(circle, rgba(214, 24, 127, 0.14) 0%, transparent 70%);
 }
 
-body.shablagoo-active .bg-glow-1 {
-  background: radial-gradient(circle, rgba(244, 114, 182, 0.10) 0%, transparent 70%);
-}
-
-body.shablagoo-active .bg-glow-2 {
-  background: radial-gradient(circle, rgba(52, 211, 153, 0.10) 0%, transparent 70%);
+html[data-theme='mintberry'] .bg-glow-2 {
+  background: radial-gradient(circle, rgba(14, 159, 110, 0.14) 0%, transparent 70%);
 }
 
 
@@ -1877,7 +2031,7 @@ body.shablagoo-active .bg-glow-2 {
   align-items: flex-start;
   gap: 0.85rem;
   padding: 0.85rem 1rem;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--raise-subtle);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   transition: border-color var(--transition-fast);
@@ -1954,7 +2108,7 @@ body.shablagoo-active .bg-glow-2 {
   position: fixed;
   inset: 0;
   z-index: 300;
-  background: rgba(8, 10, 19, 0.88);
+  background: rgba(0, 0, 0, 0.72);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   overflow-y: auto;
@@ -2024,7 +2178,8 @@ body.shablagoo-active .bg-glow-2 {
 
 .tp-body::-webkit-scrollbar { width: 4px; }
 .tp-body::-webkit-scrollbar-track { background: transparent; }
-.tp-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+.tp-body::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; }
+.tp-body:hover::-webkit-scrollbar-thumb { background: var(--raise-strong); }
 
 .tp-section-label {
   display: flex;
@@ -2102,7 +2257,7 @@ body.shablagoo-active .bg-glow-2 {
   color: #10b981;
 }
 .ps-notice-info {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--raise-subtle);
   color: var(--text-muted);
 }
 
@@ -2140,7 +2295,7 @@ body.shablagoo-active .bg-glow-2 {
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.6rem 0.85rem;
-  background: rgba(var(--primary-rgb), 0.07);
+  background: var(--surface-2);
   border: 1px solid rgba(var(--primary-rgb), 0.2);
   border-radius: var(--radius-md);
   width: 100%;
@@ -2216,14 +2371,14 @@ body.shablagoo-active .bg-glow-2 {
   padding: 0.5rem 0.75rem;
   font-size: 0.85rem;
   color: var(--text-muted);
-  background: rgba(var(--primary-rgb), 0.06);
+  background: var(--surface-2);
   border: 1px solid rgba(var(--primary-rgb), 0.15);
   border-radius: var(--radius-md);
 }
 
 /* Today block */
 .ai-today-block {
-  background: rgba(var(--primary-rgb), 0.06);
+  background: var(--surface-2);
   border: 1px solid rgba(var(--primary-rgb), 0.15);
   border-radius: var(--radius-md);
   padding: 1rem;
@@ -2269,7 +2424,7 @@ body.shablagoo-active .bg-glow-2 {
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 .btn-icon-sm:hover {
-  background: rgba(255,255,255,0.06);
+  background: var(--raise);
   color: var(--text-primary);
 }
 .btn-icon-sm.btn-icon-pause {
@@ -2320,60 +2475,34 @@ body.shablagoo-active .bg-glow-2 {
   margin-bottom: 0.6rem;
 }
 
+/* Type is carried by the word and its colour, not by a container around it. */
 .ai-workout-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.3rem 0.75rem;
-  border-radius: var(--radius-md);
+  padding: 0.15rem 0;
   font-size: 0.85rem;
-  font-weight: 600;
-  border: 1px solid transparent;
+  font-weight: 500;
 }
 
-.ai-workout-chip.wt-sprint {
-  background: rgba(239,68,68,0.15);
-  border-color: rgba(239,68,68,0.3);
-  color: #ef4444;
-}
-.ai-workout-chip.wt-vo2max {
-  background: rgba(168,85,247,0.15);
-  border-color: rgba(168,85,247,0.3);
-  color: #a855f7;
-}
-.ai-workout-chip.wt-threshold {
-  background: rgba(245,158,11,0.15);
-  border-color: rgba(245,158,11,0.3);
-  color: #f59e0b;
-}
-.ai-workout-chip.wt-tempo {
-  background: rgba(6,182,212,0.15);
-  border-color: rgba(6,182,212,0.3);
-  color: #06b6d4;
-}
-.ai-workout-chip.wt-longride {
-  background: rgba(16,185,129,0.15);
-  border-color: rgba(16,185,129,0.3);
-  color: #10b981;
-}
-.ai-workout-chip.wt-rest {
-  background: rgba(100,116,139,0.15);
-  border-color: rgba(100,116,139,0.3);
-  color: #94a3b8;
-}
+.ai-workout-chip.wt-sprint { color: #ef4444; }
+.ai-workout-chip.wt-vo2max { color: #a855f7; }
+.ai-workout-chip.wt-threshold { color: #f59e0b; }
+.ai-workout-chip.wt-tempo { color: #06b6d4; }
+.ai-workout-chip.wt-longride { color: #10b981; }
+.ai-workout-chip.wt-rest { color: var(--text-secondary); }
 
 /* Priority badge */
 .ai-priority-badge {
-  font-size: 0.7rem;
-  font-weight: 700;
+  font-size: 0.66rem;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0.2rem 0.5rem;
-  border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  padding: 0.2rem 0;
 }
-.ai-priority-badge.priority-high   { background: rgba(239,68,68,0.15);   color: #ef4444; }
-.ai-priority-badge.priority-medium { background: rgba(245,158,11,0.15);  color: #f59e0b; }
-.ai-priority-badge.priority-low    { background: rgba(16,185,129,0.15);  color: #10b981; }
+.ai-priority-badge.priority-high   { color: #ef4444; }
+.ai-priority-badge.priority-medium { color: #f59e0b; }
+.ai-priority-badge.priority-low    { color: #10b981; }
 
 /* Today reason */
 .ai-today-reason {
@@ -2384,7 +2513,7 @@ body.shablagoo-active .bg-glow-2 {
 
 /* Week section */
 .ai-week-section {
-  background: rgba(255,255,255,0.02);
+  background: var(--raise-subtle);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   padding: 0.75rem;
@@ -2533,7 +2662,7 @@ body.shablagoo-active .bg-glow-2 {
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
-  background: rgba(var(--primary-rgb), 0.04);
+  background: var(--surface-2);
 }
 
 /* One horizontal line inside the block — the label/faces row, or the answered line. */
@@ -2669,7 +2798,7 @@ body.shablagoo-active .bg-glow-2 {
   padding: 0.6rem;
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
-  background: rgba(var(--primary-rgb), 0.05);
+  background: var(--surface-2);
 }
 
 .act-rate-row {
@@ -2909,7 +3038,7 @@ body.shablagoo-active .bg-glow-2 {
 .goals-input-section {
   margin: 0 0 1rem;
   padding: 0.85rem 1rem;
-  background: rgba(255,255,255,0.02);
+  background: var(--raise-subtle);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
 }
@@ -2932,7 +3061,7 @@ body.shablagoo-active .bg-glow-2 {
 }
 .goals-textarea {
   width: 100%;
-  background: rgba(255,255,255,0.04);
+  background: var(--raise-subtle);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
@@ -3074,13 +3203,13 @@ body.shablagoo-active .bg-glow-2 {
   font-size: 0.78rem;
   font-weight: 500;
   color: var(--text-muted);
-  background: rgba(0, 0, 0, 0.18);
+  background: var(--surface-2);
   transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
 }
 .day-chip span:hover {
   border-color: rgba(var(--primary-rgb), 0.45);
   color: var(--text-secondary);
-  background: rgba(var(--primary-rgb), 0.06);
+  background: var(--raise);
 }
 .day-chip input[type="checkbox"]:checked + span {
   background: rgba(var(--primary-rgb), 0.18);
@@ -3092,7 +3221,7 @@ body.shablagoo-active .bg-glow-2 {
 /* ── Select input wrapper ────────────────────────────────────────────────── */
 .input-wrapper--select select {
   width: 100%;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--surface-2);
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-md);
   padding: 0.75rem 1rem 0.75rem 2.5rem;
@@ -3109,7 +3238,7 @@ body.shablagoo-active .bg-glow-2 {
   border-color: var(--primary-color);
 }
 .input-wrapper--select select option {
-  background: #1e293b;
+  background: var(--secondary-color);
   color: var(--text-primary);
 }
 
@@ -3119,7 +3248,7 @@ body.shablagoo-active .bg-glow-2 {
   border-radius: var(--radius-md);
   overflow: hidden;
   margin-bottom: 1rem;
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--surface-2);
 }
 .workout-preview-header {
   display: flex;
@@ -3134,7 +3263,7 @@ body.shablagoo-active .bg-glow-2 {
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 .workout-preview-header:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--raise-subtle);
   color: var(--text-primary);
 }
 .workout-preview-header i.fa-dumbbell {

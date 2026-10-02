@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import type { UiTheme } from '@/types'
 import {
   getGeminiKeyStatus,
   postGeminiKey,
@@ -9,8 +10,36 @@ import {
   postInactivityPauseDays,
   postInstantScoreOnNewActivity,
   postFreeTrainingMode,
-  postSetupComplete
+  postSetupComplete,
+  postTheme
 } from '@/api/client'
+
+const THEME_CACHE_KEY = 'velomate.theme'
+
+/** Must match the html[data-theme='…'] blocks in style.css and UI_THEMES in server.ts. */
+const THEME_IDS: UiTheme[] = ['slate', 'light', 'midnight', 'mintberry']
+
+/**
+ * The database is the source of truth, but it is a round trip away and the theme has to
+ * be on the very first paint or the app visibly flashes from one palette to the other.
+ * So the chosen theme is mirrored to localStorage purely as a paint-time cache: it is
+ * read before anything renders and overwritten the moment the real value arrives.
+ */
+/** Exposed for main.ts, which needs the cached value before any store exists. */
+export function readCachedThemeForBoot(): UiTheme {
+  return readCachedTheme()
+}
+
+function readCachedTheme(): UiTheme {
+  const cached = localStorage.getItem(THEME_CACHE_KEY) as UiTheme | null
+  return cached && THEME_IDS.includes(cached) ? cached : 'slate'
+}
+
+/** Themes are selected by attribute; the CSS does the rest. */
+export function applyTheme(next: UiTheme) {
+  document.documentElement.dataset.theme = next
+  localStorage.setItem(THEME_CACHE_KEY, next)
+}
 
 export const useSettingsStore = defineStore('settings', () => {
   const loaded              = ref(false)
@@ -22,6 +51,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const inactivityPauseDays = ref(14)
   const instantScoreOnNewActivity = ref(true)
   const freeTrainingMode          = ref(false)
+  const theme                     = ref<UiTheme>(readCachedTheme())
+  const mintberryUnlocked         = ref(false)
 
   async function init() {
     if (loaded.value) return
@@ -35,6 +66,9 @@ export const useSettingsStore = defineStore('settings', () => {
       inactivityPauseDays.value   = data.inactivityPauseDays ?? 14
       instantScoreOnNewActivity.value = data.instantScoreOnNewActivity ?? true
       freeTrainingMode.value      = data.freeTrainingMode ?? false
+      theme.value                 = data.uiTheme ?? 'slate'
+      mintberryUnlocked.value     = data.mintberryUnlocked ?? false
+      applyTheme(theme.value)
     } catch (err) {
       console.warn('[Settings] init failed (backend offline?):', err)
     } finally {
@@ -54,6 +88,9 @@ export const useSettingsStore = defineStore('settings', () => {
       inactivityPauseDays.value   = data.inactivityPauseDays ?? 14
       instantScoreOnNewActivity.value = data.instantScoreOnNewActivity ?? true
       freeTrainingMode.value      = data.freeTrainingMode ?? false
+      theme.value                 = data.uiTheme ?? 'slate'
+      mintberryUnlocked.value     = data.mintberryUnlocked ?? false
+      applyTheme(theme.value)
     } catch (err) {
       console.warn('[Settings] reload failed:', err)
     }
@@ -99,6 +136,23 @@ export const useSettingsStore = defineStore('settings', () => {
    * Switch between the 14-day AI plan and free training mode. The backend keeps both
    * artefacts side by side, so flipping this never destroys the other mode's data.
    */
+  /** Applied immediately so the choice is visible while the write is in flight. */
+  async function saveTheme(next: UiTheme): Promise<boolean> {
+    const previous = theme.value
+    theme.value = next
+    applyTheme(next)
+    try {
+      await postTheme(next)
+      if (next === 'mintberry') mintberryUnlocked.value = true
+      return true
+    } catch (err) {
+      console.error('[Settings] saveTheme failed:', err)
+      theme.value = previous
+      applyTheme(previous)
+      return false
+    }
+  }
+
   async function saveFreeTrainingMode(enabled: boolean): Promise<boolean> {
     try {
       await postFreeTrainingMode(enabled)
@@ -152,6 +206,8 @@ export const useSettingsStore = defineStore('settings', () => {
     inactivityPauseDays,
     instantScoreOnNewActivity,
     freeTrainingMode,
+    theme,
+    mintberryUnlocked,
     init,
     reload,
     saveAll,
@@ -160,6 +216,7 @@ export const useSettingsStore = defineStore('settings', () => {
     saveInactivityPauseDays,
     saveInstantScoreOnNewActivity,
     saveFreeTrainingMode,
+    saveTheme,
     markSetupComplete
   }
 })

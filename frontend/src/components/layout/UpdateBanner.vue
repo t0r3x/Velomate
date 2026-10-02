@@ -37,7 +37,7 @@ const { status, dismissed, dismiss, restartAndInstall } = useUpdater()
   font-size: 0.85rem;
   font-weight: 500;
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--raise-subtle);
   border-bottom: 1px solid var(--panel-border);
 }
 
@@ -70,11 +70,11 @@ const { status, dismissed, dismiss, restartAndInstall } = useUpdater()
   color: var(--text-muted);
   cursor: pointer;
   font-size: 0.8rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 .update-banner-dismiss:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--raise);
   color: var(--text-primary);
 }
 

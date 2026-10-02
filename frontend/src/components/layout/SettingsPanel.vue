@@ -57,7 +57,7 @@
             </div>
             <button type="submit" class="btn btn-primary" :disabled="loginBusy">
               <span>{{ loginBusy ? (authStore.showMfa ? 'Verifying…' : 'Connecting…') : 'Connect Garmin' }}</span>
-              <i class="fa-solid" :class="loginBusy ? 'fa-spinner fa-spin' : 'fa-arrow-right-to-bracket'"></i>
+              <i v-if="loginBusy" class="fa-solid fa-spinner fa-spin"></i>
             </button>
           </form>
         </div>
@@ -73,7 +73,6 @@
           </div>
           <button class="btn btn-secondary" @click="handleLogout">
             <span>Disconnect</span>
-            <i class="fa-solid fa-arrow-right-from-bracket"></i>
           </button>
         </div>
       </div>
@@ -97,7 +96,6 @@
           </div>
           <button class="btn btn-secondary" style="margin-top:0.6rem" @click="handleDisconnectGemini">
             <span>Disconnect</span>
-            <i class="fa-solid fa-arrow-right-from-bracket"></i>
           </button>
         </div>
 
@@ -171,7 +169,7 @@
     <div class="settings-panel-footer">
       <button class="btn btn-primary" :disabled="saveBusy" @click="handleSave">
         <span>{{ saveBusy ? 'Saving…' : 'Save Settings' }}</span>
-        <i class="fa-solid" :class="saveBusy ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
+        <i v-if="saveBusy" class="fa-solid fa-spinner fa-spin"></i>
       </button>
     </div>
   </aside>

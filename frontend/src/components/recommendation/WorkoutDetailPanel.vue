@@ -113,8 +113,8 @@ function fmtDur(sec: number): string {
 
 <style scoped>
 .wdp-panel {
-  background: rgba(10, 13, 26, 0.92);
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  background: var(--surface-2);
+  border-top: 1px solid var(--hairline);
   padding: 14px 16px;
   display: flex;
   flex-direction: column;
@@ -150,7 +150,7 @@ function fmtDur(sec: number): string {
 .wdp-zone-bar {
   display: flex;
   height: 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   gap: 2px;
 }
@@ -197,11 +197,11 @@ function fmtDur(sec: number): string {
   font-size: 0.65rem;
   font-weight: 700;
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   letter-spacing: 0.03em;
   white-space: nowrap;
 }
-.wdp-step-zone-pill.z1 { background: rgba(100, 116, 139, 0.2); color: var(--z1-color); }
+.wdp-step-zone-pill.z1 { background: rgba(120, 113, 108, 0.22); color: var(--z1-color); }
 .wdp-step-zone-pill.z2 { background: rgba(16, 185, 129, 0.15);  color: var(--z2-color); }
 .wdp-step-zone-pill.z3 { background: rgba(6, 182, 212, 0.15);   color: var(--z3-color); }
 .wdp-step-zone-pill.z4 { background: rgba(245, 158, 11, 0.15);  color: var(--z4-color); }
@@ -223,7 +223,7 @@ function fmtDur(sec: number): string {
   font-size: 0.80rem;
   color: var(--text-secondary);
   line-height: 1.5;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--hairline);
   padding-top: 8px;
   margin: 0;
 }

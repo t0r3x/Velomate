@@ -43,7 +43,6 @@
               </div>
               <button type="button" class="btn btn-secondary btn-sm" :disabled="suggestionState === 'loading'" @click="useSuggestion">
                 <span>Use suggestion</span>
-                <i class="fa-solid fa-arrow-up-to-line"></i>
               </button>
             </div>
 
@@ -145,7 +144,7 @@
         <div class="tp-footer">
           <button class="btn btn-primary" :disabled="saving || loadingState === 'loading'" @click="handleConfirm">
             <span>{{ saving ? 'Saving…' : 'Save Profile' }}</span>
-            <i class="fa-solid" :class="saving ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
+            <i v-if="saving" class="fa-solid fa-spinner fa-spin"></i>
           </button>
         </div>
 

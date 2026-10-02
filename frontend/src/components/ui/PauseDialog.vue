@@ -99,9 +99,9 @@ function submit() {
 .pause-reason-input {
   width: 100%;
   padding: 0.5rem 0.75rem;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 8px;
+  background: var(--raise-subtle);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-md);
   color: var(--text-primary);
   font-size: 0.875rem;
   font-family: inherit;

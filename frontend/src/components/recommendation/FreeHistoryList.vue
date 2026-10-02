@@ -106,9 +106,9 @@ function scoreClass(score: number): string {
 }
 
 .fh-badge-pending {
-  background: rgba(100, 116, 139, 0.12);
+  background: rgba(120, 113, 108, 0.12);
   color: var(--text-muted);
-  border-color: rgba(100, 116, 139, 0.2);
+  border-color: rgba(120, 113, 108, 0.22);
 }
 
 .fh-note {

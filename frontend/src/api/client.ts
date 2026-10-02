@@ -5,6 +5,7 @@
 import type {
   Activity,
   DailyCheckin,
+  UiTheme,
   ReplacedSyncedWorkout,
   UserHRProfile,
   FreeTraining,
@@ -105,6 +106,12 @@ export const deleteCheckin = () =>
     '/api/checkin',
     { method: 'DELETE' }
   )
+
+export const postTheme = (theme: UiTheme) =>
+  request<{ saved: boolean; theme: UiTheme }>('/api/settings/theme', {
+    method: 'POST',
+    body: JSON.stringify({ theme })
+  })
 
 // ── Profile ───────────────────────────────────────────────────────────────────
 

@@ -7,6 +7,10 @@ if (process.type !== 'browser') return
 
 const { app, BrowserWindow, Menu, ipcMain, shell, dialog, screen } = require('electron')
 const { autoUpdater } = require('electron-updater')
+
+// Set by setupAutoUpdater(). electron-updater only runs in a packaged build, so outside
+// one the check has to answer honestly rather than not exist.
+let autoUpdaterActive = false
 const path = require('path')
 const http = require('http')
 const net = require('net')
@@ -119,6 +123,28 @@ function createWindow() {
     else win.maximize()
   })
   ipcMain.on('window:close', () => win.close())
+
+  // On-demand update check, so the user need not wait out the 4h interval. Returns a
+  // result rather than only firing events: "no update available" fires no event at all,
+  // and a button that silently does nothing is worse than no button.
+  ipcMain.handle('update:supported', () => autoUpdaterActive)
+
+  ipcMain.handle('update:check', async () => {
+    if (!autoUpdaterActive) return { supported: false, current: app.getVersion() }
+    try {
+      const result = await autoUpdater.checkForUpdates()
+      const latest = result && result.updateInfo ? result.updateInfo.version : null
+      return {
+        supported: true,
+        available: !!latest && latest !== app.getVersion(),
+        version: latest,
+        current: app.getVersion()
+      }
+    } catch (err) {
+      console.error('[AutoUpdater] Manual check failed:', err)
+      return { supported: true, error: (err && err.message) || String(err) }
+    }
+  })
   win.on('maximize', () => win.webContents.send('window:maximized-change', true))
   win.on('unmaximize', () => win.webContents.send('window:maximized-change', false))
 
@@ -129,6 +155,7 @@ function createWindow() {
 // update is found, then waits for the user to restart — never installs on its own
 // while the app is running.
 function setupAutoUpdater(win) {
+  autoUpdaterActive = true
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
 
@@ -143,6 +170,7 @@ function setupAutoUpdater(win) {
   })
 
   ipcMain.on('update:restart-and-install', () => autoUpdater.quitAndInstall())
+
 
   const check = () => autoUpdater.checkForUpdates().catch(err => console.error('[AutoUpdater] Check failed:', err))
   check()

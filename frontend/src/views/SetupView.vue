@@ -12,7 +12,10 @@
             <strong>Connect Garmin</strong>
             <span>Sync your activities and training history</span>
           </div>
-          <span class="setup-step-status">{{ authStore.isLoggedIn ? '✓ Connected' : '–' }}</span>
+          <span class="setup-step-status">
+            <template v-if="authStore.isLoggedIn"><i class="fa-solid fa-check"></i> Connected</template>
+            <template v-else>Not connected</template>
+          </span>
         </li>
         <li :class="{ 'step-done': settingsStore.geminiConfigured }">
           <i class="fa-solid fa-brain"></i>
@@ -20,13 +23,15 @@
             <strong>Add AI API key</strong>
             <span>Required for AI adaptive training plans</span>
           </div>
-          <span class="setup-step-status">{{ settingsStore.geminiConfigured ? '✓ Configured' : '–' }}</span>
+          <span class="setup-step-status">
+            <template v-if="settingsStore.geminiConfigured"><i class="fa-solid fa-check"></i> Configured</template>
+            <template v-else>Not configured</template>
+          </span>
         </li>
       </ul>
 
       <button class="btn btn-primary setup-configure-btn" @click="panelOpen = true">
         <span>Configure</span>
-        <i class="fa-solid fa-sliders"></i>
       </button>
     </div>
   </div>

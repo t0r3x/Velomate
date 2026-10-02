@@ -344,17 +344,103 @@ GET    *                                    ← SPA catch-all → serves Vue ind
 
 ---
 
-## Visual language (`frontend/src/assets/style.css`)
+## Theming
 
-Dark, navy-based, one blue accent. The colours are unchanged from the original design; what was
-tightened is the *execution*, because the combination of stock-Tailwind palette, glassmorphism panels
-and ad-hoc radii is the visual signature of a generated dashboard.
+Tokens are split in two. **Global** tokens never vary by theme: the radius scale, `--shadow-overlay`,
+the font and the transitions. **Themeable** tokens are the surface ladder, `--surface-inset`, hairlines,
+the `--raise-*` overlays, text, secondary surfaces, the accent, the zone ramp and `--shadow-overlay` —
+25 in all, and each theme defines *exactly that set*.
 
-- **Radius is a four-step scale** — `--radius-xs: 3px` (chips, badges, ticks), `--radius-sm: 5px`
-  (buttons, inputs), `--radius-md: 8px` (cards, dialogs, editors), `--radius-pill: 999px` (only
-  genuinely pill-shaped things). There were **fourteen** ad-hoc values before, up to 20px; oversized
-  pill radii were most of what read as bubbly. Use a token, never a literal. `50%` (circles) and `2px`
-  (caps on 4px-tall bars) stay literal on purpose: that is geometry, not style.
+- A theme is a `html[data-theme='name']` block. `slate` is bound to `:root` as well, so it is both the
+  default and what renders before the stored preference has loaded. Shipping: `slate` (default),
+  `light`, `midnight` (true black) and `mintberry`.
+- **The light theme broke two earlier rules, both deliberately.** Zone colours used to be global on the
+  grounds that they encode data; against white the dark ramp measures 2.54 / 2.43 / 2.15 / 3.76 for
+  z2–z5, all under the 4.5 text needs, so the ramp is per-theme now. Hue identity and order are fixed —
+  only lightness moves. And `--raise-*` exists because *slightly lighter than the background* is a
+  dark-mode idiom: on light a raised surface is **darker**. 38 literal white-alpha overlays across nine
+  files became those tokens. A new dark theme can copy them verbatim; a light one must invert them.
+- **A surface colour never appears as a literal.** The warm theme once replaced navy literals with warm
+  literals, which looked right in one theme and wrong in every other — the workout block stayed warm
+  while the app went cool.
+- **There is exactly one colour for "panel inside a card": `--surface-2`.** Ride rows, the workout
+  block, the check-in strip, the rating editor, inputs, stat boxes, week cells — all of it. This had
+  drifted into *six* mechanisms doing the same job (a hardcoded `rgba(0,0,0,0.2)`, a duplicate
+  `--surface-inset` token, three different accent tints at 4/5/8%, and a hardcoded green). On dark they
+  nearly converged; on light they fan out into visibly different greys and blues, which is how the
+  drift was finally spotted. If a panel needs to *mean* something — advice, success, a warning — it
+  gets a 2px left border in the relevant colour, never a tinted fill.
+- **Scrims are the one place a literal belongs.** `.panel-overlay`, `.tp-backdrop`, `.confirm-overlay`
+  stay `rgba(0,0,0,…)`: a backdrop is black in every theme, light included.
+- **Hover is relative, not absolute.** Interaction states use `--raise`, so they stay distinct from
+  whatever the resting surface is. Setting a hover to `--surface-2` when the base is already
+  `--surface-2` makes it silently do nothing.
+- **`mintberry` is the easter egg, now a real theme.** It used to be a `body.shablagoo-active` class —
+  a parallel mechanism that duplicated what theming does. It is hidden from the picker until found:
+  clicking "Mintberry Crunch Labs" in Preferences selects it, and selecting it is what sets
+  `mintberry_unlocked`, so it stays listed afterwards and switching away does not re-hide it. The
+  flag is discovery state, not access control — the API accepts the id either way.
+- **Adding a theme is a data change**: copy the block, change values, add the id to `UI_THEMES` in
+  `server.ts` and to `UiTheme` in `types.ts`. No rule anywhere else needs to know it exists — but every
+  theme must define the full set, or tokens silently fall through to `:root` and mix two palettes.
+- Stored in the DB as `ui_theme` and validated server-side, because the value lands in a `data-theme`
+  attribute: an unknown name falls back to the default and looks like the setting failed to save.
+- **Mirrored to `localStorage` purely as a paint-time cache.** The DB is the source of truth, but it is a
+  round trip away and the theme has to be on the first paint or the app visibly flashes between
+  palettes. `main.ts` applies the cached value before mount; the real value overwrites it on load. This
+  is the one legitimate localStorage use in the app — it is a cache, not state.
+- The picker lives behind the wrench in `MenuBar`, in `AboutDialog` ("Preferences"), alongside About
+  and the on-demand update check.
+
+## Visual language (`frontend/src/assets/style.css` **and 13 scoped `<style>` blocks**)
+
+**The theme does not live in one file.** Thirteen components carry their own `<style>` block —
+`WorkoutDetailPanel`, `TitleBar`, `PauseDialog`, `MoveDayDialog`, `UpdateBanner`, `FreeTrainingCard`,
+`FreeHistoryList` and others — and they are part of the theme whether or not `style.css` knows about
+them. A palette change applied only to `style.css` leaves whole panels in the old colours: that is
+exactly how the workout detail block and the title bar stayed navy inside an otherwise warm app.
+Any theme work has to sweep `.vue` files too, and match on **computed channel values**, not a
+hand-written list of hexes — the navy that survived the first pass was all `rgba()`.
+
+
+Dark surfaces, one blue accent. **`slate` is the default** — cool navy, bound to `:root`. `warm` exists
+as an alternative and is worth understanding, because it came out of a real diagnosis: in slate the
+accent shares its hue with everything around it (navy surfaces, slate text, a slate z1), so it never
+fully registers as an accent. `warm` neutralises the surroundings so blue is the only blue thing on
+screen. Luminance was matched across both, so contrast holds either way: 17.6 / 7.4 / 3.9 against a
+card, accent at 5.05.
+
+**Zone colours are exempt and must stay put** — `--z1..z5` (grey/green/cyan/orange/red) encode data and
+have to stay mutually distinguishable. That also constrains the accent: it may not collide with the zone
+ramp, which rules out green, cyan, orange and red. Blue is free, which is why it stayed.
+
+- **Radius is a four-step scale** — `--radius-xs: 2px` (chips, badges, ticks), `--radius-sm: 3px`
+  (buttons, inputs), `--radius-md: 4px` (cards, dialogs, editors), `--radius-pill: 999px` (only
+  genuinely pill-shaped things). There were **fourteen** ad-hoc values before, up to 20px. Use a
+  token, never a literal. `50%` (circles) and `2px` (caps on 4px-tall bars) stay literal on purpose:
+  that is geometry, not style.
+- **Metadata is typography, not tags.** Workout types, RPE, feeling, execution scores and priority
+  used to be filled pills: `background: rgba(colour, 0.12)` + `border-color: rgba(colour, 0.3)` +
+  coloured text, repeated across eight colours. Six of them stacked read as a tag cloud rather than a
+  training log, and that recipe is the loudest remaining signature of a generated UI. The variants now
+  carry **only `color:`** — the word and its hue do the work, with no container. Do not reintroduce a
+  fill to "make it stand out"; raise the weight or the contrast instead.
+  - The one exception is `.zone-badge`, which keeps its fill because it is the legend for the zone bar:
+    there the colour *is* the information.
+- **One filled button per screen.** The primary action is solid; `.btn-secondary` outlines. A screen
+  with two filled buttons has no primary action.
+- **Text buttons carry no trailing glyph.** A label plus a decorative icon after it reads as
+  decoration — the word already says what the button does. The only `<i>` left inside a button is the
+  in-flight spinner, which reports state and now renders only while the action runs. Icon-only buttons
+  (the round refresh/pause controls) are unaffected.
+- **Card header icons are the deliberate exception**: they sit in a 1.75rem tile with a tinted
+  background, a hairline and `--radius-sm`. A card needs an anchor, and a loose glyph beside the title
+  reads as a sticker. This is the one place a container around an icon is right.
+- **Icons sit next to a label, never inside a disc.** The tinted circles behind `.wc-icon` are gone.
+  Face icons (check-in, post-ride feeling) and workout-type icons are deliberate and stay — those are
+  places where a glyph carries meaning the word does not. Literal glyphs like `✓` in copy are not:
+  they render in whatever the body font happens to have and never match the icon set. Use Font
+  Awesome.
 - **Depth comes from `--surface-0..3` plus a 1px `--hairline`**, not from blur or drop shadows. Current
   guidance is explicit that heavy shadows, glassmorphism panels and gradient KPI cards date within a
   year and cost legibility. `backdrop-filter` survives on exactly three rules, all **scrims behind a
@@ -604,6 +690,7 @@ Only active when `app.isPackaged` (never in dev):
 - Checks on startup, then every `UPDATE_CHECK_INTERVAL_MS` (4h)
 - `update-available` → IPC `update:status {state:'downloading', version}`; `update-downloaded` → `{state:'ready', version}`
 - Frontend: `useUpdater()` composable holds the shared status; `UpdateBanner.vue` renders it and calls `restartAndInstallUpdate()` → IPC `update:restart-and-install` → `autoUpdater.quitAndInstall()`
+- **On-demand check**: `checkNow()` → `ipcMain.handle('update:check')`, surfaced as a button in Preferences so the user need not wait out the 4h interval. It **returns a result** rather than only firing events, because "no update available" fires no event at all and a button that silently does nothing is worse than no button. The handler is registered even when `app.isPackaged` is false — it answers `{ supported: false }` so the renderer can say so honestly instead of interpreting a rejected invoke.
 - Update feed = GitHub Releases of `t0r3x/Velomate` (`electron-builder.yml`'s `publish` block) — same place `npm run electron:publish` uploads installers to
 
 ### Build/publish

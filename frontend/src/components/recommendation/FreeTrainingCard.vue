@@ -42,7 +42,7 @@
           </ul>
           <button class="btn btn-primary" :disabled="generating" @click="handleGenerateFirst">
             <span>{{ generating ? 'Generating…' : 'Suggest my next workout' }}</span>
-            <i class="fa-solid" :class="generating ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'"></i>
+            <i v-if="generating" class="fa-solid fa-spinner fa-spin"></i>
           </button>
         </div>
       </div>
@@ -63,7 +63,7 @@
           <p class="ai-rec-paused-since">Paused since {{ formatPausedDate(freeStore.pausedSince) }}</p>
           <button class="btn btn-primary btn-sm" :disabled="resuming" @click="handleResume">
             <span>{{ resuming ? 'Resuming…' : 'Resume training' }}</span>
-            <i class="fa-solid" :class="resuming ? 'fa-spinner fa-spin' : 'fa-play'"></i>
+            <i v-if="resuming" class="fa-solid fa-spinner fa-spin"></i>
           </button>
         </div>
       </div>
@@ -133,7 +133,7 @@
         @click="handleSync"
       >
         <span>{{ syncing ? 'Syncing Workout…' : freeStore.isSynced ? 'Sync Again' : 'Sync &amp; Schedule Workout' }}</span>
-        <i class="fa-solid" :class="syncing ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'"></i>
+        <i v-if="syncing" class="fa-solid fa-spinner fa-spin"></i>
       </button>
       <button
         class="btn btn-secondary"
@@ -142,7 +142,7 @@
         @click="handleDismiss"
       >
         <span>{{ dismissing ? 'Rethinking…' : 'Suggest Something Else' }}</span>
-        <i class="fa-solid" :class="dismissing ? 'fa-spinner fa-spin' : 'fa-shuffle'"></i>
+        <i v-if="dismissing" class="fa-solid fa-spinner fa-spin"></i>
       </button>
       <SyncResult :result="syncResult" :singleWorkout="true" @close="syncResult = null" />
     </div>
@@ -312,20 +312,24 @@ async function handleSync() {
   gap: 0.5rem;
   margin: 0.75rem 0 0;
   padding: 0.6rem 0.75rem;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-md);
   font-size: 0.8rem;
   line-height: 1.5;
 }
 
+/* A callout, so it keeps a signal — but as an edge, not a wash. A tinted fill here was
+   one of four competing panel colours inside the same card. */
 .ft-coach-note {
-  background: rgba(var(--primary-rgb), 0.08);
-  border: 1px solid rgba(var(--primary-rgb), 0.18);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-left: 2px solid var(--primary-color);
   color: var(--text-secondary);
 }
 
 .ft-synced-note {
-  background: rgba(16, 185, 129, 0.08);
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-left: 2px solid var(--z2-color);
   color: var(--text-secondary);
 }
 

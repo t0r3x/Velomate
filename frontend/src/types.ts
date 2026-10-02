@@ -163,6 +163,9 @@ export interface PausedResponse {
   pauseReason?: string
 }
 
+/** Theme ids must match a `html[data-theme='…']` block in style.css. */
+export type UiTheme = 'slate' | 'light' | 'midnight' | 'mintberry'
+
 export interface GeminiKeyStatus {
   hasKey: boolean
   maskedKey: string
@@ -171,6 +174,8 @@ export interface GeminiKeyStatus {
   geminiModel: string
   inactivityPauseDays: number
   instantScoreOnNewActivity: boolean
+  uiTheme: UiTheme
+  mintberryUnlocked: boolean
   freeTrainingMode: boolean
 }
 

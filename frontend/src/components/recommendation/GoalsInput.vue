@@ -24,7 +24,8 @@
         @click="handleSave"
       >
         <span>{{ flash ? 'Saved' : 'Save' }}</span>
-        <i class="fa-solid" :class="saving ? 'fa-spinner fa-spin' : flash ? 'fa-check' : 'fa-floppy-disk'"></i>
+        <!-- The label already reports success, so only the in-flight spinner is left. -->
+        <i v-if="saving" class="fa-solid fa-spinner fa-spin"></i>
       </button>
     </div>
   </div>

@@ -678,6 +678,13 @@ app.get('/api/settings/gemini-key', (_req: Request, res: Response) => {
 
   const inactivityPauseDays = parseInt(getSetting('inactivity_pause_days') || '14', 10) || 14;
   const instantScoreOnNewActivity = getSetting('instant_score_on_new_activity') !== '0';
+  // Falls back to the CSS default rather than a hardcoded name, so adding a theme is a
+  // frontend-only change until someone actually picks it.
+  // Guarded on read as well: a theme can be retired between versions, and a stored id with
+  // no CSS block behind it would render the default while the picker showed nothing selected.
+  const storedTheme = getSetting('ui_theme');
+  const uiTheme = UI_THEMES.includes(storedTheme as any) ? storedTheme : 'slate';
+  const mintberryUnlocked = getSetting('mintberry_unlocked') === '1';
 
   res.json({
     hasKey:               !!key,
@@ -687,6 +694,8 @@ app.get('/api/settings/gemini-key', (_req: Request, res: Response) => {
     geminiModel,
     inactivityPauseDays,
     instantScoreOnNewActivity,
+    uiTheme,
+    mintberryUnlocked,
     freeTrainingMode:     isFreeTrainingMode()
   });
 });
@@ -731,6 +740,28 @@ app.post('/api/settings/inactivity-pause-days', (req: Request, res: Response) =>
   setSetting('inactivity_pause_days', String(parsed));
   logger.info(`[Settings] Inactivity pause threshold set to: ${parsed} days`);
   res.json({ saved: true });
+});
+
+/**
+ * Which colour theme the UI renders in.
+ *
+ * Validated against a list because the value is written into a `data-theme` attribute and
+ * is only meaningful if a matching CSS block exists — an unknown name would silently fall
+ * back to the default and look like the setting had not saved.
+ */
+const UI_THEMES = ['slate', 'light', 'midnight', 'mintberry'] as const;
+
+app.post('/api/settings/theme', (req: Request, res: Response) => {
+  const { theme } = req.body ?? {};
+  if (!UI_THEMES.includes(theme)) {
+    return res.status(400).json({ error: `theme must be one of: ${UI_THEMES.join(', ')}.` });
+  }
+  setSetting('ui_theme', theme);
+  // Choosing it is the discovery. The flag is what keeps it listed afterwards, so the
+  // athlete can switch away and back without having to find the easter egg again.
+  if (theme === 'mintberry') setSetting('mintberry_unlocked', '1');
+  logger.info(`[Settings] UI theme set to: ${theme}`);
+  res.json({ saved: true, theme });
 });
 
 app.post('/api/settings/instant-score-on-new-activity', (req: Request, res: Response) => {

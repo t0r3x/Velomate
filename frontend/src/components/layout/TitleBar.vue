@@ -47,7 +47,7 @@ onMounted(() => {
   height: 38px;
   display: flex;
   align-items: stretch;
-  background: rgba(8, 11, 20, 0.92);
+  background: var(--surface-0);
   border-bottom: 1px solid var(--panel-border);
   z-index: 10000;
   -webkit-app-region: drag;
@@ -117,7 +117,7 @@ onMounted(() => {
 }
 
 .tb-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--raise);
   color: var(--text-primary);
 }
 

@@ -42,7 +42,7 @@
           </ul>
           <button class="btn btn-primary" :disabled="generating" @click="handleGenerateFirst">
             <span>{{ generating ? 'Generating…' : 'Generate my first plan' }}</span>
-            <i class="fa-solid" :class="generating ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'"></i>
+            <i v-if="generating" class="fa-solid fa-spinner fa-spin"></i>
           </button>
         </div>
       </div>
@@ -63,7 +63,7 @@
           <p class="ai-rec-paused-since">Paused since {{ formatPausedDate(recStore.pausedSince) }}</p>
           <button class="btn btn-primary btn-sm" :disabled="resuming" @click="handleResume">
             <span>{{ resuming ? 'Resuming…' : 'Resume training' }}</span>
-            <i class="fa-solid" :class="resuming ? 'fa-spinner fa-spin' : 'fa-play'"></i>
+            <i v-if="resuming" class="fa-solid fa-spinner fa-spin"></i>
           </button>
         </div>
       </div>
@@ -112,7 +112,7 @@
         @click="handleSync"
       >
         <span>{{ syncing ? 'Syncing Workouts…' : 'Sync &amp; Schedule Workouts' }}</span>
-        <i class="fa-solid" :class="syncing ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'"></i>
+        <i v-if="syncing" class="fa-solid fa-spinner fa-spin"></i>
       </button>
       <SyncResult :result="syncResult" @close="syncResult = null" />
     </div>

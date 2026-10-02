@@ -11,7 +11,7 @@
           @click="handleSync"
         >
           <span>{{ syncing ? 'Syncing…' : 'Sync' }}</span>
-          <i class="fa-solid" :class="syncing ? 'fa-spinner fa-spin' : 'fa-rotate'"></i>
+          <i v-if="syncing" class="fa-solid fa-spinner fa-spin"></i>
         </button>
       </div>
     </div>

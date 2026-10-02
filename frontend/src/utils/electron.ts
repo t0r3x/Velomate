@@ -3,6 +3,15 @@ export interface UpdateStatus {
   version: string
 }
 
+/** Result of a user-triggered update check. `supported` is false outside a packaged build. */
+export interface UpdateCheckResult {
+  supported: boolean
+  available?: boolean
+  version?: string | null
+  current?: string
+  error?: string
+}
+
 export interface ElectronAPI {
   platform: string
   minimize: () => void
@@ -11,6 +20,8 @@ export interface ElectronAPI {
   onMaximizedChange: (callback: (isMaximized: boolean) => void) => void
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => void
   restartAndInstallUpdate: () => void
+  checkForUpdates: () => Promise<UpdateCheckResult>
+  updatesSupported: () => Promise<boolean>
 }
 
 declare global {

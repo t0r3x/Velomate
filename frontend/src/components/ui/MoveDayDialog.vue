@@ -115,9 +115,9 @@ const availableDays = computed(() => {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
+  background: var(--raise-subtle);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
   text-align: left;
@@ -128,7 +128,7 @@ const availableDays = computed(() => {
 }
 
 .move-day-row:hover {
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--raise);
   border-color: rgba(var(--primary-rgb), 0.4);
 }
 
