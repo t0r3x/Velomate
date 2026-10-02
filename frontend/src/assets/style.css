@@ -2800,6 +2800,67 @@ body.shablagoo-active .bg-glow-2 {
   margin-top: 0.5rem;
 }
 
+/* What changed since the last generation — the plan showing its working */
+.plan-changes {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--panel-border);
+}
+
+.plan-changes-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.plan-changes-list {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.plan-changes-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+}
+
+.plan-changes-day {
+  min-width: 6.5rem;
+  color: var(--text-muted);
+}
+
+.plan-changes-from {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.plan-changes-arrow {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+}
+
+.plan-changes-to {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.plan-changes-note {
+  margin-top: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
 /* Load assessment — lives inside ai-week-section */
 .ai-load-assessment {
   margin-top: 0.6rem;

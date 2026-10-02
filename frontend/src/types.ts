@@ -67,12 +67,23 @@ export interface LoadAssessment {
   insight: string
 }
 
+/** One future day whose workout type changed in the latest regeneration. */
+export interface PlanChange {
+  date: string
+  from: string
+  to:   string
+}
+
 export interface Recommendation {
   workoutType: WorkoutType
   reason: string
   priority: string
   weeklyPlan: PlanEntry[]
   nextWeekFocus: string | null
+  /** The model's explanation for why this plan differs from the previous one. */
+  changeNote: string | null
+  /** Computed server-side, never taken from the model — the authoritative list. */
+  changedEntries: PlanChange[]
   loadAssessment: LoadAssessment
   generatedAt: string
   stale?: boolean

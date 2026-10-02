@@ -478,7 +478,14 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
  *
  * Non-blocking: the caller has already committed what the athlete said, and the UI polls
  * for the result. Reacting to this is the point of the app, so the only reasons not to are
- * no API key, paused training, or the athlete opting out to save calls.
+ * no API key or paused training.
+ *
+ * Deliberately NOT gated by `instant_score_on_new_activity`. Every caller here is the
+ * athlete typing something — a check-in, a ride rating — and reacting to what they just
+ * told us is the product. That setting governs the *automatic* paths (a ride arriving on
+ * a background sync), where the call volume is unbounded and the athlete asked for
+ * nothing. It used to gate this function too, which meant unticking a box labelled
+ * "Score new rides immediately" silently stopped check-ins from doing anything at all.
  *
  * In free mode this can displace a suggestion the athlete has already pushed to their
  * watch. The hourly auto-check refuses to do that on staleness alone, but reacting to how
@@ -497,10 +504,6 @@ const triggerAdaptiveRegen = (context: string): AdaptiveRegenResult => {
 
   if (!getGeminiKey()) return none;
   if (getSetting('training_paused') === '1') return none;
-  if (getSetting('instant_score_on_new_activity') === '0') {
-    logger.info(`[${context}] Instant re-evaluation is disabled — leaving it to the next cycle`);
-    return none;
-  }
 
   const freeMode = isFreeTrainingMode();
   let replacedSyncedWorkout: AdaptiveRegenResult['replacedSyncedWorkout'] = null;

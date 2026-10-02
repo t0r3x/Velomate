@@ -107,6 +107,7 @@ recommendation -- id=1 singleton: current AI training plan
   id=1, workoutType, reason, priority TEXT,
   weeklyPlan TEXT (JSON PlanEntry[14], entries carry executionScore/executionNote),
   nextWeekOverview TEXT (legacy, unused — see below), nextWeekFocus TEXT,
+  changeNote TEXT, changedEntries TEXT (JSON PlanChange[]),  -- see "Showing its working"
   loadAssessment TEXT (JSON), generatedAt TEXT
 ```
 
@@ -190,6 +191,25 @@ The first plan is never created here — only steps 2-4 ever fire, and they all 
 - Recomputes `structure.totalMinutes` from steps (corrects AI rounding)
 - Always returns `getStoredRecommendation()` (i.e., what was just saved to DB)
 
+### Showing its working: `changeNote` + `changedEntries`
+
+A plan that rearranges itself in response to a check-in is only trustworthy if the athlete can see what
+moved and why. Without that, daily adaptation — the entire point of the app — reads as the thing being
+erratic. So every regeneration records both.
+
+- **`changedEntries` is computed, never asked of the model.** `diffPlans(statusSource, weeklyPlan)`
+  compares the new forward window against the plan as the athlete last saw it. Three exclusions, all
+  load-bearing: days **before today** (cannot be acted on), days whose previous status was not
+  `'planned'` (a `planned → completed` flip is something the athlete did, not a change of plan), and
+  days whose type is unchanged.
+- **`changeNote` is the model's reason**, and the only part it supplies. It sits **after `weeklyPlan`**
+  in the output key order — it describes a plan already written, so it can only be honest once that
+  plan exists. The prompt tells the model the athlete sees the exact list of changed days next to it,
+  so an invented change is visible as a lie.
+- `PlanChanges.vue` renders the computed list first and the note underneath, for the same reason.
+  It renders nothing at all when both are empty, which is the first-plan case — there is no previous
+  version to differ from.
+
 ### Prompt structure: static `systemInstruction` + dynamic athlete turn
 
 Each mode has **two halves**, and which half a piece of text belongs in is a real decision, not formatting:
@@ -247,7 +267,7 @@ mirrors the same two functions purely to give an actionable message before the r
 | `paused_since` / `pause_reason` | Set on pause, read on resume |
 | `last_plan_activity_date` | Used by auto-pause inactivity detection |
 | `setup_complete` | `'1'` when user confirmed HR profile |
-| `instant_score_on_new_activity` | `'0'` disables instant regen-on-newly-completed-ride (default on, i.e. unset or `'1'`) |
+| `instant_score_on_new_activity` | `'0'` disables instant regen-on-newly-completed-ride (default on, i.e. unset or `'1'`). Governs the **automatic** paths only — `/api/activities/refresh` and the auto-checks. Never gate explicit athlete input on it; see `triggerAdaptiveRegen()` |
 | `free_training_mode` | `'1'` replaces the 14-day plan with a single dateless suggestion (see "Free training mode") |
 
 ---
@@ -467,9 +487,14 @@ watch, after a ride.
 
 Both a ride rating and a check-in call this: the athlete said something new about their own state, so
 the plan re-evaluates. Non-blocking, and the response returns `regenerating` so the UI knows whether
-to poll. It declines only when there is no API key, training is paused, or
-`instant_score_on_new_activity` is off. A check-in that changed nothing would contradict the product —
-reacting to how the athlete actually feels is the whole point.
+to poll. It declines only when there is no API key or training is paused.
+
+**Deliberately not gated by `instant_score_on_new_activity`.** Every caller is the athlete typing
+something, and reacting to what they just told you is the product. That setting governs the *automatic*
+paths only — a ride arriving on a background sync, where call volume is unbounded and the athlete asked
+for nothing. It used to gate this function too, which meant unticking a box labelled "Score new rides
+immediately" silently stopped check-ins from doing anything at all: the core loop switched off by a
+control that said nothing about it. If you add a caller here, first ask whether a human pressed something.
 
 It also returns **`replacedSyncedWorkout`**, and this is not optional polish. In free mode this call can
 displace a suggestion the athlete already pushed to their watch — `runFreeAutoCheck()` refuses to do that

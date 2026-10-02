@@ -159,6 +159,15 @@ if (!hasColumn('recommendation', 'nextWeekFocus')) {
   db.exec('ALTER TABLE recommendation ADD COLUMN nextWeekFocus TEXT');
 }
 
+// What this regeneration changed, and why. Additive for the same reason: existing plans
+// must survive. An older row simply has no change record, which the UI renders as nothing.
+if (!hasColumn('recommendation', 'changeNote')) {
+  db.exec('ALTER TABLE recommendation ADD COLUMN changeNote TEXT');
+}
+if (!hasColumn('recommendation', 'changedEntries')) {
+  db.exec('ALTER TABLE recommendation ADD COLUMN changedEntries TEXT');
+}
+
 // ── Activities ────────────────────────────────────────────────────────────────
 // UPSERT: on conflict, update all fields EXCEPT perceivedExertion/feelingAfterExercise —
 // those are fetched via the detail endpoint separately and must not be overwritten by the
@@ -356,6 +365,19 @@ export interface WorkoutStructure {
   steps: WorkoutStep[];
 }
 
+/**
+ * One future day whose workout type changed in the latest regeneration.
+ *
+ * Computed in TypeScript rather than asked of the model: a reactive plan is only
+ * trustworthy if the list of what moved is exact. The model supplies the *reason*
+ * (changeNote); it is never asked what it changed.
+ */
+export interface PlanChange {
+  date: string;
+  from: string;
+  to:   string;
+}
+
 export interface PlanEntry {
   date: string;
   type: string;
@@ -372,12 +394,15 @@ export const upsertRecommendation = (rec: {
   priority: string;
   weeklyPlan: PlanEntry[];
   nextWeekFocus: string | null;
+  changeNote: string | null;
+  changedEntries: PlanChange[];
   loadAssessment: object;
 }): void => {
   db.prepare(`
     INSERT OR REPLACE INTO recommendation
-      (id, workoutType, reason, priority, weeklyPlan, nextWeekOverview, nextWeekFocus, loadAssessment, generatedAt)
-    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, workoutType, reason, priority, weeklyPlan, nextWeekOverview, nextWeekFocus,
+       changeNote, changedEntries, loadAssessment, generatedAt)
+    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     rec.workoutType,
     rec.reason,
@@ -385,6 +410,8 @@ export const upsertRecommendation = (rec: {
     JSON.stringify(rec.weeklyPlan),
     null,
     rec.nextWeekFocus,
+    rec.changeNote,
+    JSON.stringify(rec.changedEntries),
     JSON.stringify(rec.loadAssessment),
     new Date().toISOString()
   );
@@ -400,6 +427,8 @@ export const getStoredRecommendation = (): any | null => {
       priority:       row.priority,
       weeklyPlan:     JSON.parse(row.weeklyPlan     || '[]'),
       nextWeekFocus:  row.nextWeekFocus ?? null,
+      changeNote:     row.changeNote ?? null,
+      changedEntries: JSON.parse(row.changedEntries || '[]'),
       loadAssessment: JSON.parse(row.loadAssessment || 'null'),
       generatedAt:    row.generatedAt
     };

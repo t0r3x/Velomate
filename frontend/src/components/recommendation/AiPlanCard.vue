@@ -82,6 +82,8 @@
           <div class="ai-week-section">
             <WeekGrid :plan="rec.weeklyPlan" :todayPriority="rec.priority" title="This Week" @reschedule="handleReschedule" @skip="handleSkip" />
             <LoadAssessment v-if="rec.loadAssessment" :assessment="rec.loadAssessment" :generatedAt="rec.generatedAt" />
+            <!-- The plan adapts daily by design, so it has to show its working. -->
+            <PlanChanges :changes="rec.changedEntries ?? []" :note="rec.changeNote ?? null" />
           </div>
 
           <!-- Next week: rolling days 8-14, compact summary backed by real plan data -->
@@ -131,6 +133,7 @@ import type { SyncResult as SyncResultType } from '@/types'
 import WeekGrid         from './WeekGrid.vue'
 import NextWeekSummary  from './NextWeekSummary.vue'
 import LoadAssessment   from './LoadAssessment.vue'
+import PlanChanges      from './PlanChanges.vue'
 import SyncResult       from './SyncResult.vue'
 import DailyCheckinStrip from '@/components/checkin/DailyCheckinStrip.vue'
 

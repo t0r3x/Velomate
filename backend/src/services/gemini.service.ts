@@ -13,6 +13,7 @@ import {
   insertFreeSuggestion,
   setFreeSuggestionScore,
   PlanEntry,
+  PlanChange,
   FreeSuggestion
 } from './database.service';
 import { localDate, toRpe, toFeeling, USER_TZ, APP_NAME } from '../utils';
@@ -227,6 +228,29 @@ const buildCheckinBlock = (): string => {
   });
 
   return `DAILY CHECK-INS (self-reported, independent of any ride):\n${lines.join('\n')}\n\n`;
+};
+
+/**
+ * Which future days changed workout type in this regeneration.
+ *
+ * Computed here rather than taken from the model, because a plan that rearranges itself
+ * daily is only trustworthy if the list of what moved is exact. The model is asked for the
+ * reason (changeNote) and never for the facts.
+ *
+ * Only forward, still-planned days count: a day that has passed cannot be acted on, and a
+ * status flip (planned -> completed) is something the athlete did, not a change of plan.
+ */
+const diffPlans = (previous: PlanEntry[], next: PlanEntry[]): PlanChange[] => {
+  const today      = localDate();
+  const prevByDate = new Map(previous.map(e => [e.date, e]));
+
+  return next.reduce<PlanChange[]>((changes, entry) => {
+    if (entry.date < today) return changes;
+    const was = prevByDate.get(entry.date);
+    if (!was || was.status !== 'planned' || was.type === entry.type) return changes;
+    changes.push({ date: entry.date, from: was.type, to: entry.type });
+    return changes;
+  }, []);
 };
 
 /**
@@ -593,6 +617,7 @@ OUTPUT: Respond ONLY with this exact JSON schema, emitting the keys in exactly t
       }
     }
   ],
+  "changeNote": "1-2 sentences on what you changed relative to EXISTING SCHEDULED WORKOUTS and which signal drove it — name the signal (a check-in, an execution score, an rpe or feeling, a skip). If you kept every scheduled day exactly as it was, say that plainly instead. Never claim a change you did not make.",
   "nextWeekFocus": "1-2 sentences on the DIRECTION the second week (weeklyPlan[7..13]) is heading in — what ties those days together and why. Write it as a direction that will be revised as new rides and feedback arrive, not as a commitment."
 }
 
@@ -600,6 +625,7 @@ THE KEY ORDER IS NOT COSMETIC — assess before you plan:
 - Score the past first (executionScores), because those scores are the evidence.
 - Then write loadAssessment as your actual judgement of the current state, based on that evidence and the TRAINING LOAD figures.
 - Only then plan. today and weeklyPlan must FOLLOW from loadAssessment. Do not write a plan first and justify it afterwards.
+- changeNote comes last for the opposite reason: it describes a plan you have already written, so you can only report it honestly once weeklyPlan exists.
 
 STRICT RULES:
 - PLAN STABILITY: If an EXISTING SCHEDULED WORKOUTS block is present in the athlete data, you MUST keep the same workout type for each date UNLESS at least one of these conditions applies:
@@ -618,6 +644,7 @@ STRICT RULES:
 - zone MUST be one of: z1, z2, z3, z4, z5
 - durationSec MUST be a positive integer (minimum 20 for sprint intervals)
 - weeklyPlan MUST contain exactly ${PLAN_WINDOW_DAYS} entries, starting from the TODAY date given in the athlete data, one per consecutive calendar day
+- changeNote is the athlete's explanation for why their plan looks different today than it did yesterday. They see the exact list of changed days alongside it, so an invented change is immediately visible as a lie. Write it for them, not about yourself: "Thursday drops to Tempo because this morning's check-in reported 2/5", not "I have adjusted the plan".
 - nextWeekFocus describes weeklyPlan[7..13] AS A WHOLE (the training theme/rationale) — it is not a day-by-day recap, those already have their own "reason"
 - totalMinutes MUST equal Math.round(sum(durationSec) / 60)
 - COMPACT STRUCTURES: Sprint max 6 interval sets, Threshold max 3 sets, VO2Max max 4 sets. Step labels must be ≤ 4 words. reason fields: 1 short sentence only.`;
@@ -974,12 +1001,22 @@ const _attemptGeneration = async (
   // weeklyPlan[0] is the authoritative source for today — always sync root fields to it
   // so the "Today's Recommendation" chip never diverges from the week grid.
   const todayEntry = weeklyPlan[0];
+  // Diffed against the plan as the athlete last saw it, which is what statusSource holds.
+  const changedEntries = diffPlans(statusSource, weeklyPlan);
+  if (changedEntries.length > 0) {
+    logger.info(`[Gemini] Plan changes: ${changedEntries.map(c => `${c.date} ${c.from}->${c.to}`).join(', ')}`);
+  } else {
+    logger.info('[Gemini] Plan changes: none — every scheduled day kept its type');
+  }
+
   upsertRecommendation({
     workoutType:   todayEntry?.type    ?? parsed.today.type,
     reason:        todayEntry?.reason  ?? parsed.today.reason,
     priority:      parsed.today.priority,
     weeklyPlan:    fullPlan,
     nextWeekFocus: typeof parsed.nextWeekFocus === 'string' ? parsed.nextWeekFocus : null,
+    changeNote:    typeof parsed.changeNote === 'string' ? parsed.changeNote : null,
+    changedEntries,
     loadAssessment: parsed.loadAssessment
   });
 

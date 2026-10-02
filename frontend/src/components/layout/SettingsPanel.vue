@@ -153,11 +153,12 @@
           <div class="input-group" style="margin-top:0.85rem">
             <label class="checkbox-label" for="panel-instant-scoring">
               <input type="checkbox" id="panel-instant-scoring" v-model="instantScoring">
-              <span>Score new rides immediately</span>
+              <span>Re-plan automatically when a ride syncs</span>
             </label>
             <p class="helper-text" style="margin-top:0.35rem">
-              Regenerates your AI plan as soon as a new ride is synced, so its execution score shows up right away.
-              Turning this off saves AI calls — your score will instead appear at the next scheduled plan refresh.
+              Regenerates your plan as soon as a new ride arrives, so its execution score shows up right away.
+              Turning this off saves AI calls — the score appears at the next scheduled refresh instead.
+              Anything you enter yourself, like a check-in or a ride rating, always takes effect immediately.
             </p>
           </div>
 
