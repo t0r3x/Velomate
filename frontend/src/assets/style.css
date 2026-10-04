@@ -386,7 +386,11 @@ body.is-electron .app-shell {
   left: 50%;
   width: min(760px, 94vw);
   max-height: 88vh;
-  background: var(--surface-3);
+  max-height: 88dvh;
+  /* --panel-bg, like every other dialog (they are all .glass-panel). --surface-3 made
+     this the one modal in a different colour, and lifted it above its own --surface-2
+     inner panels so they read as holes instead of raised blocks. */
+  background: var(--panel-bg);
   /* A hairline, not a tinted brand-coloured edge: the accent is reserved for things
      you can act on, so spending it on a dialog outline dilutes it everywhere else. */
   border: 1px solid var(--hairline-strong);
@@ -2118,11 +2122,35 @@ html[data-theme='mintberry'] .bg-glow-2 {
 .tp-panel {
   width: min(760px, 94vw);
   max-height: min(92vh, 960px);
+  /* dvh, not vh: on mobile browsers 100vh is the viewport with the URL bar
+     collapsed, so a vh-capped panel runs under the browser chrome and the
+     footer (Save Profile) ends up barely reachable. vh line stays as fallback. */
+  max-height: min(92dvh, 960px);
   display: flex;
   flex-direction: column;
   border-radius: var(--radius-md);
   border: 1px solid var(--hairline-strong);
   box-shadow: var(--shadow-overlay);
+}
+
+/* Phones: the 2rem backdrop padding plus 1.5-2rem body/footer padding ate a
+   large share of a short screen. Tighten all of it and let the panel use
+   (almost) the full dynamic viewport so the footer is always on screen. */
+@media (max-width: 640px) {
+  .tp-backdrop.tp-modal-mode { padding: 0.5rem; }
+  .tp-backdrop.tp-modal-mode .tp-panel {
+    width: 100%;
+    max-height: calc(100vh - 1rem);
+    max-height: calc(100dvh - 1rem);
+  }
+  .tp-header { padding: 0.9rem 1rem; }
+  .tp-body { padding: 1rem; }
+  .tp-footer { padding: 0.75rem 1rem 1rem; }
+
+  .settings-panel { width: calc(100vw - 1rem); max-height: calc(100dvh - 1rem); }
+  .settings-panel-header { padding: 0.9rem 1rem; }
+  .settings-panel-body { padding: 1.25rem 1rem; }
+  .settings-panel-footer { padding: 0.75rem 1rem 1rem; }
 }
 
 /* Fade+scale transition — same "confirm-fade" convention as the other popup

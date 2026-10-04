@@ -93,6 +93,7 @@ function statusColor(w: SyncedWorkout): string {
   width: 100%;
   max-width: 480px;
   max-height: 85vh;
+  max-height: 85dvh; /* dvh: see .tp-panel in style.css — vh runs under mobile browser chrome */
   overflow-y: auto;
   padding: 1.5rem;
   display: flex;
