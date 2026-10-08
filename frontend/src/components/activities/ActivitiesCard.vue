@@ -6,19 +6,20 @@
       <div class="card-header-actions">
         <span class="last-synced-label">{{ lastSyncedLabel }}</span>
         <button
-          class="btn btn-secondary btn-sm"
+          class="btn-icon-sm"
+          :title="authStore.isLoggedIn ? 'Sync rides from Garmin' : 'Connect Garmin to sync rides'"
+          aria-label="Sync rides from Garmin"
           :disabled="syncing || !authStore.isLoggedIn"
           @click="handleSync"
         >
-          <span>{{ syncing ? 'Syncing…' : 'Sync' }}</span>
-          <i v-if="syncing" class="fa-solid fa-spinner fa-spin"></i>
+          <i class="fa-solid" :class="syncing ? 'fa-spinner fa-spin' : 'fa-rotate'"></i>
         </button>
       </div>
     </div>
     <div class="card-body scroll-panel">
       <div id="activities-list-container">
         <p v-if="activitiesStore.activities.length === 0" class="helper-text empty-state-text">
-          No rides yet. Click "Sync" to sync your rides from Garmin.
+          No rides yet. Use the refresh button above to sync your rides from Garmin.
         </p>
         <ul v-else class="activities-list">
           <ActivityItem
