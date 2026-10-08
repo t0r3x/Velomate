@@ -9,7 +9,8 @@ import {
   postResumeTraining
 } from '@/api/client'
 import { useAuthStore } from '@/stores/auth.store'
-import type { FreeSuggestion, FreeState, SyncResult } from '@/types'
+import { REFRESH_POLL_ATTEMPTS } from '@/utils'
+import type { FreeSuggestion, FreeState, RefreshOutcome, RefreshStep, SyncResult } from '@/types'
 
 /**
  * Free training mode: one dateless "next workout" suggestion instead of the 14-day plan.
@@ -28,6 +29,8 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
   /** True while a background AI regen (triggered by refresh/dismiss/resume/sync) is in
    *  flight — drives a small inline indicator instead of blanking the whole card. */
   const isRegenerating = ref(false)
+  /** Which half of an explicit refresh is running — see recommendation.store. */
+  const refreshStep = ref<RefreshStep | null>(null)
 
   /** A Rest suggestion is real advice, but there is no workout file to push to Garmin. */
   const isSyncable = computed(() =>
@@ -71,22 +74,31 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
 
   /**
    * Ask the AI for a new suggestion — also the "generate my first one" path. When a
-   * suggestion already exists, the backend commits nothing and responds immediately with
-   * the current one (`regenerating: true`) while the AI read runs in the background — so
-   * this only shows the full loading state for the very first suggestion.
+   * suggestion already exists, the backend syncs Garmin, starts the AI in the background
+   * and responds with the current one (`regenerating: true`) — so this only shows the full
+   * loading state for the very first suggestion.
+   *
+   * Resolves only once the new suggestion is in (or the attempt is over), so the card can
+   * keep one continuous busy state — see recommendation.store's refresh().
    */
-  async function refresh() {
+  async function refresh(): Promise<RefreshOutcome> {
     const isFirstGeneration = state.value !== 'loaded'
     if (isFirstGeneration) state.value = 'loading'
+    refreshStep.value = 'garmin'
     try {
       const result = await postFreeTrainingRefresh()
       applyPayload(result)
-      if (result.regenerating) pollForUpdate(result.suggestion?.generatedAt, 20, true)
+      if (!result.regenerating) return 'changed'
+      refreshStep.value = 'ai'
+      return await pollForUpdate(result.suggestion?.generatedAt, REFRESH_POLL_ATTEMPTS, true, true)
     } catch (err: unknown) {
       console.error('[FreeTraining] refresh failed:', err)
       const e = err as { details?: string; message?: string }
       errorMessage.value = e.details || e.message || 'Failed to get a suggestion.'
       state.value = 'error'
+      return 'failed'
+    } finally {
+      refreshStep.value = null
     }
   }
 
@@ -162,21 +174,32 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
    * the confirmed case shows `isRegenerating` — the speculative mount-time check has no
    * evidence anything is actually happening, so it must stay invisible or the banner would
    * flash on every single startup.
+   *
+   * 'changed' means a different workout type; the same type again is 'unchanged', which the
+   * card reports as the AI standing by it. `detectFailure`: see recommendation.store.
    */
-  async function pollForUpdate(knownGeneratedAt: string | undefined, maxAttempts = 20, showIndicator = false) {
+  async function pollForUpdate(
+    knownGeneratedAt: string | undefined,
+    maxAttempts = 20,
+    showIndicator = false,
+    detectFailure = false
+  ): Promise<RefreshOutcome> {
+    const previousType = suggestion.value?.workoutType
     if (showIndicator) isRegenerating.value = true
     try {
       for (let i = 0; i < maxAttempts; i++) {
         await new Promise<void>(r => setTimeout(r, 4000))
         try {
           const data = await getFreeTraining()
-          if ('notConfigured' in data || 'noSuggestion' in data || 'paused' in data) return
+          if ('notConfigured' in data || 'noSuggestion' in data || 'paused' in data) return 'failed'
           if (data.suggestion?.generatedAt !== knownGeneratedAt) {
             applyPayload(data)
-            return
+            return data.suggestion?.workoutType === previousType ? 'unchanged' : 'changed'
           }
+          if (detectFailure && data.regenerating === false) return 'failed'
         } catch { /* ignore poll errors */ }
       }
+      return 'timeout'
     } finally {
       if (showIndicator) isRegenerating.value = false
     }
@@ -191,6 +214,7 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
     pausedSince,
     pauseReason,
     isRegenerating,
+    refreshStep,
     isSyncable,
     isSynced,
     canSync,

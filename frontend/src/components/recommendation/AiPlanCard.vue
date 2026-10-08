@@ -7,8 +7,8 @@
         <button class="btn-icon-sm btn-icon-pause" title="Pause training — use for injury, illness or travel" :disabled="pausing" @click="handlePause">
           <i class="fa-solid" :class="pausing ? 'fa-spinner fa-spin' : 'fa-circle-pause'"></i>
         </button>
-        <button class="btn-icon-sm" title="Refresh recommendation" :disabled="refreshing" @click="handleRefresh">
-          <i class="fa-solid" :class="refreshing ? 'fa-spinner fa-spin' : 'fa-rotate'"></i>
+        <button class="btn-icon-sm" title="Refresh recommendation" :disabled="isUpdating" @click="handleRefresh">
+          <i class="fa-solid" :class="isUpdating ? 'fa-spinner fa-spin' : 'fa-rotate'"></i>
         </button>
       </div>
     </div>
@@ -71,23 +71,25 @@
       <!-- State: loaded -->
       <div v-show="recStore.state === 'loaded'" class="ai-rec-state">
         <template v-if="rec">
-          <!-- Inline indicator for a background regen (refresh/skip/reschedule/resume) —
-               the plan below stays visible and interactive while the AI updates it. -->
-          <p v-if="recStore.isRegenerating" class="ai-rec-regenerating">
-            <i class="fa-solid fa-spinner fa-spin"></i><span>Your plan is being updated…</span>
+          <!-- One status line from click to result, naming the step it is waiting on. The
+               plan below stays visible but dimmed: it is about to be replaced. -->
+          <p v-if="statusText" class="ai-rec-regenerating">
+            <i class="fa-solid fa-spinner fa-spin"></i><span>{{ statusText }}</span>
           </p>
 
-          <!-- This week: rolling "today onwards" window — always shows the next 7 days in
-               full detail regardless of what weekday today is, grid + load assessment -->
-          <div class="ai-week-section">
-            <WeekGrid :plan="rec.weeklyPlan" :todayPriority="rec.priority" title="This Week" @reschedule="handleReschedule" @skip="handleSkip" />
-            <LoadAssessment v-if="rec.loadAssessment" :assessment="rec.loadAssessment" :generatedAt="rec.generatedAt" />
-            <!-- The plan adapts daily by design, so it has to show its working. -->
-            <PlanChanges :changes="rec.changedEntries ?? []" :note="rec.changeNote ?? null" />
-          </div>
+          <div class="ai-rec-content" :class="{ 'is-updating': isUpdating }">
+            <!-- This week: rolling "today onwards" window — always shows the next 7 days in
+                 full detail regardless of what weekday today is, grid + load assessment -->
+            <div class="ai-week-section">
+              <WeekGrid :plan="rec.weeklyPlan" :todayPriority="rec.priority" title="This Week" @reschedule="handleReschedule" @skip="handleSkip" />
+              <LoadAssessment v-if="rec.loadAssessment" :assessment="rec.loadAssessment" :generatedAt="rec.generatedAt" />
+              <!-- The plan adapts daily by design, so it has to show its working. -->
+              <PlanChanges :changes="rec.changedEntries ?? []" :note="rec.changeNote ?? null" />
+            </div>
 
-          <!-- Next week: rolling days 8-14, compact summary backed by real plan data -->
-          <NextWeekSummary :plan="rec.weeklyPlan" :startOffset="7" :nextWeekFocus="rec.nextWeekFocus" />
+            <!-- Next week: rolling days 8-14, compact summary backed by real plan data -->
+            <NextWeekSummary :plan="rec.weeklyPlan" :startOffset="7" :nextWeekFocus="rec.nextWeekFocus" />
+          </div>
         </template>
       </div>
 
@@ -108,7 +110,7 @@
     <div class="card-pinned-footer">
       <button
         class="btn btn-primary"
-        :disabled="!recStore.canSync || syncing"
+        :disabled="!recStore.canSync || syncing || isUpdating"
         @click="handleSync"
       >
         <span>{{ syncing ? 'Syncing Workouts…' : 'Sync &amp; Schedule Workouts' }}</span>
@@ -151,7 +153,6 @@ const generating = ref(false)
 
 const pausing    = ref(false)
 const resuming   = ref(false)
-const refreshing = ref(false)
 const syncing    = ref(false)
 const syncResult = ref<SyncResultType | null>(null)
 
@@ -167,12 +168,34 @@ async function handleGenerateFirst() {
   generating.value = false
 }
 
+/**
+ * Busy from the click until the new plan is in — or while any other regen (skip, move,
+ * check-in, new ride) is running. Syncing now would push a plan that is on its way out.
+ */
+const isUpdating = computed(() => recStore.refreshStep !== null || recStore.isRegenerating)
+
+const statusText = computed(() => {
+  if (recStore.refreshStep === 'garmin') return 'Checking Garmin for new rides…'
+  if (recStore.refreshStep === 'ai')     return 'Reworking your plan…'
+  if (recStore.isRegenerating)           return 'Your plan is being updated…'
+  return ''
+})
+
 async function handleRefresh() {
-  refreshing.value = true
-  await recStore.refresh()
-  refreshing.value = false
-  if (recStore.state === 'error') {
-    show('error', 'Refresh Failed', recStore.errorMessage)
+  const outcome = await recStore.refresh()
+  const changed = rec.value?.changedEntries?.length ?? 0
+
+  if (outcome === 'changed') {
+    show('success', 'Plan updated',
+      changed ? `${changed} ${changed === 1 ? 'day' : 'days'} changed — see what moved under This Week.` : 'Your plan is up to date.')
+  } else if (outcome === 'unchanged') {
+    show('info', 'Plan checked', 'The AI looked again and kept your plan as it was.')
+  } else if (outcome === 'timeout') {
+    show('warn', 'Taking longer than usual', 'The AI is still working on it — check back in a minute.')
+  } else {
+    show('error', 'Refresh failed', recStore.state === 'error'
+      ? recStore.errorMessage
+      : 'The AI could not update your plan. Your current plan still stands.')
   }
 }
 

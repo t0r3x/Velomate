@@ -7,14 +7,17 @@
       <div v-if="hasFeedback || editing" class="act-feedback">
         <span v-if="rpe !== null" class="act-rpe-badge" :class="rpeClass">RPE {{ rpe }}</span>
         <span v-if="feeling !== null" class="act-feeling-badge" :class="feelingEntry.cls" v-html="feelingHtml"></span>
-        <span v-if="planEntry?.executionScore != null" class="act-score-badge" :class="scoreClass" :title="planEntry.executionNote || ''">
-          <i class="fa-solid fa-brain"></i>
-          {{ planEntry.executionScore }}
-          <span class="act-score-type">{{ scoreTypeLabel }}</span>
+        <!-- Score and pencil wrap as one unit, so the pencil never ends up alone on a line. -->
+        <span class="act-feedback-tail">
+          <span v-if="planEntry?.executionScore != null" class="act-score-badge" :class="scoreClass" :title="planEntry.executionNote || ''">
+            <i class="fa-solid fa-brain"></i>
+            {{ planEntry.executionScore }}
+            <span class="act-score-type">{{ scoreTypeLabel }}</span>
+          </span>
+          <button v-if="!editing" class="act-rate-btn" :title="rateTitle" @click="openEditor">
+            <i class="fa-solid fa-pen"></i>
+          </button>
         </span>
-        <button v-if="!editing" class="act-rate-btn" :title="rateTitle" @click="openEditor">
-          <i class="fa-solid fa-pen"></i>
-        </button>
       </div>
 
       <!-- No rating yet: the most important signal in the app shouldn't need the watch. -->
@@ -142,8 +145,8 @@ const feeling = computed(() =>
 const FEELING_MAP: Record<number, { label: string; icon: string; cls: string }> = {
   1: { label: 'Exhausted', icon: 'fa-face-dizzy',      cls: 'feeling-1' },
   2: { label: 'Tired',     icon: 'fa-face-tired',      cls: 'feeling-2' },
-  3: { label: 'Normal',    icon: 'fa-face-meh',        cls: 'feeling-3' },
-  4: { label: 'Good',      icon: 'fa-face-smile',      cls: 'feeling-4' },
+  3: { label: 'Normal',    icon: 'fa-face-smile',      cls: 'feeling-3' },
+  4: { label: 'Good',      icon: 'fa-face-grin',       cls: 'feeling-4' },
   5: { label: 'Strong',    icon: 'fa-face-grin-stars', cls: 'feeling-5' }
 }
 

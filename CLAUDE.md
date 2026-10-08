@@ -181,9 +181,10 @@ The first plan is never created here — only steps 2-4 ever fire, and they all 
 
 ### `generateRecommendation(previousPlan?, pauseContext?, pinnedTodayType?)`
 - Retries with a shrinking activity window (`ACTIVITY_WINDOWS = [21, 14, 10]` days) if Gemini's response is truncated (`finishReason === 'MAX_TOKENS'`)
-- POSTs to `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`, retries up to 3× on HTTP 429 with backoff
+- POSTs to `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` through `callGemini()` (shared by both modes): up to 4 attempts on 429 (honours Retry-After) and on 500/503/504 (3s, 6s, 12s). 503 "model overloaded" is routine for a newly released model and used to fail the generation outright, since only 429 was retried. Other statuses throw immediately — a 400/403/404 fails identically every time
 - `responseMimeType: "application/json"`, joins all parts: `parts.map(p => p.text ?? '').join('')` — avoids truncation
 - `temperature: 0.2`. Deliberately low: the prompt asks for plan stability in prose, and a higher setting sampled against the very thing it was asking for.
+- `thinkingConfig` comes from `thinkingConfigFor(model)`: `{ thinkingLevel: 'low' }` for non-lite Gemini 3+, nothing otherwise. Gemini 3 Flash's default high dynamic thinking cost 20-30s per plan (flash-lite: 2-5s for the same prompt), and thinking tokens count against `maxOutputTokens`. Lite models already default lower, and 2.x/Gemma reject `thinkingLevel`, so they get the API default. `logUsage()` logs duration plus prompt/cached/thoughts/output tokens per call; check it before changing the level.
 - **Single-flight**: `generateRecommendation()` is a thin wrapper around `_generatePlan()` guarded by a module-level `planGenerationInFlight` promise — a second concurrent caller joins the run already in progress instead of starting its own. Six paths can trigger a generation and most fire without awaiting (an ordinary app launch triggers two), so without this, two Gemini calls would race to write `recommendation.id=1`. `generateFreeSuggestion()` has the same guard (`freeGenerationInFlight`); `isGenerationInFlight()` exposes both to the API.
 - Only `weeklyPlan[0..6]` get a `structure` (`STRUCTURED_WINDOW_DAYS`); days 7-13 are a typed outline with `structure: null`. Only the first week is ever synced to Garmin (`syncAndScheduleWorkouts` covers today..today+6) and the plan regenerates daily, so a second-week day always gets its structure before it can be ridden. Generating them up front was roughly half the output tokens, thrown away — and the main cause of the `MAX_TOKENS` truncation the `ACTIVITY_WINDOWS` ladder exists to retry around. Don't "restore" it.
 - Validates: `today.type` in the valid set, `weeklyPlan` is exactly 14 entries (`PLAN_WINDOW_DAYS`)
@@ -234,7 +235,7 @@ Rides are rendered by `formatActivityLines()` as one line per ride (`date | dura
 ### AI model selection
 
 The model is **user-supplied free text**, not a fixed dropdown — that list went stale every time Google
-shipped a model. `SettingsPanel.vue` offers `MODEL_PRESETS` (currently `gemini-3.6-flash` and
+shipped a model. `SettingsPanel.vue` offers `MODEL_PRESETS` (currently `gemini-3.8-flash` and
 `gemini-3.5-flash-lite`) plus a `Custom model ID…` option that reveals a text field, which is how Pro-tier
 and brand-new models get in. A stored value that is not a preset reopens the form **in custom mode with
 that value**, so removing a preset in a later version never silently resets someone's choice.
@@ -257,7 +258,7 @@ mirrors the same two functions purely to give an actionable message before the r
 | Key | Description |
 |-----|-------------|
 | `gemini_api_key` | Raw API key |
-| `gemini_model` | e.g. `gemini-3.6-flash` (default). Free-text: the settings form offers two presets plus a "Custom model ID…" field, so a Pro-tier or newly released model can be used without an app update. Always stored normalized — see "AI model selection" |
+| `gemini_model` | e.g. `gemini-3.8-flash` (default). Free-text: the settings form offers two presets plus a "Custom model ID…" field, so a Pro-tier or newly released model can be used without an app update. Always stored normalized — see "AI model selection" |
 | `gemini_last_generated` | ISO timestamp; `'0'` = never/force regen |
 | `preferred_long_ride_days` | Comma-separated day names, e.g. `Saturday,Sunday` |
 | `preferred_long_ride_day` | Legacy singular key (read as fallback) |
@@ -389,14 +390,14 @@ the `--raise-*` overlays, text, secondary surfaces, the accent, the zone ramp an
   round trip away and the theme has to be on the first paint or the app visibly flashes between
   palettes. `main.ts` applies the cached value before mount; the real value overwrites it on load. This
   is the one legitimate localStorage use in the app — it is a cache, not state.
-- The picker lives behind the wrench in `MenuBar`, in `AboutDialog` ("Preferences"), alongside About
+- The picker lives behind the wrench in `MenuBar`, in `AboutDialog` ("Preferences"), alongside the `instant_score_on_new_activity` checkbox (app behaviour, so it moved out of the AI-connection panel; saves on change like the theme), About
   and the on-demand update check.
 
-## Visual language (`frontend/src/assets/style.css` **and 13 scoped `<style>` blocks**)
+## Visual language (`frontend/src/assets/style.css` **and 12 scoped `<style>` blocks**)
 
-**The theme does not live in one file.** Thirteen components carry their own `<style>` block —
+**The theme does not live in one file.** Twelve components carry their own `<style>` block —
 `WorkoutDetailPanel`, `TitleBar`, `PauseDialog`, `MoveDayDialog`, `UpdateBanner`, `FreeTrainingCard`,
-`FreeHistoryList` and others — and they are part of the theme whether or not `style.css` knows about
+`SyncResult` and others — and they are part of the theme whether or not `style.css` knows about
 them. A palette change applied only to `style.css` leaves whole panels in the old colours: that is
 exactly how the workout detail block and the title bar stayed navy inside an otherwise warm app.
 Any theme work has to sweep `.vue` files too, and match on **computed channel values**, not a
@@ -414,8 +415,8 @@ card, accent at 5.05.
 have to stay mutually distinguishable. That also constrains the accent: it may not collide with the zone
 ramp, which rules out green, cyan, orange and red. Blue is free, which is why it stayed.
 
-- **Radius is a four-step scale** — `--radius-xs: 2px` (chips, badges, ticks), `--radius-sm: 3px`
-  (buttons, inputs), `--radius-md: 4px` (cards, dialogs, editors), `--radius-pill: 999px` (only
+- **Radius is a five-step scale** — `--radius-xs: 2px` (chips, badges, ticks), `--radius-sm: 3px`
+  (buttons, inputs), `--radius-md: 4px` (cards, dialogs, editors), `--radius-lg: 8px` (card header icon tiles only), `--radius-pill: 999px` (only
   genuinely pill-shaped things). There were **fourteen** ad-hoc values before, up to 20px. Use a
   token, never a literal. `50%` (circles) and `2px` (caps on 4px-tall bars) stay literal on purpose:
   that is geometry, not style.
@@ -434,7 +435,7 @@ ramp, which rules out green, cyan, orange and red. Blue is free, which is why it
   in-flight spinner, which reports state and now renders only while the action runs. Icon-only buttons
   (the round refresh/pause controls) are unaffected.
 - **Card header icons are the deliberate exception**: they sit in a 1.75rem tile with a tinted
-  background, a hairline and `--radius-sm`. A card needs an anchor, and a loose glyph beside the title
+  background, a hairline and `--radius-lg`. At 28px anything smaller reads as a hard square, and a circle would be the "disc" ruled out below. A card needs an anchor, and a loose glyph beside the title
   reads as a sticker. This is the one place a container around an icon is right.
 - **Icons sit next to a label, never inside a disc.** The tinted circles behind `.wc-icon` are gone.
   Face icons (check-in, post-ride feeling) and workout-type icons are deliberate and stay — those are
@@ -468,6 +469,7 @@ The old vanilla-JS `setView()`/`currentView`/hidden-class toggling and `setRecSt
 - **`settings.store.ts`** — `geminiConfigured`, `setupComplete`, `maskedKey`, `preferredLongRideDays[]`, `geminiModel`, `inactivityPauseDays`. `init()`/`reload()`, `saveAll()`, `saveInactivityPauseDays()`, `disconnectGemini()`, `savePreferredDays()`, `markSetupComplete()`
 - **`recommendation.store.ts`** — `state: RecState` (`'not-configured' | 'no-plan' | 'loading' | 'loaded' | 'error' | 'paused'`), `recommendation`, `pausedSince`, `pauseReason`. `fetchCached()`, `refresh()`, `skipToday()`, `reschedule()`, `pollForUpdate()` (polls every 4s up to 10× for a changed `generatedAt` after a non-blocking backend regen), `pauseTraining()`, `resumeTraining()`, `syncWorkouts()`
 - **`freeTraining.store.ts`** — free mode's counterpart to `recommendation.store`, same state-machine shape: `state: FreeState` (`'not-configured' | 'no-suggestion' | 'loading' | 'loaded' | 'error' | 'paused'`), `suggestion`, `history[]`. `fetchCached()`, `refresh()`, `dismiss()`, `syncWorkout()`, `pollForUpdate()`, `pauseTraining()`, `resumeTraining()`
+- **Explicit refresh is one continuous busy state** (both stores). `refresh()` resolves only after the new plan/suggestion is in, exposing `refreshStep` (`'garmin'` → `'ai'`) for the status line, and returns a `RefreshOutcome` the card reports as a toast — including `'unchanged'`, because an AI that looked again and kept the same thing is otherwise indistinguishable from nothing happening. It used to resolve after the Garmin step, so the button stopped spinning exactly when the slow part began. Failure is detected by the GET's `regenerating` going false with `generatedAt` unchanged — only for refresh (`detectFailure`), never for the speculative mount-time poll, which waits on a generation that may not have started yet. While anything regenerates, the card content is dimmed and non-interactive (`.ai-rec-content.is-updating`) and sync/dismiss are disabled: they would act on a plan that is about to be overwritten.
 - **`checkin.store.ts`** — `today`, `history[]`, computed `answeredToday`. `fetch()`, `save()`, `clear()`. Backs `DailyCheckinStrip.vue`, which is rendered by **both** `AiPlanCard.vue` and `FreeTrainingCard.vue` (loaded state only), above their scroll area.
 - **`profile.store.ts`** — `profile`, computed `hrLabel`. `fetch()`, `save()`, `setFromDashboard()`
 - **`activities.store.ts`** — `activities[]`, `analysis`, `loading`. `loadFromDb()` (DB-only, fast), `syncFromGarmin()` (full refresh, also updates profile store)
@@ -616,7 +618,7 @@ normal 23h auto-check). Toggling either way resets `gemini_last_generated` to `'
 |---|---|
 | `ACTIVITY_DATA_NOTES`, `WORKOUT_TYPE_GUIDELINES`, `CALIBRATION_GUIDELINES`, `SCORING_RUBRIC`, `buildRecentActivities()`, `buildZoneString()`, `buildPreferenceLines()`, `buildPauseBlock()`, `buildTrainingLoadBlock()`, `formatActivityLines()` — shared; the first four now live in each mode's system instruction rather than in the per-call text | `buildFreePrompt()` — one-workout framing, `coachNote` instead of a calendar slot, `PREVIOUS SUGGESTIONS` compliance block keyed by `[id N]` |
 | `buildFromStructure()`, `zoneTarget()`, `workoutLabels()`, `FALLBACK_STRUCTURES` in `workout.service.ts` | `syncFreeWorkout()` — one workout, deletes only an **exact name clash** instead of every `"Velomate - "` workout, so previously synced suggestions survive as history |
-| `WorkoutDetailPanel.vue` (new `dateless` prop hides the day label + Skip/Move), `LoadAssessment.vue`, `SyncResult.vue` (new `singleWorkout` prop), `usePauseDialog`, `useConfirm` | `FreeTrainingCard.vue`, `FreeHistoryList.vue`, `freeTraining.store.ts` |
+| `WorkoutDetailPanel.vue` (new `dateless` prop hides the day label + Skip/Move), `LoadAssessment.vue`, `SyncResult.vue` (new `singleWorkout` prop), `usePauseDialog`, `useConfirm` | `FreeTrainingCard.vue`, `freeTraining.store.ts` (its `history[]` has no list of its own — it only feeds free-mode execution scores to the rides in `ActivitiesCard.vue`; a "Recent Suggestions" list was removed as noise) |
 | `buildPreferenceLines()` (goals block identical) | its `freeMode` argument swaps the "preferred Long Ride day" instruction for "the athlete chooses the day themselves" — there is no calendar to place a long ride on, and the UI says the same under those day chips |
 | `/api/training/pause` + `/resume` (mode-agnostic; resume regenerates a suggestion instead of a plan) | `/api/free-training*` routes |
 

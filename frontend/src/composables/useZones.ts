@@ -26,9 +26,18 @@ const ZONE_KEYS: ZoneSegment['key'][] = ['z1', 'z2', 'z3', 'z4', 'z5']
  * since a dragged boundary is no longer necessarily on the formula's curve.
  */
 export function zonesToSegments(zones: HrZones, maxHr: number): ZoneSegment[] {
-  return ZONE_KEYS.map(key => {
+  // Each segment runs from the previous zone's max to its own. Using max - min instead
+  // dropped the 1 bpm between zones, and rounding each width to whole percent compounded
+  // it — together the bar stopped a few percent short of the right edge.
+  const scale = zoneBarScale(zones, maxHr)
+  return ZONE_KEYS.map((key, i) => {
     const z = zones[key]
-    const span = key === 'z1' ? z.max : (z.max - z.min)
-    return { key, min: z.min, max: z.max, width: Math.max(1, Math.round(span / maxHr * 100)) }
+    const from = i === 0 ? 0 : zones[ZONE_KEYS[i - 1]].max
+    return { key, min: z.min, max: z.max, width: (z.max - from) / scale * 100 }
   })
+}
+
+/** The bpm at the bar's right edge: the top of Z5, so the segments always fill it exactly. */
+export function zoneBarScale(zones: HrZones, maxHr: number): number {
+  return zones.z5.max > 0 ? zones.z5.max : maxHr
 }

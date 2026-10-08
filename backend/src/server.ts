@@ -786,7 +786,7 @@ app.post('/api/settings/gemini-model', (req: Request, res: Response) => {
   const normalized = normalizeModelId(model);
   if (!isValidModelId(normalized)) {
     return res.status(400).json({
-      error: 'Invalid model ID. Use the ID exactly as Google lists it, for example "gemini-3.6-flash".'
+      error: 'Invalid model ID. Use the ID exactly as Google lists it, for example "gemini-3.8-flash".'
     });
   }
   setSetting('gemini_model', normalized);
@@ -1056,13 +1056,21 @@ app.post('/api/recommendation/reschedule', async (req: Request, res: Response) =
 /** How long a suggestion stays fresh before the UI marks it stale — matches the plan. */
 const FREE_STALE_MS = 23 * 60 * 60 * 1000;
 
+/**
+ * Rows sent to the frontend, which only uses them for the execution scores shown on rides
+ * in Recent Rides. Deliberately generous: replaced suggestions — one per check-in or new
+ * ride — would otherwise crowd the scored ones out of a short window. The prompt reads its
+ * own depth.
+ */
+const FREE_UI_HISTORY_DEPTH = 30;
+
 const freeTrainingPayload = () => {
   const suggestion = getCurrentFreeSuggestion();
   if (!suggestion) return { noSuggestion: true };
   const ageMs = Date.now() - new Date(suggestion.generatedAt).getTime();
   return {
     suggestion,
-    history:      getFreeSuggestionHistory(10),
+    history:      getFreeSuggestionHistory(FREE_UI_HISTORY_DEPTH),
     stale:        ageMs > FREE_STALE_MS,
     regenerating: isGenerationInFlight()
   };
@@ -1149,7 +1157,7 @@ app.post('/api/free-training/dismiss', async (_req: Request, res: Response) => {
       generateFreeSuggestion()
         .then(() => setSetting('gemini_last_generated', new Date().toISOString()))
         .catch((err: any) => logger.warn(`[Free] Dismiss regen failed (dismissal already committed): ${err.message}`));
-      res.json({ suggestion: current, history: getFreeSuggestionHistory(10), stale: true, regenerating: true });
+      res.json({ suggestion: current, history: getFreeSuggestionHistory(FREE_UI_HISTORY_DEPTH), stale: true, regenerating: true });
       return;
     }
 

@@ -12,6 +12,7 @@
   --radius-xs: 2px;    /* chips, badges, ticks, small toggles */
   --radius-sm: 3px;    /* buttons, inputs, inline controls */
   --radius-md: 4px;    /* cards, panels, dialogs, editors */
+  --radius-lg: 8px;    /* card header icon tiles only — at 28px, 4px still reads square */
   --radius-pill: 999px;/* only genuinely pill-shaped things */
 
 
@@ -469,10 +470,8 @@ body.is-electron .app-shell {
   justify-content: center;
 }
 
-.panel-divider {
-  height: 1px;
-  background: var(--panel-border);
-  margin: 0 0 2rem;
+.panel-section + .panel-section {
+  margin-top: 2rem;
 }
 .panel-section-label {
   display: flex;
@@ -728,7 +727,7 @@ body.is-electron .app-shell {
   color: var(--primary-color);
   background: rgba(var(--primary-rgb), 0.12);
   border: 1px solid rgba(var(--primary-rgb), 0.22);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-lg);
 }
 
 .pulsate {
@@ -1331,12 +1330,22 @@ body.is-electron .app-shell {
 
 /* ── Activity feedback badges (RPE + Feeling) ─────────────────────────────── */
 .act-feedback {
-  column-gap: 0.85rem;
   display: flex;
-  gap: 0.4rem;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.65rem;
   margin-top: 0.3rem;
 }
+
+.act-feedback-tail {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+/* Empty when the editor is open and there is no score — don't let it claim a gap. */
+.act-feedback-tail:empty { display: none; }
 
 .act-rpe-badge,
 .act-feeling-badge,
@@ -2402,6 +2411,18 @@ html[data-theme='mintberry'] .bg-glow-2 {
   background: var(--surface-2);
   border: 1px solid rgba(var(--primary-rgb), 0.15);
   border-radius: var(--radius-md);
+}
+
+/* The plan/suggestion on screen while a replacement is being generated: still readable,
+   visibly on its way out, and not clickable — a skip or move now would act on a plan
+   that is about to be overwritten. Scrolling still works; wheel events pass through. */
+.ai-rec-content {
+  transition: opacity var(--transition-fast);
+}
+
+.ai-rec-content.is-updating {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 /* Today block */

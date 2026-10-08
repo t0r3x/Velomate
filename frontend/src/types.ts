@@ -157,6 +157,16 @@ export interface SyncResult {
 
 export type RecState = 'not-configured' | 'no-plan' | 'loading' | 'loaded' | 'error' | 'paused'
 
+/** The two halves of an explicit refresh, shared by both modes: Garmin sync, then the AI. */
+export type RefreshStep = 'garmin' | 'ai'
+
+/**
+ * How an explicit refresh ended. 'unchanged' is a success — the AI looked again and kept
+ * the same thing — and has to be said out loud, or it is indistinguishable from nothing
+ * having happened. 'timeout' means still running when the poll gave up, not failed.
+ */
+export type RefreshOutcome = 'changed' | 'unchanged' | 'failed' | 'timeout'
+
 export interface PausedResponse {
   paused: true
   pausedSince: string

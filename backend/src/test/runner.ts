@@ -64,7 +64,7 @@ async function main() {
     console.error(
       'ERROR: TEST_GEMINI_KEY and TEST_GEMINI_MODEL must both be set in backend/.env:\n\n' +
       '  TEST_GEMINI_KEY=your_api_key_here\n' +
-      '  TEST_GEMINI_MODEL=gemini-3.6-flash\n'
+      '  TEST_GEMINI_MODEL=gemini-3.8-flash\n'
     );
     process.exit(1);
   }

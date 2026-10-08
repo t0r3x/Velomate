@@ -23,6 +23,21 @@
             </select>
           </div>
 
+          <label class="checkbox-label prefs-check" for="pref-instant-scoring">
+            <input
+              type="checkbox"
+              id="pref-instant-scoring"
+              :checked="settingsStore.instantScoreOnNewActivity"
+              @change="onInstantScoring"
+            >
+            <span>Re-plan automatically when a ride syncs</span>
+          </label>
+          <p class="prefs-note">
+            Regenerates your plan as soon as a new ride arrives, so its execution score shows up right away.
+            Turning this off saves AI calls — the score appears at the next scheduled refresh instead.
+            Anything you enter yourself, like a check-in or a ride rating, always takes effect immediately.
+          </p>
+
           <div v-if="updatesSupported" class="prefs-row">
             <span class="prefs-label">Updates</span>
             <button class="btn btn-secondary btn-sm prefs-action" :disabled="checking" @click="onCheckUpdates">
@@ -114,6 +129,18 @@ async function onCheckUpdates() {
   }
 }
 
+/**
+ * Saves on change, like the theme — this dialog has no Save button. The checkbox reflects
+ * the store, which only moves once the write succeeded, so a failure snaps it back.
+ */
+async function onInstantScoring(e: Event) {
+  const input = e.target as HTMLInputElement
+  if (!(await settingsStore.saveInstantScoreOnNewActivity(input.checked))) {
+    input.checked = settingsStore.instantScoreOnNewActivity
+    show('error', 'Could not save setting', 'Automatic re-planning was not changed.')
+  }
+}
+
 /** The theme applies instantly and rolls back by itself if the write fails. */
 async function onTheme(e: Event) {
   const next = (e.target as HTMLSelectElement).value as UiTheme
@@ -175,6 +202,11 @@ async function onTheme(e: Event) {
   font-size: 0.75rem;
   color: var(--text-muted);
   line-height: 1.45;
+}
+
+.prefs-check {
+  font-size: 0.82rem;
+  margin-top: 0.25rem;
 }
 
 .prefs-divider {

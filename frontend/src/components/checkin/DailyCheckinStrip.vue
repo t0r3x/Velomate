@@ -77,8 +77,8 @@ const { show }            = useToast()
 const FEELING_MAP: Record<number, { label: string; icon: string }> = {
   1: { label: 'Exhausted', icon: 'fa-face-dizzy' },
   2: { label: 'Tired',     icon: 'fa-face-tired' },
-  3: { label: 'Normal',    icon: 'fa-face-meh' },
-  4: { label: 'Good',      icon: 'fa-face-smile' },
+  3: { label: 'Normal',    icon: 'fa-face-smile' },
+  4: { label: 'Good',      icon: 'fa-face-grin' },
   5: { label: 'Strong',    icon: 'fa-face-grin-stars' }
 }
 

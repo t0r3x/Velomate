@@ -77,8 +77,6 @@
         </div>
       </div>
 
-      <div class="panel-divider"></div>
-
       <!-- ── AI Settings Section ── -->
       <div class="panel-section">
         <div class="panel-section-label">
@@ -148,18 +146,6 @@
             </p>
           </div>
 
-          <div class="input-group" style="margin-top:0.85rem">
-            <label class="checkbox-label" for="panel-instant-scoring">
-              <input type="checkbox" id="panel-instant-scoring" v-model="instantScoring">
-              <span>Re-plan automatically when a ride syncs</span>
-            </label>
-            <p class="helper-text" style="margin-top:0.35rem">
-              Regenerates your plan as soon as a new ride arrives, so its execution score shows up right away.
-              Turning this off saves AI calls — the score appears at the next scheduled refresh instead.
-              Anything you enter yourself, like a check-in or a ride rating, always takes effect immediately.
-            </p>
-          </div>
-
         </form>
       </div>
 
@@ -200,7 +186,7 @@ const loginBusy = ref(false)
 // the dropdown went stale every time Google shipped a model, so anything not listed here
 // (Pro tiers, brand-new releases) goes in through "Custom model ID…" instead.
 const MODEL_PRESETS = [
-  { id: 'gemini-3.6-flash',      label: 'gemini-3.6-flash (Recommended / Default)' },
+  { id: 'gemini-3.8-flash',      label: 'gemini-3.8-flash (Recommended / Default)' },
   { id: 'gemini-3.5-flash-lite', label: 'gemini-3.5-flash-lite (Fastest, lightest quota use)' },
 ] as const
 
@@ -223,7 +209,6 @@ const apiKey         = ref('')
 const selectedModel  = ref<string>(MODEL_PRESETS[0].id)
 const customModel    = ref('')
 const modelError     = ref('')
-const instantScoring = ref(true)
 const saveBusy       = ref(false)
 
 const isCustomModel = computed(() => selectedModel.value === CUSTOM_MODEL)
@@ -247,7 +232,6 @@ watch(() => props.open, (isOpen) => {
     customModel.value   = stored
   }
   modelError.value     = ''
-  instantScoring.value = settingsStore.instantScoreOnNewActivity
   apiKey.value         = ''
   mfaCode.value        = ''
 })
@@ -316,10 +300,9 @@ async function handleSave() {
       show('error', 'Save Failed', 'Could not save settings.')
       return
     }
-    await settingsStore.saveInstantScoreOnNewActivity(instantScoring.value)
     apiKey.value = ''
     if (!onSetup) {
-      show('success', 'Settings Saved', 'API key and preferences updated.')
+      show('success', 'Settings Saved', 'API key and model updated.')
       emit('update:open', false)
     } else {
       checkRouting()

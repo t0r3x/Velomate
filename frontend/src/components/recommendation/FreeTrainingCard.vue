@@ -7,8 +7,8 @@
         <button class="btn-icon-sm btn-icon-pause" title="Pause training — use for injury, illness or travel" :disabled="pausing" @click="handlePause">
           <i class="fa-solid" :class="pausing ? 'fa-spinner fa-spin' : 'fa-circle-pause'"></i>
         </button>
-        <button class="btn-icon-sm" title="Refresh suggestion" :disabled="refreshing" @click="handleRefresh">
-          <i class="fa-solid" :class="refreshing ? 'fa-spinner fa-spin' : 'fa-rotate'"></i>
+        <button class="btn-icon-sm" title="Refresh suggestion" :disabled="isUpdating" @click="handleRefresh">
+          <i class="fa-solid" :class="isUpdating ? 'fa-spinner fa-spin' : 'fa-rotate'"></i>
         </button>
       </div>
     </div>
@@ -71,43 +71,43 @@
       <!-- State: loaded -->
       <div v-show="freeStore.state === 'loaded'" class="ai-rec-state">
         <template v-if="suggestion">
-          <!-- Inline indicator for a background regen (refresh/dismiss/resume) — the
-               suggestion below stays visible while the AI picks the next one. -->
-          <p v-if="freeStore.isRegenerating" class="ai-rec-regenerating">
-            <i class="fa-solid fa-spinner fa-spin"></i><span>Your next suggestion is on its way…</span>
+          <!-- One status line from click to result, naming the step it is waiting on. The
+               suggestion below stays visible but dimmed: it is about to be replaced. -->
+          <p v-if="statusText" class="ai-rec-regenerating">
+            <i class="fa-solid fa-spinner fa-spin"></i><span>{{ statusText }}</span>
           </p>
 
-          <div class="week-preview-header">
-            <i class="fa-solid" :class="isRest ? 'fa-bed' : 'fa-dumbbell'"></i>
-            <span>{{ isRest ? 'Rest Day' : 'Your Next Workout' }}</span>
-            <span class="week-label">{{ isRest ? 'Recovery comes first' : 'Ride it whenever suits you' }}</span>
+          <div class="ai-rec-content" :class="{ 'is-updating': isUpdating }">
+            <div class="week-preview-header">
+              <i class="fa-solid" :class="isRest ? 'fa-bed' : 'fa-dumbbell'"></i>
+              <span>{{ isRest ? 'Rest Day' : 'Your Next Workout' }}</span>
+              <span class="week-label">{{ isRest ? 'Recovery comes first' : 'Ride it whenever suits you' }}</span>
+            </div>
+
+            <!-- Same detail panel the weekly plan uses, minus everything date-bound -->
+            <WorkoutDetailPanel
+              :entry="asPlanEntry"
+              :priority="suggestion.priority"
+              :dateless="true"
+            />
+
+            <p v-if="suggestion.coachNote" class="ft-coach-note">
+              <i class="fa-solid fa-clock"></i>
+              <span>{{ suggestion.coachNote }}</span>
+            </p>
+
+            <!-- Traceability: which day this was pushed to Garmin -->
+            <p v-if="freeStore.isSynced && suggestion.syncedForDate" class="ft-synced-note">
+              <i class="fa-solid fa-circle-check"></i>
+              <span>Synced to Garmin on <strong>{{ formatSyncedDate(suggestion.syncedForDate) }}</strong> — find it under that date in your Garmin calendar. Your next ride will be matched to it.</span>
+            </p>
+
+            <LoadAssessment
+              v-if="suggestion.loadAssessment"
+              :assessment="suggestion.loadAssessment"
+              :generatedAt="suggestion.generatedAt"
+            />
           </div>
-
-          <!-- Same detail panel the weekly plan uses, minus everything date-bound -->
-          <WorkoutDetailPanel
-            :entry="asPlanEntry"
-            :priority="suggestion.priority"
-            :dateless="true"
-          />
-
-          <p v-if="suggestion.coachNote" class="ft-coach-note">
-            <i class="fa-solid fa-clock"></i>
-            <span>{{ suggestion.coachNote }}</span>
-          </p>
-
-          <!-- Traceability: which day this was pushed to Garmin -->
-          <p v-if="freeStore.isSynced && suggestion.syncedForDate" class="ft-synced-note">
-            <i class="fa-solid fa-circle-check"></i>
-            <span>Synced to Garmin on <strong>{{ formatSyncedDate(suggestion.syncedForDate) }}</strong> — find it under that date in your Garmin calendar. Your next ride will be matched to it.</span>
-          </p>
-
-          <LoadAssessment
-            v-if="suggestion.loadAssessment"
-            :assessment="suggestion.loadAssessment"
-            :generatedAt="suggestion.generatedAt"
-          />
-
-          <FreeHistoryList :history="freeStore.history" />
         </template>
       </div>
 
@@ -128,7 +128,7 @@
     <div class="card-pinned-footer ft-footer">
       <button
         class="btn btn-primary"
-        :disabled="!freeStore.canSync || syncing"
+        :disabled="!freeStore.canSync || syncing || isUpdating"
         :title="syncTitle"
         @click="handleSync"
       >
@@ -137,7 +137,7 @@
       </button>
       <button
         class="btn btn-secondary"
-        :disabled="freeStore.state !== 'loaded' || dismissing"
+        :disabled="freeStore.state !== 'loaded' || dismissing || isUpdating"
         title="Ask the AI for a different workout"
         @click="handleDismiss"
       >
@@ -157,11 +157,11 @@ import { useToast }             from '@/composables/useToast'
 import { useConfirm }           from '@/composables/useConfirm'
 import { usePauseDialog }       from '@/composables/usePauseDialog'
 
+import { workoutTypeLabel } from '@/utils'
 import type { PlanEntry, SyncResult as SyncResultType } from '@/types'
 
 import WorkoutDetailPanel from './WorkoutDetailPanel.vue'
 import LoadAssessment     from './LoadAssessment.vue'
-import FreeHistoryList    from './FreeHistoryList.vue'
 import SyncResult         from './SyncResult.vue'
 import DailyCheckinStrip from '@/components/checkin/DailyCheckinStrip.vue'
 
@@ -199,7 +199,6 @@ const syncTitle = computed(() => {
 const generating = ref(false)
 const pausing    = ref(false)
 const resuming   = ref(false)
-const refreshing = ref(false)
 const syncing    = ref(false)
 const dismissing = ref(false)
 const syncResult = ref<SyncResultType | null>(null)
@@ -219,12 +218,34 @@ async function handleGenerateFirst() {
   generating.value = false
 }
 
+/**
+ * Busy from the click until a new suggestion is in — or while any other regen (dismiss,
+ * check-in, new ride) is running. The suggestion on screen is about to be replaced, so
+ * syncing or dismissing it now would act on something that is on its way out.
+ */
+const isUpdating = computed(() => freeStore.refreshStep !== null || freeStore.isRegenerating)
+
+const statusText = computed(() => {
+  if (freeStore.refreshStep === 'garmin') return 'Checking Garmin for new rides…'
+  if (freeStore.refreshStep === 'ai')     return 'Picking your next workout…'
+  if (freeStore.isRegenerating)           return 'Your next suggestion is on its way…'
+  return ''
+})
+
 async function handleRefresh() {
-  refreshing.value = true
-  await freeStore.refresh()
-  refreshing.value = false
-  if (freeStore.state === 'error') {
-    show('error', 'Refresh Failed', freeStore.errorMessage)
+  const outcome = await freeStore.refresh()
+  const label   = workoutTypeLabel[suggestion.value?.workoutType ?? ''] ?? suggestion.value?.workoutType
+
+  if (outcome === 'changed') {
+    show('success', 'New suggestion', `Next up: ${label}.`)
+  } else if (outcome === 'unchanged') {
+    show('info', 'Same suggestion', `The AI looked again and still recommends ${label}.`)
+  } else if (outcome === 'timeout') {
+    show('warn', 'Taking longer than usual', 'The AI is still working on it — check back in a minute.')
+  } else {
+    show('error', 'Refresh failed', freeStore.state === 'error'
+      ? freeStore.errorMessage
+      : 'The AI could not come up with a new suggestion. Your current one still stands.')
   }
 }
 

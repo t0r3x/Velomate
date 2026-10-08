@@ -8,6 +8,13 @@ export const isoDate = (d = new Date()): string =>
   d.toLocaleDateString('sv-SE')
 
 /**
+ * Poll attempts (4s apart) an explicit refresh waits for the AI: 3 minutes. Generous on
+ * purpose — a slow model plus a 429 backoff can pass the default 80s, and a failure no
+ * longer has to wait this out, since the poll stops as soon as the backend reports idle.
+ */
+export const REFRESH_POLL_ATTEMPTS = 45
+
+/**
  * Build a real 7-day display window starting `startOffset` days from today, filling
  * any day the backend hasn't planned yet with a placeholder entry — never fabricate
  * a real AI-planned rest day for a date the backend simply hasn't covered.

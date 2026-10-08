@@ -29,7 +29,7 @@
 <script setup lang="ts">
 import { computed, ref, onBeforeUnmount } from 'vue'
 import type { HrZones } from '@/types'
-import { zonesToSegments } from '@/composables/useZones'
+import { zonesToSegments, zoneBarScale } from '@/composables/useZones'
 
 const props = defineProps<{ zones: HrZones; maxHr: number }>()
 const emit  = defineEmits<{ 'update:zones': [HrZones] }>()
@@ -65,7 +65,7 @@ function onDrag(e: PointerEvent) {
   const i = draggingIndex.value
   const rect = barEl.value.getBoundingClientRect()
   const relX = Math.min(Math.max(e.clientX - rect.left, 0), rect.width)
-  let bpm = Math.round((relX / rect.width) * props.maxHr)
+  let bpm = Math.round((relX / rect.width) * zoneBarScale(props.zones, props.maxHr))
 
   const lowerKey = ZONE_KEYS[i]
   const upperKey = ZONE_KEYS[i + 1]

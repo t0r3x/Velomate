@@ -49,7 +49,7 @@ export const maskKey = (key: string): string =>
 // endpoint rather than name a model.
 
 /** Fallback model — what the app uses when nothing has been chosen yet. */
-export const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 
 /**
  * Tidy a user-entered model ID: trim, drop the 'models/' prefix Google's own docs and
@@ -60,7 +60,7 @@ export const normalizeModelId = (raw: string): string =>
 
 /**
  * Lowercase alphanumeric segments joined by dots or hyphens — the shape every Gemini and
- * Gemma model ID takes (gemini-3.6-flash, gemini-2.5-flash-lite, gemini-3.1-pro-preview,
+ * Gemma model ID takes (gemini-3.8-flash, gemini-2.5-flash-lite, gemini-3.1-pro-preview,
  * gemma-3-27b-it). Deliberately not a hardcoded allowlist: the whole point is that a model
  * released after this build can still be entered.
  */
@@ -71,6 +71,75 @@ export const isValidModelId = (id: string): boolean =>
 export const getGeminiModel = (): string => {
   const stored = normalizeModelId(getSetting('gemini_model') || '');
   return stored && isValidModelId(stored) ? stored : DEFAULT_GEMINI_MODEL;
+};
+
+/**
+ * Thinking settings for a model, or undefined to leave the API default alone.
+ *
+ * Gemini 3+ thinks dynamically at a high level unless told otherwise, and on this prompt
+ * that was 20-30s of hidden reasoning per plan (flash-lite answered the same prompt in
+ * 2-5s). Thinking tokens also count against maxOutputTokens, so a long think could
+ * trigger a MAX_TOKENS retry and double the wait. 'low' is accepted by every Gemini 3
+ * tier, Pro included. Lite models already default to minimal thinking — forcing 'low'
+ * would make them slower — and older families (2.x: thinkingBudget, Gemma: none) reject
+ * thinkingLevel outright, so both are left untouched. The model is free text, hence a
+ * pattern rather than a list.
+ */
+const thinkingConfigFor = (model: string): { thinkingLevel: string } | undefined => {
+  const major = parseInt(model.match(/^gemini-(\d+)/)?.[1] ?? '0', 10);
+  if (major < 3 || model.includes('lite')) return undefined;
+  return { thinkingLevel: 'low' };
+};
+
+/**
+ * Statuses worth retrying: 429 is a rate limit, 500/503/504 are Google-side and transient —
+ * 503 ("model overloaded") is routine for a freshly released model and usually clears
+ * within seconds. Anything else (400 bad request, 403 bad key, 404 unknown model) will
+ * fail the same way every time, so it is thrown straight away.
+ */
+const RETRYABLE_STATUSES = new Set([429, 500, 503, 504]);
+const MAX_GEMINI_ATTEMPTS = 4;
+
+/**
+ * POST a generateContent request, retrying transient failures. A 429 honours Retry-After
+ * (quota exhaustion sends a long one); a 5xx backs off 3s, 6s, 12s, because an overloaded
+ * model needs longer to recover than a rate window does.
+ */
+const callGemini = async (label: string, model: string, key: string, body: object): Promise<any> => {
+  const startedAt = Date.now();
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const response = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+        body
+      );
+      logUsage(label, startedAt, response);
+      return response;
+    } catch (err: any) {
+      const status = err.response?.status;
+      const reason = err.response?.data?.error?.message ?? err.message;
+      if (!RETRYABLE_STATUSES.has(status) || attempt >= MAX_GEMINI_ATTEMPTS) {
+        logger.warn(`[Gemini] ${label} failed (${status ?? 'no response'}) after ${attempt} attempt(s): ${reason}`);
+        throw err;
+      }
+      const retryAfterSec = parseInt(err.response.headers?.['retry-after'] ?? '0', 10);
+      const waitMs = status === 429 && retryAfterSec > 0
+        ? retryAfterSec * 1000
+        : (status === 429 ? 2000 : 3000) * 2 ** (attempt - 1);
+      logger.warn(`[Gemini] ${label}: ${status} (${reason}) — retry ${attempt}/${MAX_GEMINI_ATTEMPTS - 1} in ${waitMs}ms`);
+      await new Promise(resolve => setTimeout(resolve, waitMs));
+    }
+  }
+};
+
+/** Duration + token split per call, so a slow generation shows where the time went. */
+const logUsage = (label: string, startedAt: number, response: any): void => {
+  const u = response?.data?.usageMetadata ?? {};
+  logger.info(
+    `[Gemini] ${label} took ${((Date.now() - startedAt) / 1000).toFixed(1)}s | ` +
+    `prompt: ${u.promptTokenCount ?? '?'} (cached: ${u.cachedContentTokenCount ?? 0}) | ` +
+    `thoughts: ${u.thoughtsTokenCount ?? 0} | output: ${u.candidatesTokenCount ?? '?'} tokens`
+  );
 };
 
 // ── Zone helpers ──────────────────────────────────────────────────────────────
@@ -835,38 +904,17 @@ const _attemptGeneration = async (
   const model = getGeminiModel();
   logger.info(`[Gemini] Model: ${model} | system instruction: ${PLAN_SYSTEM_INSTRUCTION.length} chars (static, not repeated here)`);
 
-  // Retry up to 3 times on 429 (rate limit) with exponential backoff.
-  // Quota exhaustion (daily limit) also returns 429 but with a longer Retry-After —
-  // the backoff handles both cases gracefully.
-  const MAX_RATE_RETRIES = 3;
-  let response: any;
-  for (let attempt = 1; attempt <= MAX_RATE_RETRIES; attempt++) {
-    try {
-      response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-        {
-          systemInstruction: { parts: [{ text: PLAN_SYSTEM_INSTRUCTION }] },
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            // Plan stability is an explicit goal of the prompt; 0.4 sampled against it.
-            temperature: 0.2,
-            maxOutputTokens: 16384
-          }
-        }
-      );
-      break; // success — exit retry loop
-    } catch (err: any) {
-      if (err.response?.status === 429 && attempt < MAX_RATE_RETRIES) {
-        const retryAfterSec = parseInt(err.response.headers?.['retry-after'] ?? '0', 10);
-        const waitMs = retryAfterSec > 0 ? retryAfterSec * 1000 : 2000 * attempt; // 2s, 4s
-        logger.warn(`[Gemini] Rate limited (429) — waiting ${waitMs}ms before retry ${attempt}/${MAX_RATE_RETRIES - 1}`);
-        await new Promise(resolve => setTimeout(resolve, waitMs));
-        continue;
-      }
-      throw err;
+  const response = await callGemini('Plan generation', model, key, {
+    systemInstruction: { parts: [{ text: PLAN_SYSTEM_INSTRUCTION }] },
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      // Plan stability is an explicit goal of the prompt; 0.4 sampled against it.
+      temperature: 0.2,
+      maxOutputTokens: 16384,
+      thinkingConfig: thinkingConfigFor(model)
     }
-  }
+  });
 
   const candidate  = response.data?.candidates?.[0];
   const parts: any[] = candidate?.content?.parts || [];
@@ -1315,35 +1363,17 @@ const _attemptFreeGeneration = async (
   const model = getGeminiModel();
   logger.info(`[Gemini] Model: ${model} (free training mode) | system instruction: ${FREE_SYSTEM_INSTRUCTION.length} chars (static, not repeated here)`);
 
-  const MAX_RATE_RETRIES = 3;
-  let response: any;
-  for (let attempt = 1; attempt <= MAX_RATE_RETRIES; attempt++) {
-    try {
-      response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-        {
-          systemInstruction: { parts: [{ text: FREE_SYSTEM_INSTRUCTION }] },
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            // Plan stability is an explicit goal of the prompt; 0.4 sampled against it.
-            temperature: 0.2,
-            maxOutputTokens: 16384
-          }
-        }
-      );
-      break;
-    } catch (err: any) {
-      if (err.response?.status === 429 && attempt < MAX_RATE_RETRIES) {
-        const retryAfterSec = parseInt(err.response.headers?.['retry-after'] ?? '0', 10);
-        const waitMs = retryAfterSec > 0 ? retryAfterSec * 1000 : 2000 * attempt;
-        logger.warn(`[Gemini] Rate limited (429) — waiting ${waitMs}ms before retry ${attempt}/${MAX_RATE_RETRIES - 1}`);
-        await new Promise(resolve => setTimeout(resolve, waitMs));
-        continue;
-      }
-      throw err;
+  const response = await callGemini('Free suggestion', model, key, {
+    systemInstruction: { parts: [{ text: FREE_SYSTEM_INSTRUCTION }] },
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      // Plan stability is an explicit goal of the prompt; 0.4 sampled against it.
+      temperature: 0.2,
+      maxOutputTokens: 16384,
+      thinkingConfig: thinkingConfigFor(model)
     }
-  }
+  });
 
   const candidate    = response.data?.candidates?.[0];
   const parts: any[] = candidate?.content?.parts || [];
