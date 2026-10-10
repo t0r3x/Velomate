@@ -4,6 +4,16 @@
       <i class="fa-solid fa-brain header-icon"></i>
       <h2>AI Training Plan</h2>
       <div v-if="recStore.state === 'loaded'" class="card-header-actions">
+        <!-- Only when the latest update actually has something to say (never on a first plan). -->
+        <button
+          v-if="hasChangeInfo"
+          class="btn-icon-sm btn-icon-changes"
+          :title="'What changed in your plan'"
+          aria-label="What changed in the latest plan update"
+          @click="changesOpen = true"
+        >
+          <i class="fa-solid fa-arrow-right-arrow-left"></i>
+        </button>
         <button class="btn-icon-sm btn-icon-pause" title="Pause training — use for injury, illness or travel" :disabled="pausing" @click="handlePause">
           <i class="fa-solid" :class="pausing ? 'fa-spinner fa-spin' : 'fa-circle-pause'"></i>
         </button>
@@ -83,8 +93,6 @@
             <div class="ai-week-section">
               <WeekGrid :plan="rec.weeklyPlan" :todayPriority="rec.priority" title="This Week" @reschedule="handleReschedule" @skip="handleSkip" />
               <LoadAssessment v-if="rec.loadAssessment" :assessment="rec.loadAssessment" :generatedAt="rec.generatedAt" />
-              <!-- The plan adapts daily by design, so it has to show its working. -->
-              <PlanChanges :changes="rec.changedEntries ?? []" :note="rec.changeNote ?? null" />
             </div>
 
             <!-- Next week: rolling days 8-14, compact summary backed by real plan data -->
@@ -117,6 +125,13 @@
         <i v-if="syncing" class="fa-solid fa-spinner fa-spin"></i>
       </button>
       <SyncResult :result="syncResult" @close="syncResult = null" />
+      <PlanChanges
+        :open="changesOpen"
+        :changes="rec?.changedEntries ?? []"
+        :note="rec?.changeNote ?? null"
+        :generatedAt="rec?.generatedAt ?? null"
+        @close="changesOpen = false"
+      />
     </div>
     </div>
   </section>
@@ -148,6 +163,12 @@ const { promptForReason } = usePauseDialog()
 const { pickDay }         = useMoveDayDialog()
 
 const rec = computed(() => recStore.recommendation)
+
+// The plan adapts daily by design, so it has to show its working — from a header button
+// that opens a dialog, so it never sits between This Week and Next Week.
+const changesOpen   = ref(false)
+const changeCount   = computed(() => rec.value?.changedEntries?.length ?? 0)
+const hasChangeInfo = computed(() => changeCount.value > 0 || !!rec.value?.changeNote)
 
 const generating = ref(false)
 

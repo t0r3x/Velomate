@@ -7,16 +7,19 @@
      contrast (z4 measured 2.15 against white). Hue identity and order are fixed — only
      lightness moves — and the accent may never collide with them. */
 
-  /* Radius scale. Four steps, deliberately tight. Use a token, never a literal;
+  /* Radius scale. Soft rather than technical — the premium look depends on it. Use a
+     token, never a literal;
      50% (circles) and 2px (caps on 4px-tall bars) stay literal because that is geometry. */
-  --radius-xs: 2px;    /* chips, badges, ticks, small toggles */
-  --radius-sm: 3px;    /* buttons, inputs, inline controls */
-  --radius-md: 4px;    /* cards, panels, dialogs, editors */
-  --radius-lg: 8px;    /* card header icon tiles only — at 28px, 4px still reads square */
-  --radius-pill: 999px;/* only genuinely pill-shaped things */
+  --radius-xs: 4px;    /* chips, badges, ticks, small toggles */
+  --radius-sm: 8px;    /* inputs, inline controls, notes */
+  --radius-md: 12px;   /* cards, panels, dialogs, editors, day cells */
+  --radius-lg: 16px;   /* large floating surfaces */
+  --radius-pill: 999px;/* buttons, chips, the menu bar */
 
 
-  --font-main: 'Outfit', sans-serif;
+  --font-main: 'Inter', sans-serif;
+  /* Titles (600, tight) and large numerals (300, like a watch face). */
+  --font-numeric: 'Inter Tight', 'Inter', sans-serif;
   --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
@@ -76,6 +79,7 @@ html[data-theme='light'] {
 }
 
 html[data-theme='midnight'] {
+
   --z1-color: #64748b; /* Gray/Recovery */
   --z2-color: #10b981; /* Green/Aerobic */
   --z3-color: #06b6d4; /* Cyan/Tempo */
@@ -111,6 +115,8 @@ html[data-theme='midnight'] {
    settings.store.ts. It was a body class before; making it a real theme means it goes
    through the same picker as the rest instead of being a parallel mechanism. */
 html[data-theme='mintberry'] {
+
+
   /* Mint surfaces, berry writing. Light, so --raise inverts and the zone ramp uses the
      light values — the dark ramp is unreadable on a pale background. */
   --surface-0: #cdf2e0;  /* page */
@@ -153,6 +159,7 @@ html[data-theme='mintberry'] {
 /* The default. */
 :root,
 html[data-theme='slate'] {
+
   --z1-color: #64748b; /* Gray/Recovery */
   --z2-color: #10b981; /* Green/Aerobic */
   --z3-color: #06b6d4; /* Cyan/Tempo */

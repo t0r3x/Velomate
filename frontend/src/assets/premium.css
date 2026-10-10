@@ -1,0 +1,525 @@
+/* ── Premium layer ────────────────────────────────────────────────────────────
+   Loaded after style.css. style.css owns layout and the theme tokens; this file owns the
+   look and feel. The reference is elite sport products — Whoop, Oura, Apple Fitness,
+   Rapha — not dashboards and not games:
+
+   - Typography carries the class. Heavy, tightly-tracked sans titles, a precise grotesk for
+     the interface, and large light numerals, the way a premium watch face sets them.
+   - Space and softness over decoration: generous padding, softer radii, hairlines and a
+     faint top highlight for depth. No animation, no glow, no gradients on controls.
+   - Colour only where it means something: the accent on actions and "today", the zone
+     and workout-type colours on data. Everything else is surface and text tokens.
+
+   Colour only ever comes from theme tokens (or color-mix of them). No literal surface or
+   accent colours here — that is how one theme ends up wearing another's palette. */
+
+/* Workout type → one custom property, so every rule below can colour by type generically. */
+.wt-sprint    { --wt: var(--z5-color); }
+.wt-vo2max    { --wt: #a855f7; }
+.wt-threshold { --wt: var(--z4-color); }
+.wt-tempo     { --wt: var(--z3-color); }
+.wt-longride  { --wt: var(--z2-color); }
+.wt-rest      { --wt: var(--text-muted); }
+
+body {
+  letter-spacing: -0.005em;
+}
+
+/* ── Type roles ───────────────────────────────────────────────────────────── */
+
+/* Titles: heavy, tight sans. A serif was tried here and read as a 90s brochure. */
+.card-header h2,
+.settings-panel-title,
+.tp-title,
+.confirm-header,
+.setup-logo h1 {
+  font-family: var(--font-numeric);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  text-transform: none;
+}
+.card-header h2 { font-size: 1.1rem; line-height: 1; }
+.settings-panel-title,
+.tp-title,
+.confirm-header { font-size: 1.05rem; }
+.setup-logo h1 { font-size: 1.6rem; }
+
+/* Eyebrow labels: small, uppercase, tracked, quiet. */
+.week-preview-header,
+.panel-section-label,
+.tp-section-label,
+.input-group label,
+.stat-label,
+.act-stat-label,
+.wdc-day,
+.checkin-label,
+.zones-visualizer-container h3 {
+  font-family: var(--font-main);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.week-preview-header > i,
+.panel-section-label > i,
+.tp-section-label > i { display: none; }
+
+/* Numerals: Inter Tight, regular — kept at body-ish sizes; large ones read as shouting. */
+.act-stat-val,
+.wdc-date,
+.stat-value-input,
+.zone-range-inputs input {
+  font-family: var(--font-numeric);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+/* ── Cards ────────────────────────────────────────────────────────────────── */
+.dashboard-grid { gap: 1.75rem; }
+
+.glass-panel {
+  border-color: var(--hairline);
+  box-shadow:
+    inset 0 1px 0 var(--raise-subtle),
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    0 20px 40px -28px rgba(0, 0, 0, 0.45);
+}
+
+.dashboard-card { padding: 1.75rem 1.75rem 1.5rem; }
+
+.card-header {
+  gap: 0.6rem;
+  margin-bottom: 1.1rem;
+  padding-bottom: 0.9rem;
+}
+
+/* The icon is a quiet marker beside the title, not a badge. */
+.header-icon {
+  width: auto;
+  height: auto;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+}
+
+/* ── Buttons: pills ───────────────────────────────────────────────────────── */
+.btn {
+  font-family: var(--font-main);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  border-radius: var(--radius-pill);
+  padding: 0.85rem 1.75rem;
+}
+.btn-sm { font-size: 0.8rem; padding: 0.5rem 1.15rem; }
+
+.btn-secondary {
+  border-color: var(--hairline-strong);
+  color: var(--text-primary);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--raise);
+  border-color: var(--hairline-strong);
+}
+
+.btn-icon-sm {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border-color: var(--hairline);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+.btn-icon-sm:hover:not(:disabled) {
+  background: var(--raise);
+  color: var(--text-primary);
+}
+
+/* ── Menu bar: a quiet pill ───────────────────────────────────────────────── */
+.menu-bar-standalone {
+  border-radius: var(--radius-pill);
+  border-color: var(--hairline);
+}
+.menu-item {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.menu-item:hover { color: var(--text-primary); }
+
+/* ── Inputs ───────────────────────────────────────────────────────────────── */
+.input-wrapper input,
+.checkin-note,
+.goals-textarea,
+.input-wrapper--select select {
+  border-color: var(--hairline);
+}
+.input-wrapper input:focus,
+.zone-range-inputs input:focus,
+.checkin-note:focus,
+.goals-textarea:focus,
+.input-wrapper--select select:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 18%, transparent);
+}
+
+/* ── Activities ───────────────────────────────────────────────────────────── */
+.activities-list { gap: 0.6rem; }
+
+/* A ride reads top to bottom: name, when, the numbers, then how it felt. The left column
+   is dissolved (display: contents) so its children can be ordered around the stats row —
+   beside the title, large numerals left the name a one-word-wide column. */
+.activity-item {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0;
+  padding: 1.1rem 1.25rem;
+  border-color: transparent;
+  background: var(--surface-2);
+}
+.activity-item:hover { border-color: var(--hairline-strong); }
+
+.activity-details-main { display: contents; }
+
+.activity-title {
+  order: 1;
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.activity-meta { order: 2; margin-top: 0.2rem; color: var(--text-muted); }
+
+/* Three equal columns, always: distance, time and HR line up down the whole list, and a
+   ride without HR leaves its column empty rather than pulling the others out of line. */
+.activity-stats-summary {
+  order: 3;
+  align-self: stretch; /* the item aligns children to the start; without this the row shrinks */
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin: 0.7rem 0 0;
+}
+.act-stat { align-items: flex-start; }
+.act-stat-val {
+  font-size: 0.84rem; /* never larger than the ride title (0.86rem) — the name leads */
+  line-height: 1;
+  color: var(--text-primary);
+}
+.act-stat-label { font-size: 0.6rem; margin-top: 0.35rem; }
+
+.act-feedback,
+.act-rate-btn--empty {
+  order: 4;
+  margin-top: 0.85rem;
+  align-self: flex-start;
+}
+/* The rating editor spans the full ride card. The item aligns its children to the start,
+   so without align-self the editor shrank to its contents and left a dead strip beside it.
+   It sits one step darker/lighter than the card (--panel-bg), since it would otherwise be
+   --surface-2 on --surface-2 and read as no panel at all. */
+.act-rate-editor {
+  order: 5;
+  align-self: stretch;
+  flex-basis: auto;
+  margin-top: 0.85rem;
+  padding: 0.9rem 1rem 0.85rem;
+  border-color: transparent;
+  background: var(--panel-bg);
+}
+.act-rate-row { gap: 0.75rem; margin-bottom: 0.6rem; }
+.act-rate-label {
+  min-width: 3.6rem;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.act-rate-scale { gap: 0.35rem; }
+
+/* Same circles as the daily check-in faces, so a 1-5 feeling looks identical everywhere. */
+.act-rate-chip {
+  width: 2rem;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: 50%;
+  border-color: var(--hairline);
+  background: transparent;
+}
+.act-rate-chip:hover { border-color: var(--hairline-strong); background: var(--raise); }
+.act-rate-chip.is-selected {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+}
+.act-rate-range::-webkit-slider-runnable-track { background: var(--hairline-strong); }
+.act-rate-actions { margin-top: 0.75rem; }
+
+/* ── Week grid ───────────────────────────────────────────────────────────── */
+.ai-week-section {
+  background: none;
+  border: none;
+  padding: 0;
+}
+.week-preview-header { padding-bottom: 0.85rem; }
+.week-label { font-size: 0.78rem; color: var(--text-muted); letter-spacing: 0; text-transform: none; font-weight: 400; }
+
+.week-grid {
+  gap: 6px;
+  background: transparent;
+  border-bottom: none;
+  padding-bottom: 6px;
+}
+
+.week-day-cell {
+  min-height: 96px;
+  padding: 12px 8px 10px;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+.week-day-cell.is-clickable:hover { border-color: var(--hairline-strong); }
+.week-day-cell.is-threshold { background: var(--surface-2); }
+
+/* No colour bar on the cell for the workout type: the coloured icon and label already say
+   it, and a bar per cell clashed with the accent frame of the selected day. This also
+   neutralises the 2px type border-top that style.css still sets per .wt-* class. */
+.week-day-cell.has-workout { border-top: 1px solid transparent; }
+
+.wdc-day { font-size: 0.62rem; }
+.wdc-date {
+  font-size: 1.05rem;
+  line-height: 1;
+  margin-top: 4px;
+}
+
+.wdc-workout-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.week-day-cell.is-today { border-color: color-mix(in srgb, var(--primary-color) 70%, transparent); }
+.week-day-cell.is-today .wdc-date { color: var(--primary-color); font-weight: 400; }
+
+.week-coverage-note { border-radius: var(--radius-sm); }
+
+/* ── Detail panel / chips ────────────────────────────────────────────────── */
+.ai-workout-chip {
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.ai-priority-badge {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.ai-next-week-chip {
+  padding: 0.35rem 0.75rem;
+  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+}
+
+/* ── Load assessment ─────────────────────────────────────────────────────── */
+.ai-load-assessment { border-top-color: var(--hairline); }
+.ai-load-fatigue-badge {
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  border-radius: var(--radius-pill);
+  padding: 0.3rem 0.7rem;
+}
+
+/* ── Daily check-in ──────────────────────────────────────────────────────── */
+.checkin-block {
+  padding: 0.85rem 1rem;
+  border-color: transparent;
+}
+.checkin-face {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  border-color: var(--hairline);
+}
+.checkin-face:hover { border-color: var(--hairline-strong); background: var(--raise); }
+.checkin-face.is-selected {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: #fff;
+}
+.checkin-note { border-radius: var(--radius-pill); padding: 0.5rem 0.95rem; }
+
+/* ── Zones / profile ─────────────────────────────────────────────────────── */
+.zones-stacked-bar { border-color: transparent; }
+.zbs-name { font-weight: 600; letter-spacing: 0.04em; }
+.zone-badge { border-radius: var(--radius-pill); font-weight: 600; letter-spacing: 0.08em; }
+.stat-value-input { font-size: 1.35rem; }
+.day-chip span { border-radius: var(--radius-pill); }
+
+/* ── Dialogs / floating layers ───────────────────────────────────────────── */
+.toast { border-radius: var(--radius-md); }
+.toast-title { letter-spacing: -0.01em; }
+
+/* The ×0.88 recalc control sits between Max HR and LTHR: same height as those boxes, so the
+   row reads as one unit instead of a small tile floating between two large ones. */
+.hr-recalc-btn {
+  align-self: stretch;
+  justify-content: center;
+  padding: 0.5rem 0.75rem;
+  border-color: var(--hairline);
+}
+
+/* Icon-only buttons are circles everywhere, the dialog close buttons included. */
+.panel-close-btn {
+  border-radius: 50%;
+  background: transparent;
+  border-color: var(--hairline);
+}
+
+/* ── Next week: three kinds of text, three distinct roles ────────────────────
+   The provisional caveat, the plan summary and the AI's focus were all small muted
+   italics and ran together. Now: what is planned leads in plain text, the focus is a
+   labelled callout, and the caveat drops to a footnote. The section is reordered with
+   flex `order` so the template stays as it is; :has() limits this to the next-week
+   block, since the this-week wrapper shares the .ai-week-section class. */
+.ai-week-section:has(> .ai-next-week-summary) {
+  display: flex;
+  flex-direction: column;
+}
+.ai-week-section:has(> .ai-next-week-summary) > .week-preview-header { order: 0; }
+
+.ai-next-week-summary {
+  order: 1;
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 0.6rem;
+}
+.ai-next-week-chips { order: 2; margin-bottom: 0.2rem; }
+
+.ai-next-week-emphasis { order: 3; }
+.ai-next-week-provisional { order: 4; }
+
+/* ── Load assessment: same anatomy as next week ──────────────────────────────
+   Header row → the AI's reasoning as a labelled callout → a footnote. The two blocks sit
+   directly above each other, so they share these rules rather than merely resembling
+   each other; change one and both follow. */
+.ai-load-header { margin-bottom: 0.1rem; }
+.ai-load-trend {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* The AI's reasoning: a labelled callout. */
+.ai-load-insight,
+.ai-next-week-emphasis,
+.plan-changes-note {
+  margin-top: 0.5rem;
+  padding: 0.75rem 0.95rem;
+  font-size: 0.82rem;
+  font-style: normal;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border-left: 2px solid var(--primary-color);
+  border-radius: var(--radius-sm);
+}
+.ai-load-insight::before,
+.ai-next-week-emphasis::before,
+.plan-changes-note::before {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.ai-load-insight::before       { content: 'Assessment'; }
+.ai-next-week-emphasis::before { content: 'Focus'; }
+.plan-changes-note::before     { content: 'Why'; }
+
+/* Footnotes: small, muted, led by an icon. */
+.ai-generated-at,
+.ai-next-week-provisional {
+  margin: 0.75rem 0 0;
+  font-size: 0.72rem;
+  font-style: normal;
+  color: var(--text-muted);
+}
+.ai-generated-at::before,
+.ai-next-week-provisional::before {
+  font-family: 'Font Awesome 6 Free';
+  margin-right: 0.4rem;
+  opacity: 0.8;
+}
+.ai-generated-at::before          { content: '\f017'; font-weight: 400; } /* clock */
+.ai-next-week-provisional::before { content: '\f05a'; font-weight: 900; } /* info */
+
+/* ── What changed (dialog from the card header, PlanChanges.vue) ─────────────
+   The changed days as plain rows, then the AI's reason as the shared labelled callout
+   (.plan-changes-note is in the callout rules above). */
+.plan-changes-list { margin: 0; gap: 0.45rem; }
+.plan-changes-row { font-size: 0.85rem; }
+.plan-changes-note { margin-top: 0.1rem; }
+
+/* Coverage warning: a callout like the others — an amber left edge on --surface-2, not
+   a tinted, bordered box. */
+.week-coverage-note {
+  margin: 0 0 0.6rem;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: none;
+  border-left: 2px solid var(--z4-color);
+  border-radius: var(--radius-sm);
+}
+.week-coverage-note > i { color: var(--z4-color); }
+
+/* ── Training Profile: one spacing rhythm ─────────────────────────────────────
+   0.75rem between items inside a block, 1.25rem before a sub-block (the zone preview),
+   0.5rem from a control to its hint, and every section divider the same. These used to
+   be per-element margins (0.35 / 0.4 / 0.5 / 1rem) that never lined up. */
+.tp-body .tp-section-divider {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+}
+.tp-body .ps-suggestion-row { margin-bottom: 0.75rem; }
+.tp-body .ps-notice { margin-bottom: 0.75rem; }
+.tp-body .zones-visualizer-container { margin: 1.25rem 0 0; }
+.tp-body .zones-hr-note { margin-bottom: 0.25rem; }
+.tp-body .preferred-days-grid { margin-top: 0; }
+.tp-body .tp-hint { margin: 0.5rem 0 0; }
+
+/* Auto-pause: a sentence with a real input box, not a number floating beside it. */
+.ps-autopause-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.ps-autopause-row .helper-text { flex: 1; margin: 0; }
+.ps-autopause-input {
+  width: 5rem;
+  padding: 0.5rem 0.6rem;
+  text-align: center;
+  font-family: var(--font-numeric);
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+}
+.ps-autopause-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 18%, transparent);
+}

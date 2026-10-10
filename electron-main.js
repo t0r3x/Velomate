@@ -73,14 +73,16 @@ app.on('window-all-closed', () => {
 /** Preferred window size. Clamped to the screen below — see createWindow(). */
 const DEFAULT_WIDTH = 1400
 /**
- * Taller than it used to be (was 900): the training card now carries the daily check-in
- * above its scroll area, and at 900 the plan started out already scrolled.
+ * Raised twice so the plan opens without scrolling: 900 → 1040 when the daily check-in moved
+ * above the training card's scroll area, then 1040 → 1180 for the premium redesign, whose
+ * roomier spacing and labelled Assessment/Focus callouts made the plan ~140px taller.
+ * Still clamped to the work area below, so smaller screens are unaffected.
  */
-const DEFAULT_HEIGHT = 1040
+const DEFAULT_HEIGHT = 1180
 
 function createWindow() {
   // workAreaSize excludes the taskbar/dock, so this never opens a window taller than the
-  // screen can actually show — which 1040 would be on a 1366x768 or 1080p laptop.
+  // screen can actually show — which 1180 would be on a 1366x768 or 1080p laptop.
   const { width: availableWidth, height: availableHeight } = screen.getPrimaryDisplay().workAreaSize
 
   const winOptions = {

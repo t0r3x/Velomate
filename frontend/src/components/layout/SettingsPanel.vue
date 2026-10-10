@@ -63,7 +63,7 @@
         </div>
 
         <!-- Logged in -->
-        <div v-else>
+        <div v-else class="panel-stack">
           <div class="success-indicator">
             <i class="fa-solid fa-circle-check success-icon"></i>
             <div class="success-details">
@@ -84,7 +84,7 @@
           <span>AI Connection</span>
         </div>
 
-        <div v-if="settingsStore.geminiConfigured" style="margin-bottom:0.75rem">
+        <div v-if="settingsStore.geminiConfigured" class="panel-stack panel-stack--spaced">
           <div class="success-indicator">
             <i class="fa-solid fa-circle-check success-icon"></i>
             <div class="success-details">
@@ -92,7 +92,7 @@
               <p class="helper-text">{{ settingsStore.maskedKey }}</p>
             </div>
           </div>
-          <button class="btn btn-secondary" style="margin-top:0.6rem" @click="handleDisconnectGemini">
+          <button class="btn btn-secondary" @click="handleDisconnectGemini">
             <span>Disconnect</span>
           </button>
         </div>
@@ -110,7 +110,7 @@
             </div>
           </div>
 
-          <div class="input-group" style="margin-top:0.85rem">
+          <div class="input-group">
             <label for="panel-model">AI Model</label>
             <div class="input-wrapper input-wrapper--select">
               <i class="fa-solid fa-microchip input-icon"></i>
@@ -122,7 +122,7 @@
 
             <!-- Free text so a Pro model, or one released after this build, can be used
                  without waiting for an app update. -->
-            <div v-if="isCustomModel" class="input-wrapper" style="margin-top:0.5rem">
+            <div v-if="isCustomModel" class="input-wrapper">
               <i class="fa-solid fa-pen-to-square input-icon"></i>
               <input
                 type="text"
@@ -135,10 +135,10 @@
               >
             </div>
 
-            <p v-if="modelError" class="helper-text settings-error" style="margin-top:0.35rem">
+            <p v-if="modelError" class="helper-text settings-error">
               <i class="fa-solid fa-circle-exclamation"></i> {{ modelError }}
             </p>
-            <p v-else class="helper-text" style="margin-top:0.35rem">
+            <p v-else class="helper-text">
               {{ isCustomModel
                 ? 'Enter the model ID exactly as Google lists it. Pro models need a paid API key.'
                 : 'Free tier models have daily rate limits.' }}
@@ -325,6 +325,24 @@ function checkRouting() {
 </script>
 
 <style scoped>
+/* A status block and its action, one fixed distance apart — the same in every section.
+   Garmin and Gemini used to differ (0.5rem vs 1.1rem) through ad-hoc inline margins. */
+.panel-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+.panel-stack > .success-indicator {
+  align-self: stretch;
+  margin: 0;
+}
+/* Before the key help text and form that follow it in the AI section: the form's own gap. */
+.panel-stack--spaced { margin-bottom: 1.25rem; }
+/* The masked key reuses .helper-text, whose bottom margin made the Gemini block taller
+   than the Garmin one. */
+.success-indicator .helper-text { margin-bottom: 0; }
+
 .settings-error {
   color: var(--z5-color, #ef4444);
 }

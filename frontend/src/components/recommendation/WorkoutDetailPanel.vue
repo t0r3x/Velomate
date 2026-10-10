@@ -114,11 +114,11 @@ function fmtDur(sec: number): string {
 <style scoped>
 .wdp-panel {
   background: var(--surface-2);
-  border-top: 1px solid var(--hairline);
-  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  padding: 18px 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .wdp-header {
@@ -136,22 +136,22 @@ function fmtDur(sec: number): string {
 }
 
 .wdp-day-label {
-  font-size: 0.78rem;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
   color: var(--text-muted);
   font-weight: 600;
 }
 
 .wdp-duration {
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   color: var(--text-muted);
 }
 
-/* Zone bar */
+/* Interval profile: a thick bar, one segment per step in its zone colour. */
 .wdp-zone-bar {
   display: flex;
-  height: 8px;
-  border-radius: var(--radius-md);
-  overflow: hidden;
+  height: 12px;
   gap: 2px;
 }
 

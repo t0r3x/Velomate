@@ -207,9 +207,11 @@ erratic. So every regeneration records both.
   in the output key order — it describes a plan already written, so it can only be honest once that
   plan exists. The prompt tells the model the athlete sees the exact list of changed days next to it,
   so an invented change is visible as a lie.
-- `PlanChanges.vue` renders the computed list first and the note underneath, for the same reason.
-  It renders nothing at all when both are empty, which is the first-plan case — there is no previous
-  version to differ from.
+- `PlanChanges.vue` renders the computed list first and the note underneath (as the "Why" callout),
+  for the same reason. It is a **dialog opened from a header button** in `AiPlanCard.vue` (⇄ icon, no
+  count badge — the count is in the tooltip and the dialog), not an inline block: inline it sat between
+  This Week and Next Week and broke up the plan. The button only exists when there are changes or a
+  note — never on a first plan, where there is no previous version to differ from.
 
 ### Prompt structure: static `systemInstruction` + dynamic athlete turn
 
@@ -415,11 +417,10 @@ card, accent at 5.05.
 have to stay mutually distinguishable. That also constrains the accent: it may not collide with the zone
 ramp, which rules out green, cyan, orange and red. Blue is free, which is why it stayed.
 
-- **Radius is a five-step scale** — `--radius-xs: 2px` (chips, badges, ticks), `--radius-sm: 3px`
-  (buttons, inputs), `--radius-md: 4px` (cards, dialogs, editors), `--radius-lg: 8px` (card header icon tiles only), `--radius-pill: 999px` (only
-  genuinely pill-shaped things). There were **fourteen** ad-hoc values before, up to 20px. Use a
-  token, never a literal. `50%` (circles) and `2px` (caps on 4px-tall bars) stay literal on purpose:
-  that is geometry, not style.
+- **Radius is a five-step scale** — `--radius-xs: 4px`, `--radius-sm: 8px` (inputs, notes),
+  `--radius-md: 12px` (cards, dialogs, day cells), `--radius-lg: 16px`, `--radius-pill: 999px`
+  (buttons, chips, the menu bar). There were **fourteen** ad-hoc values once. Use a token, never a
+  literal. `50%` (circles) stays literal on purpose: that is geometry, not style.
 - **Metadata is typography, not tags.** Workout types, RPE, feeling, execution scores and priority
   used to be filled pills: `background: rgba(colour, 0.12)` + `border-color: rgba(colour, 0.3)` +
   coloured text, repeated across eight colours. Six of them stacked read as a tag cloud rather than a
@@ -434,9 +435,7 @@ ramp, which rules out green, cyan, orange and red. Blue is free, which is why it
   decoration — the word already says what the button does. The only `<i>` left inside a button is the
   in-flight spinner, which reports state and now renders only while the action runs. Icon-only buttons
   (the round refresh/pause controls) are unaffected.
-- **Card header icons are the deliberate exception**: they sit in a 1.75rem tile with a tinted
-  background, a hairline and `--radius-lg`. At 28px anything smaller reads as a hard square, and a circle would be the "disc" ruled out below. A card needs an anchor, and a loose glyph beside the title
-  reads as a sticker. This is the one place a container around an icon is right.
+- **Card header icons** are a muted glyph beside the serif title — no tile (see Premium layer).
 - **Icons sit next to a label, never inside a disc.** The tinted circles behind `.wc-icon` are gone.
   Face icons (check-in, post-ride feeling) and workout-type icons are deliberate and stay — those are
   places where a glyph carries meaning the word does not. Literal glyphs like `✓` in copy are not:
@@ -456,6 +455,36 @@ ramp, which rules out green, cyan, orange and red. Blue is free, which is why it
   dated, webby look — `.card-header h2` is negative. Don't "fix" the uppercase labels to match.
 - `.glass-panel` is a legacy class name: it is now just background + hairline + radius, and never had a
   `backdrop-filter` of its own.
+
+### Premium layer (`frontend/src/assets/premium.css`)
+
+The athlete asked for a look that reads as **elite and premium** — the reference is Whoop, Oura,
+Apple Fitness, Rapha — with the layout unchanged. It is a **separate stylesheet loaded after
+`style.css`** (`main.ts`): `style.css` owns layout and the theme tokens, `premium.css` owns the
+look and feel. Where the bullets above conflict with it, this section wins.
+
+**Four passes got here; don't drift back.** A HUD look (scan lines, brackets, slanted buttons,
+glows) was "too futuristic"; a squared tech face in italic caps still read as a game; condensed
+race-bib caps read as sporty but not premium; an editorial serif for titles read as "90s". What
+landed is a modern sans system plus space: no animation, no skew, no glow, no gradients on
+controls, no all-caps titles, no serif.
+
+- **Two families, three roles.** `--font-numeric` (Inter Tight) carries titles at 600 with tight
+  tracking (-0.015em), kept small (card titles 1.1rem — the athlete rejected both 1.5 and 0.95; ride stats 0.84rem regular weight (bold was tried and dropped) — just under the 0.86rem ride title, which must stay dominant — and week dates 1.05rem — bigger numerals were far too large) and numerals at 400 — ride stats, week dates, HR inputs — set like a
+  watch face. `--font-main` (Inter) is the interface. Eyebrow labels are Inter 600, ~0.68rem,
+  uppercase, tracked 0.14em, muted. Loaded in `frontend/index.html`.
+- **Soft geometry.** The radius scale was raised (see above). Buttons, chips, the menu bar and the
+  check-in note are pills; icon buttons and check-in faces are circles.
+- **Depth is a faint top highlight plus a soft shadow** on cards (`.glass-panel`) — a deliberate
+  exception to the "no drop shadows" bullet above. Inner panels are `--surface-2` with no border
+  until hover. The card header icon is a muted glyph, no tile.
+- **Rides read top to bottom** — name, date, a row of large numerals, then RPE/feeling.
+  `.activity-details-main` is `display: contents` so its children can be ordered around the stats
+  row; beside the title, the numerals squeezed the ride name into a one-word column.
+- **Workout type is one custom property.** `.wt-sprint … .wt-rest` set `--wt`; the next-week chips
+  use it as a left bar. Week cells carry **no** type colour of their own — only the coloured icon and
+  label. A coloured bar per cell was tried and removed: next to the accent frame of the selected day
+  the colours fought each other. Selection (`WeekDayCell.vue`) is an outline, never a fill.
 
 ## Frontend architecture (Vue 3 + Pinia + Vue Router)
 
@@ -680,7 +709,7 @@ to `/api/recommendation/refresh|skip-today|reschedule` and `/api/sync-workouts` 
 
 `electron-main.js` (repo root, CommonJS, guarded by `if (process.type !== 'browser') return` since Windows launches it twice):
 - Single-instance lock (`requestSingleInstanceLock`) — second launch just focuses the existing window
-- Default window 1400x1040, clamped to screen.getPrimaryDisplay().workAreaSize so it never opens taller than the display. Height was raised from 900 when the daily check-in moved into the training card — at 900 the plan card opened already scrolled.
+- Default window 1400x1180, clamped to screen.getPrimaryDisplay().workAreaSize so it never opens taller than the display. Height was raised from 900 to 1040 when the daily check-in moved into the training card (at 900 the plan card opened already scrolled), then to 1180 for the premium redesign's roomier spacing and labelled callouts.
 - Frameless window on Windows (custom `TitleBar.vue` + IPC `window:minimize/toggle-maximize/close`), native title bar (`hiddenInset`) on macOS
 - Runs the Express backend **in-process**: `require('./backend/dist/server.js')`. Packaged builds pick a free port dynamically (`findFreePort()`) and set `LOG_DIR` to `app.getPath('userData')/logs`; dev mode uses the fixed port 2012
 - Waits for `GET /api/status` to respond (`waitForHttp()`) before loading the window

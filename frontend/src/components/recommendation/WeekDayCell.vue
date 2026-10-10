@@ -98,9 +98,10 @@ const scoreBadgeClass = computed(() => {
   cursor: pointer;
 }
 
+/* A frame, not a fill: a fill would wipe out the workout-type tint sport.css paints on
+   the cell. */
 .week-day-cell.is-selected {
-  background: rgba(var(--primary-rgb), 0.14) !important;
-  outline: 1px solid rgba(var(--primary-rgb), 0.4);
-  outline-offset: -1px;
+  outline: 2px solid var(--primary-color);
+  outline-offset: -2px;
 }
 </style>

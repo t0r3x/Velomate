@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import './assets/style.css'
+import './assets/premium.css'
 import { applyTheme, readCachedThemeForBoot } from '@/stores/settings.store'
 
 // Before the first paint: the stored preference lives in the database, which is a round

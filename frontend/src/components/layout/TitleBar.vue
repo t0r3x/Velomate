@@ -75,11 +75,11 @@ onMounted(() => {
 }
 
 .titlebar-title {
-  font-family: var(--font-main);
-  font-size: 0.72rem;
+  font-family: var(--font-numeric);
+  font-size: 0.85rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
+  letter-spacing: -0.01em;
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 

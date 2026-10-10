@@ -81,7 +81,7 @@
               <input type="checkbox" id="ps-free-training" v-model="freeTrainingMode">
               <span>Free training mode</span>
             </label>
-            <p class="helper-text" style="margin-top: 0.35rem">
+            <p class="helper-text tp-hint">
               Replaces the two-week schedule with a single suggestion for your next workout, with no fixed day —
               ride it whenever suits you and sync it to Garmin when you're ready.
               Your weekly plan is kept, so you can switch back at any time.
@@ -98,7 +98,7 @@
                 <span>{{ day.label }}</span>
               </label>
             </div>
-            <p class="helper-text" style="margin-top: 0.35rem">
+            <p class="helper-text tp-hint">
               {{ freeTrainingMode
                 ? 'Not used in free training mode — there is no schedule to place long rides on, you pick the day yourself.'
                 : 'The AI will prefer these days for long endurance rides.' }}
@@ -116,15 +116,15 @@
               maxlength="500"
               rows="3"
             ></textarea>
-            <p class="helper-text" style="margin-top: 0.35rem">Share your goals, events, or constraints. The AI uses this as secondary input alongside your training data.</p>
+            <p class="helper-text tp-hint">Share your goals, events, or constraints. The AI uses this as secondary input alongside your training data.</p>
 
             <!-- ── Auto-pause ── -->
             <div class="tp-section-label tp-section-divider">
               <i class="fa-solid fa-clock"></i>
               Auto-pause
             </div>
-            <div class="hr-stats-row" style="align-items:center;gap:0.75rem">
-              <label for="ps-inactivity-days" class="helper-text" style="margin:0;flex:1">Pause training after this many consecutive days without a recorded workout:</label>
+            <div class="ps-autopause-row">
+              <label for="ps-inactivity-days" class="helper-text">Pause training after this many consecutive days without a recorded workout:</label>
               <input
                 type="number"
                 id="ps-inactivity-days"
@@ -132,8 +132,7 @@
                 min="1"
                 max="365"
                 step="1"
-                class="stat-value-input"
-                style="width:72px;text-align:center"
+                class="ps-autopause-input"
               >
             </div>
 

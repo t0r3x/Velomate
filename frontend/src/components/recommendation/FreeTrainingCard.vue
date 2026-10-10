@@ -326,40 +326,47 @@ async function handleSync() {
   flex: 1 1 auto;
 }
 
+/* Same callout as Assessment / Focus / Why in premium.css: --surface-2, a 2px left edge
+   and no other border. An edge, not a wash — a tinted fill here was one of four competing
+   panel colours inside the same card. */
 .ft-coach-note,
+.ft-synced-note {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 0.95rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+}
+
+/* The coach note is AI text, so it gets the shared label instead of an icon. */
+.ft-coach-note {
+  display: block;
+  border-left: 2px solid var(--primary-color);
+}
+.ft-coach-note i { display: none; }
+.ft-coach-note::before {
+  content: 'Coach note';
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* The synced note is a status, not AI text: it keeps its icon, in green. */
 .ft-synced-note {
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
-  margin: 0.75rem 0 0;
-  padding: 0.6rem 0.75rem;
-  border-radius: var(--radius-md);
-  font-size: 0.8rem;
-  line-height: 1.5;
-}
-
-/* A callout, so it keeps a signal — but as an edge, not a wash. A tinted fill here was
-   one of four competing panel colours inside the same card. */
-.ft-coach-note {
-  background: var(--surface-2);
-  border: 1px solid var(--hairline);
-  border-left: 2px solid var(--primary-color);
-  color: var(--text-secondary);
-}
-
-.ft-synced-note {
-  background: var(--surface-2);
-  border: 1px solid var(--hairline);
   border-left: 2px solid var(--z2-color);
-  color: var(--text-secondary);
 }
-
-.ft-coach-note i,
 .ft-synced-note i {
-  margin-top: 0.15rem;
+  margin-top: 0.2rem;
   flex-shrink: 0;
+  color: var(--z2-color);
 }
-
-.ft-coach-note i { color: var(--primary-color); }
-.ft-synced-note i { color: #10b981; }
 </style>
