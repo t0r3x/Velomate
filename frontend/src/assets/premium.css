@@ -523,3 +523,58 @@ body {
   border-color: var(--primary-color);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 18%, transparent);
 }
+
+/* ── Narrow screens ───────────────────────────────────────────────────────────
+   A grid track of `1fr` never shrinks below its content's min-content width, so one wide
+   child (the week grid, a long label, the check-in row) pushed every card past the right
+   edge — the cards measured 493px on a 390px phone. minmax(0, 1fr) plus min-width: 0 on
+   the columns lets them shrink to the screen, and wide content wraps or scrolls inside. */
+@media (max-width: 1024px) {
+  .dashboard-grid { grid-template-columns: minmax(0, 1fr); }
+  .col-assessment,
+  .col-schedule,
+  .dashboard-card { min-width: 0; }
+}
+
+@media (max-width: 640px) {
+  .dashboard-grid { gap: 1rem; }
+  .dashboard-card { padding: 1.15rem 1rem 1rem; }
+  .card-header { margin-bottom: 0.9rem; padding-bottom: 0.75rem; }
+  .last-synced-label { display: none; }   /* the refresh button stays; the timestamp is a nicety */
+  /* Max HR / LTHR boxes stay equal height when one label wraps to two lines. */
+  .hr-stats-row { align-items: stretch; }
+
+  /* Check-in: question on its own line, then the faces, then the note with Save beside it.
+     It used to flow as one row, so the note landed next to the faces with no room to type. */
+  .checkin-row { gap: 0.6rem; }
+  .checkin-label { flex: 1 1 100%; }
+  /* Basis close to the full row forces the note onto its own line, with only Save beside it. */
+  .checkin-note { flex: 1 1 calc(100% - 6rem); min-width: 0; }
+
+  /* Ride stats: three columns still, just tighter. */
+  .activity-item { padding: 0.95rem 1rem; }
+  .activity-stats-summary { gap: 0.5rem; }
+
+  /* Week grid: seven narrow cells — long type names ("Threshold") must wrap, not widen. */
+  .week-day-cell { padding: 10px 4px 8px; min-height: 84px; }
+  .wdc-workout-label { font-size: 0.66rem; hyphens: auto; -webkit-hyphens: auto; }
+  .wdc-placeholder { font-size: 0.6rem; }
+
+  .ai-load-insight,
+  .ai-next-week-emphasis,
+  .plan-changes-note { padding: 0.7rem 0.8rem; }
+}
+
+/* Phones: seven columns are too narrow for "Threshold", which has no hyphenation point
+   that fits — the cell widened and pushed Friday out of view. Below 480px the cells show
+   only the coloured type icon; the name is one tap away in the detail panel. Columns are
+   minmax(0, 1fr) so no single cell can widen the row again. */
+@media (max-width: 480px) {
+  .week-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 0; }
+  .wdc-workout-label { display: none; }
+  .wdc-workout-chip i { font-size: 1rem; }
+  .wdc-rest { font-size: 0; gap: 0; }            /* hides the word "Rest", keeps the bed icon */
+  .wdc-rest i { font-size: 0.95rem; }
+  .wdc-placeholder { font-size: 0; gap: 0; }     /* same for "Not planned yet" */
+  .wdc-placeholder i { font-size: 0.95rem; }
+}
