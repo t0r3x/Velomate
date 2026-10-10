@@ -548,6 +548,10 @@ body {
      It used to flow as one row, so the note landed next to the faces with no room to type. */
   .checkin-row { gap: 0.6rem; }
   .checkin-label { flex: 1 1 100%; }
+  /* Faces span the full row instead of huddling left beside empty space, and grow to a
+     44px touch target. */
+  .checkin-faces { flex: 1 1 100%; justify-content: space-between; }
+  .checkin-face { width: 2.75rem; height: 2.75rem; font-size: 1.15rem; }
   /* Basis close to the full row forces the note onto its own line, with only Save beside it. */
   .checkin-note { flex: 1 1 calc(100% - 6rem); min-width: 0; }
 
@@ -578,3 +582,9 @@ body {
   .wdc-placeholder { font-size: 0; gap: 0; }     /* same for "Not planned yet" */
   .wdc-placeholder i { font-size: 0.95rem; }
 }
+
+/* Answered check-in stays one quiet line at every width: the note gives way (ellipsis)
+   instead of pushing Change / Clear onto a line of their own beside empty space. */
+.checkin-answer { flex: none; white-space: nowrap; }
+.checkin-answer-note { flex: 1 1 0; min-width: 0; }
+.checkin-links { flex: none; }
