@@ -494,6 +494,12 @@ controls, no all-caps titles, no serif.
   accent icon, except where the colour means something (amber pause, red skip). Filled and
   outlined buttons are the same height — non-outline buttons carry a transparent 1px border. Phone
   overrides are re-applied after that block, because it comes later in the file.
+- **Phones (≤640px), checked at 390 and 360px wide with nothing overflowing.** The dashboard
+  grid is `minmax(0, 1fr)` with `min-width: 0` on columns and cards — a plain `1fr` track never
+  shrinks below its content and pushed every card ~100px past the right edge. Below 480px week
+  cells show only the type icon (the name is in the detail panel on tap): "Threshold" has no
+  hyphenation point that fits a seventh of a phone. The check-in stacks question → faces spread
+  across the row → note with Save. Every dialog sits 16px from the screen edge with a 20px inset.
 
 ## Frontend architecture (Vue 3 + Pinia + Vue Router)
 

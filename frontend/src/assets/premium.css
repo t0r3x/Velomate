@@ -664,3 +664,12 @@ body {
 /* Connections: the key help text sat 8px above the API KEY label — closer than any field
    to the next. Give the form the same breathing room as a new field. */
 .settings-panel-body .helper-text + form { margin-top: 0.75rem; }
+
+/* Phones: every dialog sits 16px from the screen edge with a 20px inner inset. Big
+   dialogs were 8px from the edge and small ones 16px; small ones padded 24px against the
+   big ones' 20px. The overlay prefix out-ranks each small dialog's scoped padding. */
+@media (max-width: 640px) {
+  .settings-panel { width: calc(100vw - 2rem); max-height: calc(100dvh - 2rem); }
+  .tp-backdrop.tp-modal-mode { padding: 1rem; }
+  .confirm-overlay .glass-panel.confirm-dialog { padding: 1.25rem; }
+}
