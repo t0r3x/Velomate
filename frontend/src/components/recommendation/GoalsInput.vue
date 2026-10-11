@@ -5,7 +5,7 @@
       <span class="goals-title">Goals &amp; preferences</span>
     </div>
     <p class="goals-hint">
-      Share your goals, events, or constraints — e.g. "training for a race on 31/05, I want to be able to do a 100 km ride on 31/05, long rides max 2.5 h." The AI uses this as secondary input alongside your actual training data.
+      Share your goals, events, or constraints, e.g. "training for a race on 31/05, I want to be able to do a 100 km ride on 31/05, long rides max 2.5 h." The AI uses this as secondary input alongside your actual training data.
     </p>
     <textarea
       v-model="text"

@@ -7,7 +7,7 @@
     </div>
     <!-- These days are re-planned as rides and feedback come in. Presenting them as a fixed
          schedule makes the daily adaptation look like inconsistency instead of the point. -->
-    <p class="ai-next-week-provisional">Direction, not a schedule — these days adapt as your rides and feedback come in.</p>
+    <p class="ai-next-week-provisional">Direction, not a schedule. These days adapt as your rides and feedback come in.</p>
     <p class="ai-next-week-summary">{{ summary }}</p>
     <div v-if="sessions.length" class="ai-next-week-chips">
       <span
@@ -38,7 +38,7 @@ const weekEntries = computed((): PlanEntry[] => buildWeekWindow(props.plan, prop
 const sessions = computed(() => weekEntries.value.filter(e => e.type !== 'Rest'))
 
 const summary = computed(() => {
-  if (sessions.value.length === 0) return 'Rest week — no sessions scheduled yet.'
+  if (sessions.value.length === 0) return 'Rest week. No sessions scheduled yet.'
   const counts = new Map<string, number>()
   sessions.value.forEach(s => counts.set(s.type, (counts.get(s.type) ?? 0) + 1))
   const parts = [...counts.entries()].map(([type, n]) => `${n} ${workoutTypeLabel[type] ?? type}`)

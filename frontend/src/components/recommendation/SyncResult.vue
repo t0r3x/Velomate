@@ -20,7 +20,7 @@
             </ul>
             <p class="sync-tip">
               <i class="fa-solid fa-calendar-days"></i>
-              <span>{{ calendarLead }} now visible in the <strong>Garmin Connect</strong> calendar — check it in the app or on the web at
+              <span>{{ calendarLead }} now visible in the <strong>Garmin Connect</strong> calendar. Check it in the app or on the web at
               <a href="https://connect.garmin.com" target="_blank" rel="noopener">connect.garmin.com</a>.
               After syncing your device, workouts also appear under <strong>Training Plans</strong> on your Garmin device.</span>
             </p>
@@ -60,7 +60,7 @@ const syncMsg = computed(() => {
 })
 
 function statusText(w: SyncedWorkout): string {
-  if (w.scheduleError) return '(Upload only — schedule manually)'
+  if (w.scheduleError) return '(Upload only, schedule manually)'
   if (w.scheduledDate) {
     const d = new Date(w.scheduledDate + 'T12:00:00')
     const dFmt = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })

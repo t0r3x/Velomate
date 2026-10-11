@@ -419,7 +419,7 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
         workoutId:     uploaded.workoutId,
         name:          uploaded.workoutName,
         scheduledDate: '',
-        scheduleError: `Could not schedule for ${entryDate} — schedule manually in Garmin Connect`
+        scheduleError: `Could not schedule for ${entryDate}. Schedule it manually in Garmin Connect.`
       });
       continue;
     }
@@ -525,7 +525,7 @@ export const syncFreeWorkout = async (
     await client.scheduleWorkout({ workoutId: String(uploaded.workoutId) }, dateStr);
   } catch (err: any) {
     logger.warn(`[Sync] Free mode: ${type} uploaded (id ${uploaded.workoutId}) but scheduling failed: ${err.message}`);
-    scheduleError = `Could not schedule for ${dateStr} — schedule manually in Garmin Connect`;
+    scheduleError = `Could not schedule for ${dateStr}. Schedule it manually in Garmin Connect.`;
     scheduledDate = '';
   }
 

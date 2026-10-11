@@ -238,9 +238,14 @@ Rides are rendered by `formatActivityLines()` as one line per ride (`date | dura
 ### AI model selection
 
 The model is **user-supplied free text**, not a fixed dropdown — that list went stale every time Google
-shipped a model. `SettingsPanel.vue` offers `MODEL_PRESETS` (currently `gemini-3.8-flash` and
-`gemini-3.5-flash-lite`) plus a `Custom model ID…` option that reveals a text field, which is how Pro-tier
-and brand-new models get in. A stored value that is not a preset reopens the form **in custom mode with
+shipped a model. `SettingsPanel.vue` presents it as **three cards** (`MODEL_CHOICES`, a `role="radiogroup"`),
+because the athlete should choose a trade-off consciously, not pick an ID: **Accurate** (`gemini-3.8-flash`,
+recommended — reasons most carefully, slower), **Super fast** (`gemini-3.5-flash-lite` — a plan in seconds,
+follows the rules more loosely; sanitizeStructure still checks every workout) and **Custom**, whose ID field
+sits inside its own card and is disabled until that card is chosen. Cards are divs with `role="radio"`, not
+buttons — an input inside a button is invalid. No speed or quota figures on the cards (the athlete asked for
+them to go), and no "watch" wording anywhere: Velomate syncs to Garmin, which is not only watches. Pro-tier
+and brand-new models get in through Custom. A stored value that is not a preset reopens the form **in custom mode with
 that value**, so removing a preset in a later version never silently resets someone's choice.
 
 Three helpers in `gemini.service.ts` own this:

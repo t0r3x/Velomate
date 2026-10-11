@@ -1238,7 +1238,7 @@ const buildFreeHistoryBlock = (
   const lines: string[] = [];
   if (current) {
     const syncState = current.syncedForDate
-      ? `synced to their watch for ${current.syncedForDate} but not yet ridden`
+      ? `synced to Garmin for ${current.syncedForDate} but not yet ridden`
       : 'not yet synced or ridden';
     lines.push(`- [id ${current.id}] ${current.workoutType} — suggested ${current.generatedAt.slice(0, 10)} → STILL OPEN (${syncState})`);
   }

@@ -14,7 +14,7 @@
         >
           <i class="fa-solid fa-arrow-right-arrow-left"></i>
         </button>
-        <button class="btn-icon-sm btn-icon-pause" title="Pause training — use for injury, illness or travel" :disabled="pausing" @click="handlePause">
+        <button class="btn-icon-sm btn-icon-pause" title="Pause training (injury, illness or travel)" :disabled="pausing" @click="handlePause">
           <i class="fa-solid" :class="pausing ? 'fa-spinner fa-spin' : 'fa-circle-pause'"></i>
         </button>
         <button class="btn-icon-sm" title="Refresh recommendation" :disabled="isUpdating" @click="handleRefresh">
@@ -43,9 +43,9 @@
       <!-- State: no-plan -->
       <div v-show="recStore.state === 'no-plan'" class="ai-rec-state">
         <div class="ai-rec-empty ai-rec-intro">
-          <p class="ai-rec-intro-lead">AI analyses your ride history, heart rate zones and training load to build a continuously adaptive training plan — for as long as you want to train. It always shows the next 14 days ahead, but the plan has no end date: it rolls forward every day and adjusts to what you actually did.</p>
+          <p class="ai-rec-intro-lead">AI analyses your ride history, heart rate zones and training load to build a continuously adaptive training plan, for as long as you want to train. It always shows the next 14 days ahead, but the plan has no end date: it rolls forward every day and adjusts to what you actually did.</p>
           <ul class="ai-rec-intro-list">
-            <li><i class="fa-solid fa-rotate"></i><span><strong>Rolls forward every day.</strong> The plan always starts from today and regenerates automatically as your rides come in or the plan goes stale — open the app, or hit Refresh, to see the latest.</span></li>
+            <li><i class="fa-solid fa-rotate"></i><span><strong>Rolls forward every day.</strong> The plan always starts from today and regenerates automatically as your rides come in or the plan goes stale. Open the app, or hit Refresh, to see the latest.</span></li>
             <li><i class="fa-solid fa-circle-check"></i><span><strong>Detects what you actually did.</strong> After a Garmin sync, completed workouts are matched to the plan. Zone data shows whether intervals were fully executed, partially done, or the intensity didn't match.</span></li>
             <li><i class="fa-solid fa-forward-step"></i><span><strong>Adapts to skips and changes.</strong> Missed a session? The plan recalculates. Want to move a workout to today? Use the calendar button on any day in This Week.</span></li>
             <li><i class="fa-solid fa-chart-line"></i><span><strong>Builds progression over time.</strong> The AI tracks your compliance and fatigue across weeks, gradually increasing load when you're ready and backing off when you need recovery.</span></li>
@@ -208,11 +208,11 @@ async function handleRefresh() {
 
   if (outcome === 'changed') {
     show('success', 'Plan updated',
-      changed ? `${changed} ${changed === 1 ? 'day' : 'days'} changed — see what moved under This Week.` : 'Your plan is up to date.')
+      changed ? `${changed} ${changed === 1 ? 'day' : 'days'} changed. See what moved under This Week.` : 'Your plan is up to date.')
   } else if (outcome === 'unchanged') {
     show('info', 'Plan checked', 'The AI looked again and kept your plan as it was.')
   } else if (outcome === 'timeout') {
-    show('warn', 'Taking longer than usual', 'The AI is still working on it — check back in a minute.')
+    show('warn', 'Taking longer than usual', 'The AI is still working on it. Check back in a minute.')
   } else {
     show('error', 'Refresh failed', recStore.state === 'error'
       ? recStore.errorMessage
@@ -293,7 +293,7 @@ async function handleSync() {
 
   if (result.usingFallback?.length) {
     show('warn', 'Default structures used',
-      `${result.usingFallback.join(', ')} used built-in defaults — regenerate the AI plan for personalised workouts.`)
+      `${result.usingFallback.join(', ')} used built-in defaults. Regenerate the AI plan for personalised workouts.`)
   }
   result.scheduleErrors?.forEach(msg => show('warn', 'Scheduling incomplete', msg))
 }

@@ -9,14 +9,14 @@
           </div>
           <p class="confirm-message">
             AI will stop suggesting workouts and auto-skips won't accumulate while paused.
-            Resume when you're ready — the plan will restart conservatively.
+            Resume when you're ready; the plan will restart conservatively.
           </p>
           <div class="pause-reason-wrap">
             <input
               v-model="reason"
               class="pause-reason-input"
               type="text"
-              placeholder="Reason (optional) — e.g. injury, travel, illness…"
+              placeholder="Reason (optional), e.g. injury, travel, illness…"
               maxlength="120"
               @keydown.enter="submit"
               @keydown.esc="_cancel"

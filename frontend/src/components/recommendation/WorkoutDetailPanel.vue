@@ -39,10 +39,10 @@
 
     <!-- Reason -->
     <p v-if="isPastPlaceholder" class="wdp-reason wdp-placeholder-note">
-      No plan data exists for this day — it's before the AI plan's history began, so there's nothing to refresh.
+      No plan data exists for this day. It's before the AI plan's history began, so there's nothing to refresh.
     </p>
     <p v-else-if="isPlaceholder" class="wdp-reason wdp-placeholder-note">
-      This day isn't in the AI's current plan yet — refresh the plan to extend its coverage.
+      This day isn't in the AI's current plan yet. Refresh the plan to extend its coverage.
     </p>
     <p v-else-if="entry.reason" class="wdp-reason">{{ entry.reason }}</p>
 

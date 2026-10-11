@@ -34,7 +34,7 @@
           </label>
           <p class="prefs-note">
             Regenerates your plan as soon as a new ride arrives, so its execution score shows up right away.
-            Turning this off saves AI calls — the score appears at the next scheduled refresh instead.
+            Turning this off saves AI calls; the score then appears at the next scheduled refresh.
             Anything you enter yourself, like a check-in or a ride rating, always takes effect immediately.
           </p>
 
@@ -50,7 +50,7 @@
 
           <img :src="active ? mbcImg : veloIcon" alt="" class="about-dialog-logo" />
           <p class="confirm-message">
-            Velomate v{{ appVersion }} — the adaptive AI cycling coach for Garmin Connect.
+            Velomate v{{ appVersion }}, the adaptive AI cycling coach for Garmin Connect.
           </p>
           <p class="confirm-message about-credit">
             <button type="button" class="shablagoo-label" @click="unlockMintberry">Mintberry Crunch Labs</button>

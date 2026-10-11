@@ -126,7 +126,7 @@ async function handleSync() {
     const added = newCount === 0
       ? 'No new rides'
       : `${newCount} new ${newCount === 1 ? 'ride' : 'rides'} added`
-    show('success', 'Synced from Garmin', `${added} — ${total} total stored.`)
+    show('success', 'Synced from Garmin', `${added}. ${total} total stored.`)
   } catch {
     show('error', 'Refresh Failed', 'Could not reach the backend.')
   } finally {

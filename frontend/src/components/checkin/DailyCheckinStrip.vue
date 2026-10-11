@@ -24,7 +24,7 @@
           class="checkin-note"
           type="text"
           maxlength="200"
-          placeholder="Add a note (optional) — slept badly, sore legs, ran yesterday…"
+          placeholder="Add a note (optional): slept badly, sore legs, ran yesterday…"
           @keyup.enter="save"
         />
         <button v-if="changing" type="button" class="btn btn-secondary btn-sm" :disabled="store.saving" @click="cancel">

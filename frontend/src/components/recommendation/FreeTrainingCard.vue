@@ -4,7 +4,7 @@
       <i class="fa-solid fa-brain header-icon"></i>
       <h2>Free Training</h2>
       <div v-if="freeStore.state === 'loaded'" class="card-header-actions">
-        <button class="btn-icon-sm btn-icon-pause" title="Pause training — use for injury, illness or travel" :disabled="pausing" @click="handlePause">
+        <button class="btn-icon-sm btn-icon-pause" title="Pause training (injury, illness or travel)" :disabled="pausing" @click="handlePause">
           <i class="fa-solid" :class="pausing ? 'fa-spinner fa-spin' : 'fa-circle-pause'"></i>
         </button>
         <button class="btn-icon-sm" title="Refresh suggestion" :disabled="isUpdating" @click="handleRefresh">
@@ -35,10 +35,10 @@
         <div class="ai-rec-empty ai-rec-intro">
           <p class="ai-rec-intro-lead">Free training gives you one workout at a time instead of a fixed schedule. AI reads your ride history, heart rate zones and training load and answers a single question: what is the best next session for you right now? You decide when to ride it.</p>
           <ul class="ai-rec-intro-list">
-            <li><i class="fa-solid fa-calendar-xmark"></i><span><strong>No fixed day.</strong> The suggestion isn't tied to a date. Ride it today, in three days, or ask for a different one — nothing is ever marked as missed.</span></li>
+            <li><i class="fa-solid fa-calendar-xmark"></i><span><strong>No fixed day.</strong> The suggestion isn't tied to a date. Ride it today, in three days, or ask for a different one. Nothing is ever marked as missed.</span></li>
             <li><i class="fa-solid fa-cloud-arrow-up"></i><span><strong>Sync when you're ready.</strong> Push it to Garmin whenever you want. It's named and scheduled for the day you pressed the button, so you can always trace it back.</span></li>
-            <li><i class="fa-solid fa-circle-check"></i><span><strong>Learns from what you ride.</strong> The first ride after a sync is matched to the suggestion and scored on zone data, RPE and feeling — the same 0-100 scale the full plan uses.</span></li>
-            <li><i class="fa-solid fa-arrows-rotate"></i><span><strong>Always the next best thing.</strong> Not in the mood for intervals? Ask for another suggestion — the AI remembers what you turn down and adjusts.</span></li>
+            <li><i class="fa-solid fa-circle-check"></i><span><strong>Learns from what you ride.</strong> The first ride after a sync is matched to the suggestion and scored on zone data, RPE and feeling, on the same 0-100 scale the full plan uses.</span></li>
+            <li><i class="fa-solid fa-arrows-rotate"></i><span><strong>Always the next best thing.</strong> Not in the mood for intervals? Ask for another suggestion. The AI remembers what you turn down and adjusts.</span></li>
           </ul>
           <button class="btn btn-primary" :disabled="generating" @click="handleGenerateFirst">
             <span>{{ generating ? 'Generating…' : 'Suggest my next workout' }}</span>
@@ -99,7 +99,7 @@
             <!-- Traceability: which day this was pushed to Garmin -->
             <p v-if="freeStore.isSynced && suggestion.syncedForDate" class="ft-synced-note">
               <i class="fa-solid fa-circle-check"></i>
-              <span>Synced to Garmin on <strong>{{ formatSyncedDate(suggestion.syncedForDate) }}</strong> — find it under that date in your Garmin calendar. Your next ride will be matched to it.</span>
+              <span>Synced to Garmin on <strong>{{ formatSyncedDate(suggestion.syncedForDate) }}</strong>. Find it under that date in your Garmin calendar. Your next ride will be matched to it.</span>
             </p>
 
             <LoadAssessment
@@ -241,7 +241,7 @@ async function handleRefresh() {
   } else if (outcome === 'unchanged') {
     show('info', 'Same suggestion', `The AI looked again and still recommends ${label}.`)
   } else if (outcome === 'timeout') {
-    show('warn', 'Taking longer than usual', 'The AI is still working on it — check back in a minute.')
+    show('warn', 'Taking longer than usual', 'The AI is still working on it. Check back in a minute.')
   } else {
     show('error', 'Refresh failed', freeStore.state === 'error'
       ? freeStore.errorMessage
@@ -308,7 +308,7 @@ async function handleSync() {
 
   if (result.usingFallback?.length) {
     show('warn', 'Default structure used',
-      `${result.usingFallback.join(', ')} used a built-in default — refresh the suggestion for a personalised workout.`)
+      `${result.usingFallback.join(', ')} used a built-in default. Refresh the suggestion for a personalised workout.`)
   }
   result.scheduleErrors?.forEach(msg => show('warn', 'Scheduling incomplete', msg))
 }

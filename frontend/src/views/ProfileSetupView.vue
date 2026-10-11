@@ -67,7 +67,7 @@
               <h3>Training Zones Preview</h3>
               <p class="helper-text zones-hr-note">
                 <i class="fa-solid fa-circle-info"></i>
-                Make sure these zones match the ones on your heart rate monitor (e.g. Garmin) — drag a boundary between two zones to adjust it manually.
+                Make sure these zones match the ones on your heart rate monitor (e.g. Garmin). Drag a boundary between two zones to adjust it manually.
               </p>
               <HrZonesBar :zones="zones" :maxHr="maxHr" @update:zones="zones = $event" />
             </div>
@@ -82,8 +82,8 @@
               <span>Free training mode</span>
             </label>
             <p class="helper-text tp-hint">
-              Replaces the two-week schedule with a single suggestion for your next workout, with no fixed day —
-              ride it whenever suits you and sync it to Garmin when you're ready.
+              Replaces the two-week schedule with a single suggestion for your next workout, with no fixed day.
+              Ride it whenever suits you and sync it to Garmin when you're ready.
               Your weekly plan is kept, so you can switch back at any time.
             </p>
 
@@ -100,7 +100,7 @@
             </div>
             <p class="helper-text tp-hint">
               {{ freeTrainingMode
-                ? 'Not used in free training mode — there is no schedule to place long rides on, you pick the day yourself.'
+                ? 'Not used in free training mode. There is no schedule to place long rides on; you pick the day yourself.'
                 : 'The AI will prefer these days for long endurance rides.' }}
             </p>
 
@@ -247,11 +247,11 @@ onMounted(async () => {
       suggestionState.value = 'shown'
     } else {
       suggestionState.value = 'hidden'
-      if (!hasCustom) noticeText.value = 'No Garmin rides yet — using defaults. Adjust to match your fitness level.'
+      if (!hasCustom) noticeText.value = 'No Garmin rides yet, so defaults are used. Adjust them to match your fitness level.'
     }
   } catch {
     suggestionState.value = 'hidden'
-    if (!hasCustom) noticeText.value = 'Garmin data unavailable — using defaults. You can update at any time.'
+    if (!hasCustom) noticeText.value = 'Garmin data unavailable, so defaults are used. You can update them at any time.'
   }
 
   loadingState.value = 'form'
@@ -293,7 +293,7 @@ async function handleConfirm() {
       if (modeChanged) {
         show('success', freeTrainingMode.value ? 'Free training mode on' : 'Free training mode off',
           freeTrainingMode.value
-            ? 'Your weekly plan is kept safe — ask for your next workout whenever you like.'
+            ? 'Your weekly plan is kept safe. Ask for your next workout whenever you like.'
             : 'Back to the two-week AI plan. Refresh it to bring it up to date.')
       } else {
         show('success', 'Training Profile Updated', 'Zones, preferences and goals saved.')

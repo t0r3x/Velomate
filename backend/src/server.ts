@@ -1185,7 +1185,7 @@ app.post('/api/free-training/sync', async (_req: Request, res: Response) => {
     const current = getCurrentFreeSuggestion();
     if (!current) return res.status(404).json({ error: 'No current suggestion to sync.' });
     if (current.workoutType === 'Rest') {
-      return res.status(400).json({ error: 'This suggestion is a rest day — there is no workout to sync.' });
+      return res.status(400).json({ error: 'This suggestion is a rest day, so there is no workout to sync.' });
     }
 
     const pressedOn = localDate();
