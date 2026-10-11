@@ -17,6 +17,7 @@ import {
   FreeSuggestion
 } from './database.service';
 import { localDate, toRpe, toFeeling, USER_TZ, APP_NAME } from '../utils';
+import { sanitizeStructure, normalizeWorkoutType } from './workout.service';
 import logger from '../logger';
 
 // ── Key helpers ───────────────────────────────────────────────────────────────
@@ -99,6 +100,12 @@ const thinkingConfigFor = (model: string): { thinkingLevel: string } | undefined
  */
 const RETRYABLE_STATUSES = new Set([429, 500, 503, 504]);
 const MAX_GEMINI_ATTEMPTS = 4;
+/**
+ * Per attempt. Generous on purpose: under heavy load a real gemini-3.8-flash plan call took
+ * 322s to answer (measured), so this only exists to stop a call that never answers at all.
+ * Not retried — a request that hung this long is not one to repeat three times.
+ */
+const GEMINI_TIMEOUT_MS = 420_000;
 
 /**
  * POST a generateContent request, retrying transient failures. A 429 honours Retry-After
@@ -109,9 +116,14 @@ const callGemini = async (label: string, model: string, key: string, body: objec
   const startedAt = Date.now();
   for (let attempt = 1; ; attempt++) {
     try {
+      // A timeout is not optional. Under load Google can hold the connection open without
+      // answering; with axios' default (none) the call never settled, the single-flight
+      // guard never released, and every later generation joined the hung one — the UI sat on
+      // "Your plan is being updated…" until the app was restarted. Real calls take 5-80s, 5+ min under load.
       const response = await axios.post(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-        body
+        body,
+        { timeout: GEMINI_TIMEOUT_MS }
       );
       logUsage(label, startedAt, response);
       return response;
@@ -464,7 +476,7 @@ Scale: 1=exhausted, 2=tired, 3=normal, 4=good, 5=strong. A free-text note may ex
 /** The six workout types and their step templates. Caller supplies the header line. */
 const WORKOUT_TYPE_GUIDELINES = `Sprint (requires neuromuscular recovery — use athlete's own history to judge adequate rest):
   Warm-up [WarmUp]: 480-720 sec Z2
-  Intervals: 4-8 sets of [Sprint [Run] 20-45 sec Z5 → Recovery [Recovery] 180-300 sec Z1]
+  Intervals: 4-6 sets of [Sprint [Run] 20-45 sec Z5 → Recovery [Recovery] 180-300 sec Z1]
   Cool-down [Cooldown]: 480-720 sec Z1
   Short maximal bursts — trains neuromuscular power. Fewer/shorter when less fresh.
   Recovery window: judge this from the TRAINING LOAD figures. At 5 or more rides per week with no
@@ -473,30 +485,32 @@ const WORKOUT_TYPE_GUIDELINES = `Sprint (requires neuromuscular recovery — use
 
 VO2Max (requires good recovery — sustained Z5 is more demanding than Sprint):
   Warm-up [WarmUp]: 480-720 sec Z2
-  Intervals: 4-5 sets of [Work [Run] 180-300 sec Z5 → Recovery [Recovery] 180-240 sec Z1]
+  Intervals: 3-4 sets of [Work [Run] 180-300 sec Z5 → Recovery [Recovery] 180-240 sec Z1]
   Cool-down [Cooldown]: 480-600 sec Z1
   Sustained Z5 blocks raise the aerobic ceiling. Do NOT schedule after consecutive hard days without at least one easy session in between.
-  Fewer sets when less fresh; 5 sets only when athlete is progressing well and compliance is high.
+  3 sets when less fresh; 4 only when the athlete is absorbing the load well (good execution scores and feeling).
 
 Threshold (when moderately fresh — core aerobic progression):
   Warm-up [WarmUp]: 480-720 sec Z2
-  Intervals: 2-4 sets of [Work [Run] 360-720 sec Z4 → Recovery [Recovery] 180-300 sec Z1/Z2]
+  Intervals: 2-3 sets of [Work [Run] 360-720 sec Z4 → Recovery [Recovery] 180-300 sec Z1 or Z2]
   Cool-down [Cooldown]: 480-600 sec Z1
   Reduce interval count/duration when fatigued; increase when athlete is adapting well.
   If execution scores for Threshold sessions are consistently < 60, the athlete is cutting intervals short — reduce duration.
 
 Tempo (ideal for moderate fatigue — sweet spot, Z3):
   Warm-up [WarmUp]: 480-600 sec Z2
-  Intervals: 2-3 sets of [Work [Run] 900-1800 sec Z3 → Recovery [Recovery] 300-480 sec Z1/Z2]
+  Intervals: 2-3 sets of [Work [Run] 900-1800 sec Z3 → Recovery [Recovery] 300-480 sec Z1 or Z2]
   Cool-down [Cooldown]: 480 sec Z1
   Long Z3 blocks build fatigue resistance and muscular endurance. Perfect when athlete is too tired for Z4 Threshold but too fresh for Z2 only.
 
 LongRide (safe even when moderately fatigued):
-  Single steady block [Run]: 1800-14400 sec Z2
+  Single steady block [Run]: 1800-14400 sec Z2 — Z2 throughout, no Z3+ blocks. An easy WarmUp/Cooldown may be added; if you add one, give it a real duration, otherwise leave it out.
   Scale to the athlete's averageRideDurationMinutes — a beginner averaging 40 min rides should get a 50-70 min long ride, not 2+ hours.
   A pro averaging 90 min rides may go 2.5-4 hours. Shorter when tired, longer when fresh.
 
-Rest: no structure needed — set structure to null.`;
+Rest: no structure needed — set structure to null.
+
+STRUCTURE SHAPE (all interval types): WarmUp → work/recovery pairs → Cooldown. The LAST work interval goes straight into the Cooldown — never put a Recovery step after it; a recovery followed by a cool-down is the same easy riding split into two steps. Every step in EVERY structure, LongRide included, is real riding with one zone: no zero-length, placeholder or duplicate steps — leave a step out rather than give it 0 seconds.`;
 
 /**
  * How to pitch the load: match what this athlete is actually doing and feeling.
@@ -512,7 +526,8 @@ const CALIBRATION_GUIDELINES = `CALIBRATION: Pitch every session at what this at
   Training pyramid — use it to judge where a session sits, NOT as a ladder to climb: Rest → LongRide (Z2 base) → Tempo (Z3 fatigue resistance) → Threshold (Z4 aerobic power) → VO2Max (Z5 aerobic ceiling) → Sprint (Z5+ neuromuscular)
 
 - If the athlete's history already shows regular Sprint/Threshold/VO2Max work: keep working at that level — do NOT reset to base.
-  - Rule: Do NOT prescribe high-intensity interval sessions (Tempo, Threshold, VO2Max, Sprint) if the recent history is purely aerobic — meaning no ride shows more than roughly 5 minutes of combined Z4+Z5 time — unless their specific goals require race preparation.
+  - Rule: Do NOT prescribe high-intensity sessions (Threshold, VO2Max, Sprint) if the recent history is purely aerobic — meaning no ride shows more than roughly 5 minutes of combined Z4+Z5 time — unless their specific goals require race preparation.
+  - Tempo (Z3) is the step up from a purely aerobic base: introduce it only when recovery signals are good, and never as two hard-ish sessions in a row.
   - Only stack VO2Max + Threshold + Sprint in the same period when the athlete is demonstrably managing that load (history shows it, rpe/feeling are fine).
   - If the athlete is already at a consistently high load with no negative signals, the right answer is to hold there. Adding volume or intensity because things are going well is not the goal.
   - Raise intensity or frequency only when recovery signals are good AND current load sits below what this athlete has already shown they can handle.
@@ -711,7 +726,7 @@ STRICT RULES:
 - weeklyPlan[0].executionNote: matching 1-sentence string if scored. All others: null.
 - stepType MUST be one of: WarmUp, Run, Recovery, Cooldown
 - zone MUST be one of: z1, z2, z3, z4, z5
-- durationSec MUST be a positive integer (minimum 20 for sprint intervals)
+- durationSec MUST be a positive integer: at least 20 for a work or recovery step, at least 300 for a WarmUp or Cooldown
 - weeklyPlan MUST contain exactly ${PLAN_WINDOW_DAYS} entries, starting from the TODAY date given in the athlete data, one per consecutive calendar day
 - changeNote is the athlete's explanation for why their plan looks different today than it did yesterday. They see the exact list of changed days alongside it, so an invented change is immediately visible as a lie. Write it for them, not about yourself: "Thursday drops to Tempo because this morning's check-in reported 2/5", not "I have adjusted the plan".
 - nextWeekFocus describes weeklyPlan[7..13] AS A WHOLE (the training theme/rationale) — it is not a day-by-day recap, those already have their own "reason"
@@ -792,7 +807,14 @@ const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, ac
   // Future planned workouts — shown to the AI so it keeps them stable
   let plannedBlock = '';
   if (previousPlan && previousPlan.length > 0) {
-    const futurePlanned = previousPlan.filter(e => e.status === 'planned' && e.date > today);
+    // Today is included: diffPlans counts a change to today, so PLAN STABILITY and changeNote
+    // must cover it too. With today left out, a model turned today's LongRide into Rest and
+    // wrote "I kept every scheduled day" — true of the list it saw, false on the athlete's
+    // screen, where the changed-days list showed exactly that change. A pinned today has its
+    // own MANDATORY line below, so its stale entry is left out.
+    const futurePlanned = previousPlan.filter(e =>
+      e.status === 'planned' && (e.date > today || (e.date === today && !pinnedTodayType))
+    );
     const lines = futurePlanned.map(e => {
       const dow = new Date(e.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short' });
       return `- ${e.date} (${dow}): ${e.type}`;
@@ -944,12 +966,45 @@ const _attemptGeneration = async (
   }
 
   // Validate required fields
-  const validTypes = ['Sprint', 'VO2Max', 'Threshold', 'Tempo', 'LongRide', 'Rest'];
-  if (!validTypes.includes(parsed?.today?.type)) {
-    throw new Error(`Invalid today.type: ${parsed?.today?.type}`);
-  }
   if (!Array.isArray(parsed?.weeklyPlan) || parsed.weeklyPlan.length !== PLAN_WINDOW_DAYS) {
     throw new Error(`weeklyPlan must be an array of ${PLAN_WINDOW_DAYS} entries, got ${parsed?.weeklyPlan?.length}`);
+  }
+  // Every day's type, not only today's: an unknown type ("Recovery", "Endurance") used to be
+  // stored as-is, could never be synced and rendered as a raw string. Spelling variants
+  // ("VO2 Max", "Long Ride") are normalised; anything else fails the generation, which leaves
+  // the previous plan in place rather than storing a broken one.
+  const dayTypes = parsed.weeklyPlan.map((e: any, i: number) => {
+    const t = normalizeWorkoutType(e?.type);
+    if (!t) throw new Error(`Invalid weeklyPlan[${i}].type: ${e?.type}`);
+    return t;
+  });
+  // today.type is only a cross-check — weeklyPlan[0] is authoritative (see upsert below).
+  if (!normalizeWorkoutType(parsed?.today?.type)) {
+    logger.warn(`[Gemini] today.type "${parsed?.today?.type}" is not a valid type — using weeklyPlan[0] (${dayTypes[0]})`);
+  }
+
+  // A reschedule to today is a direct athlete instruction; the prompt states it twice, and
+  // this makes it true even when the model ignores it. The model's structure was written for
+  // the type it chose, so it is dropped — sync then uses the built-in structure for the
+  // pinned type rather than, say, a LongRide's steps under a Threshold name.
+  const pinned = pinnedTodayType ? normalizeWorkoutType(pinnedTodayType) : null;
+  if (pinned && dayTypes[0] !== pinned) {
+    logger.warn(`[Gemini] Model ignored the pinned type for today (${dayTypes[0]} instead of ${pinned}) — enforcing ${pinned}`);
+    dayTypes[0] = pinned;
+    parsed.weeklyPlan[0].structure = null;
+  }
+
+  // Dates come from the calendar, not the model: weeklyPlan[i] is today + i by definition.
+  // A model that started a day late or skipped a date would otherwise shift every workout
+  // onto the wrong day, and the status merge below would attach to the wrong entries.
+  const planDates = parsed.weeklyPlan.map((_: any, i: number) => {
+    const d = new Date(localDate() + 'T12:00:00');
+    d.setDate(d.getDate() + i);
+    return localDate(d);
+  });
+  const shifted = parsed.weeklyPlan.filter((e: any, i: number) => e?.date !== planDates[i]).length;
+  if (shifted > 0) {
+    logger.warn(`[Gemini] ${shifted} weeklyPlan date(s) did not match today + index — corrected`);
   }
 
   // Status + score preservation reads the plan as it stands RIGHT NOW, not the snapshot this
@@ -966,22 +1021,24 @@ const _attemptGeneration = async (
   //  - Preserve non-planned statuses (completed/skipped/auto-skipped)
   //  - Preserve existing executionScores (never re-score an already-scored entry)
   //  - Apply new AI-generated scores for entries that just became completed (today's dates in new plan)
-  const weeklyPlan: PlanEntry[] = parsed.weeklyPlan.map((e: any) => {
-    const prev          = prevEntryMap.get(e.date);
+  const weeklyPlan: PlanEntry[] = parsed.weeklyPlan.map((e: any, i: number) => {
+    const date          = planDates[i];
+    const type          = dayTypes[i];
+    const prev          = prevEntryMap.get(date);
     const status        = (prev && prev.status !== 'planned') ? prev.status : 'planned';
     const alreadyScored = prev?.executionScore != null;
 
-    const structure = e.structure && Array.isArray(e.structure.steps) ? {
-      totalMinutes: Math.round(
-        e.structure.steps.reduce((s: number, st: any) => s + (st.durationSec || 0), 0) / 60
-      ),
-      steps: e.structure.steps
-    } : null;
+    // A structure only where something will actually be ridden from it: a planned, non-Rest
+    // day inside the structured window. sanitizeStructure removes dead blocks, fixes bad
+    // zones/types/durations and recomputes totalMinutes (the model rounds inconsistently).
+    const structure = (type !== 'Rest' && i < STRUCTURED_WINDOW_DAYS && status === 'planned')
+      ? sanitizeStructure(e.structure, type)
+      : null;
 
     return {
-      date:           e.date,
-      type:           e.type,
-      reason:         e.reason,
+      date,
+      type,
+      reason:         typeof e.reason === 'string' ? e.reason : '',
       status,
       executionScore: alreadyScored
                         ? prev!.executionScore!
@@ -1058,9 +1115,10 @@ const _attemptGeneration = async (
   }
 
   upsertRecommendation({
-    workoutType:   todayEntry?.type    ?? parsed.today.type,
-    reason:        todayEntry?.reason  ?? parsed.today.reason,
-    priority:      parsed.today.priority,
+    workoutType:   todayEntry.type,
+    reason:        todayEntry?.reason  || parsed?.today?.reason || '',
+    // The UI colours priority by class name, so only the three known values get through.
+    priority:      ['high', 'medium', 'low'].includes(parsed?.today?.priority) ? parsed.today.priority : 'medium',
     weeklyPlan:    fullPlan,
     nextWeekFocus: typeof parsed.nextWeekFocus === 'string' ? parsed.nextWeekFocus : null,
     changeNote:    typeof parsed.changeNote === 'string' ? parsed.changeNote : null,
@@ -1070,8 +1128,8 @@ const _attemptGeneration = async (
 
   // ── Log parsed result summary ─────────────────────────────────────────────────
   logger.info('[Gemini] ── PARSED RESULT ───────────────────────────────────────────');
-  logger.info(`  Today:    ${parsed.today.type} (priority: ${parsed.today.priority})`);
-  logger.info(`  Reason:   ${parsed.today.reason}`);
+  logger.info(`  Today:    ${todayEntry.type} (priority: ${parsed?.today?.priority ?? "?"})`);
+  logger.info(`  Reason:   ${todayEntry.reason}`);
   logger.info(`  Fatigue:  ${parsed.loadAssessment?.fatigue}  |  Trend: ${parsed.loadAssessment?.weeklyLoadTrend}`);
   logger.info(`  Insight:  ${parsed.loadAssessment?.insight}`);
   if (pastEntries.length > 0) {
@@ -1257,7 +1315,7 @@ STRICT RULES:
 - "structure" MUST always be present, with at least one step.
 - stepType MUST be one of: WarmUp, Run, Recovery, Cooldown
 - zone MUST be one of: z1, z2, z3, z4, z5
-- durationSec MUST be a positive integer (minimum 20 for sprint intervals)
+- durationSec MUST be a positive integer: at least 20 for a work or recovery step, at least 300 for a WarmUp or Cooldown
 - totalMinutes MUST equal Math.round(sum(durationSec) / 60)
 - COMPACT STRUCTURES: Sprint max 6 interval sets, Threshold max 3 sets, VO2Max max 4 sets. Step labels must be ≤ 4 words.
 - Do NOT reference a specific weekday or date inside reason/coachNote — the athlete picks the day.`;
@@ -1398,11 +1456,12 @@ const _attemptFreeGeneration = async (
 
   // Rest is deliberately absent: free mode has no day to rest on, and a Rest suggestion
   // can never be synced, ridden or scored. Recovery advice belongs in coachNote instead.
-  const validTypes = ['Sprint', 'VO2Max', 'Threshold', 'Tempo', 'LongRide'];
   const s = parsed?.suggestion;
-  if (!validTypes.includes(s?.type)) {
-    throw new Error(`Invalid suggestion.type: ${s?.type}${s?.type === 'Rest' ? ' — free mode has no Rest; recovery goes in coachNote' : ''}`);
+  const freeType = normalizeWorkoutType(s?.type);
+  if (!freeType || freeType === 'Rest') {
+    throw new Error(`Invalid suggestion.type: ${s?.type}${freeType === 'Rest' ? ' — free mode has no Rest; recovery goes in coachNote' : ''}`);
   }
+  s.type = freeType;
 
   // ── Apply execution scores to past suggestions ────────────────────────────
   // Only ids genuinely awaiting a score are accepted — this ignores a model that
@@ -1418,24 +1477,17 @@ const _attemptFreeGeneration = async (
     }
   }
 
-  // Recompute totalMinutes from the steps — the model rounds inconsistently.
-  const structure = s.structure && Array.isArray(s.structure.steps) && s.structure.steps.length > 0
-    ? {
-        totalMinutes: Math.round(
-          s.structure.steps.reduce((sum: number, st: any) => sum + (st.durationSec || 0), 0) / 60
-        ),
-        steps: s.structure.steps
-      }
-    : null;
+  // Same check as plan mode: no dead blocks, valid zones/types, recomputed totalMinutes.
+  const structure = sanitizeStructure(s.structure, s.type);
 
   if (!structure) {
-    throw new Error(`Suggestion type ${s.type} came back without a workout structure`);
+    throw new Error(`Suggestion type ${s.type} came back without a usable workout structure`);
   }
 
   const newId = insertFreeSuggestion({
     workoutType:    s.type,
     reason:         typeof s.reason === 'string' ? s.reason : '',
-    priority:       typeof s.priority === 'string' ? s.priority : 'medium',
+    priority:       ['high', 'medium', 'low'].includes(s.priority) ? s.priority : 'medium',
     coachNote:      typeof s.coachNote === 'string' ? s.coachNote : null,
     structure,
     loadAssessment: parsed.loadAssessment ?? null

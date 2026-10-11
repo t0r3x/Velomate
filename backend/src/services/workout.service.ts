@@ -41,10 +41,132 @@ const STEP_TYPE_MAP: Record<string, StepType> = {
   Cooldown: StepType.Cooldown,
 };
 
-/** Fallback structures used only when the AI plan has no structure for a given type. */
+// ── Structure sanitising ──────────────────────────────────────────────────────
+// The model's step list goes to the athlete's watch, so it is checked here rather than
+// trusted. Without this, a 0-second cool-down, a negative duration, a missing zone or an
+// unknown step type went straight to Garmin (and a missing zone crashed the detail panel).
+
+const STEP_TYPES: WorkoutStep['stepType'][] = ['WarmUp', 'Run', 'Recovery', 'Cooldown'];
+const INTERVAL_TYPES = ['Sprint', 'VO2Max', 'Threshold', 'Tempo'];
+
+/** Shortest work/recovery step worth a timer — the prompt's own minimum for a sprint. */
+const MIN_STEP_SEC = 20;
+/** Warm-up and cool-down below this are a token gesture, not a warm-up. */
+const MIN_EASE_SEC = 300;
+/** Longest single step — the LongRide ceiling in WORKOUT_TYPE_GUIDELINES. */
+const MAX_STEP_SEC = 14400;
+
+const DEFAULT_ZONE: Record<WorkoutStep['stepType'], WorkoutStep['zone']> = {
+  WarmUp: 'z2', Run: 'z2', Recovery: 'z1', Cooldown: 'z1'
+};
+/** A work step with no usable zone takes the zone its session type is built around. */
+const WORK_ZONE: Record<string, WorkoutStep['zone']> = {
+  Sprint: 'z5', VO2Max: 'z5', Threshold: 'z4', Tempo: 'z3', LongRide: 'z2'
+};
+/** A recovery between intervals that came back without a usable length. */
+const DEFAULT_RECOVERY_SEC = 180;
+
+const DEFAULT_LABEL: Record<WorkoutStep['stepType'], string> = {
+  WarmUp: 'Warm-up', Run: 'Main set', Recovery: 'Recovery', Cooldown: 'Cool-down'
+};
+
+/** "VO2 Max", "longride", "Long Ride" → the canonical type, or null when unrecognisable. */
+export const normalizeWorkoutType = (raw: unknown): string | null => {
+  const key = String(raw ?? '').replace(/[\s_-]/g, '').toLowerCase();
+  return ['Sprint', 'VO2Max', 'Threshold', 'Tempo', 'LongRide', 'Rest'].find(t => t.toLowerCase() === key) ?? null;
+};
+
+/**
+ * Turn whatever the model returned into a structure that is safe and useful on a watch.
+ * Returns null when nothing usable is left — sync then falls back to FALLBACK_STRUCTURES.
+ *
+ * - Every step gets a known stepType, a z1-z5 zone, a label and an integer duration.
+ * - No dead blocks: a work step under 20s is dropped. A warm-up or cool-down missing its
+ *   duration or shorter than 5 min is raised to 5 min, and a recovery missing its duration
+ *   or shorter than a minute gets 3 min — those were clearly meant to be there, and dropping
+ *   a recovery would glue two intervals together.
+ * - A Recovery straight into the Cool-down becomes one Cool-down: two back-to-back easy
+ *   blocks are one block with an extra button press. The guidelines' "N sets of
+ *   [work → recovery]" invited exactly that after the last interval.
+ * - Adjacent easy steps of the same type and zone are merged; adjacent work steps only on a
+ *   LongRide (two Z2 blocks would otherwise be two separate Lap-press steps). On an interval
+ *   session two work steps in a row stay two intervals.
+ * - A trailing Recovery becomes the Cool-down; an interval session missing its warm-up or
+ *   cool-down gets one, so no hard session starts cold or stops dead.
+ * - It must contain at least one Run (work) step.
+ */
+export const sanitizeStructure = (raw: any, type: string): WorkoutStructure | null => {
+  if (!raw || !Array.isArray(raw.steps)) return null;
+
+  const cleaned: WorkoutStep[] = [];
+  for (const s of raw.steps) {
+    if (!s || typeof s !== 'object') continue;
+    const stepKey  = String(s.stepType ?? '').replace(/[\s_-]/g, '').toLowerCase();
+    const stepType = STEP_TYPES.find(t => t.toLowerCase() === stepKey) ?? 'Run';
+    const isEase   = stepType === 'WarmUp' || stepType === 'Cooldown';
+
+    let dur = Math.round(Number(s.durationSec));
+    const valid = Number.isFinite(dur) && dur > 0;
+    if (isEase) {
+      dur = valid ? Math.max(dur, MIN_EASE_SEC) : MIN_EASE_SEC;
+    } else if (stepType === 'Recovery') {
+      dur = valid && dur >= 60 ? dur : DEFAULT_RECOVERY_SEC;
+    } else if (!valid || dur < MIN_STEP_SEC) {
+      continue;                        // a zero-length work interval is noise — drop it
+    }
+    dur = Math.min(dur, MAX_STEP_SEC);
+
+    const zoneDigit = String(s.zone ?? '').match(/[1-5]/);   // "Z2", "z1/z2" → first zone named
+    const zone  = zoneDigit
+      ? (`z${zoneDigit[0]}` as WorkoutStep['zone'])
+      : (stepType === 'Run' ? (WORK_ZONE[type] ?? DEFAULT_ZONE.Run) : DEFAULT_ZONE[stepType]);
+    const label = typeof s.label === 'string' && s.label.trim() ? s.label.trim() : DEFAULT_LABEL[stepType];
+    cleaned.push({ stepType, durationSec: dur, zone, label });
+  }
+
+  const steps: WorkoutStep[] = [];
+  for (const st of cleaned) {
+    const prev = steps[steps.length - 1];
+    if (prev && prev.stepType === 'Recovery' && st.stepType === 'Cooldown') {
+      steps[steps.length - 1] = { ...st, durationSec: Math.min(prev.durationSec + st.durationSec, MAX_STEP_SEC) };
+      continue;
+    }
+    const mergeable = st.stepType !== 'Run' || !INTERVAL_TYPES.includes(type);
+    if (prev && mergeable && prev.stepType === st.stepType && prev.zone === st.zone) {
+      steps[steps.length - 1] = { ...prev, durationSec: Math.min(prev.durationSec + st.durationSec, MAX_STEP_SEC) };
+      continue;
+    }
+    steps.push(st);
+  }
+
+  if (!steps.some(st => st.stepType === 'Run')) return null;
+
+  const last = steps[steps.length - 1];
+  if (last.stepType === 'Recovery') {
+    steps[steps.length - 1] = { ...last, stepType: 'Cooldown', zone: 'z1', label: DEFAULT_LABEL.Cooldown, durationSec: Math.max(last.durationSec, MIN_EASE_SEC) };
+  }
+  if (INTERVAL_TYPES.includes(type)) {
+    if (steps[0].stepType !== 'WarmUp') {
+      steps.unshift({ stepType: 'WarmUp', durationSec: 600, zone: 'z2', label: DEFAULT_LABEL.WarmUp });
+    }
+    if (steps[steps.length - 1].stepType !== 'Cooldown') {
+      steps.push({ stepType: 'Cooldown', durationSec: 480, zone: 'z1', label: DEFAULT_LABEL.Cooldown });
+    }
+  }
+
+  return {
+    totalMinutes: Math.round(steps.reduce((sum, st) => sum + st.durationSec, 0) / 60),
+    steps
+  };
+};
+
+/**
+ * Fallback structures used only when the AI plan has no structure for a given type.
+ * The last work interval goes straight into the cool-down — no Recovery after it.
+ */
 const FALLBACK_STRUCTURES: Record<string, WorkoutStructure> = {
   Sprint: {
-    totalMinutes: 47,
+    totalMinutes: 43,
     steps: [
       { stepType: 'WarmUp',   durationSec: 600, zone: 'z2', label: 'Warm-up Z2' },
       { stepType: 'Run',      durationSec: 30,  zone: 'z5', label: 'Sprint 1/6 — Z5' },
@@ -58,12 +180,11 @@ const FALLBACK_STRUCTURES: Record<string, WorkoutStructure> = {
       { stepType: 'Run',      durationSec: 30,  zone: 'z5', label: 'Sprint 5/6 — Z5' },
       { stepType: 'Recovery', durationSec: 240, zone: 'z1', label: 'Recovery 5/6 — Z1' },
       { stepType: 'Run',      durationSec: 30,  zone: 'z5', label: 'Sprint 6/6 — Z5' },
-      { stepType: 'Recovery', durationSec: 240, zone: 'z1', label: 'Recovery 6/6 — Z1' },
       { stepType: 'Cooldown', durationSec: 600, zone: 'z1', label: 'Cool-down Z1' },
     ]
   },
   Threshold: {
-    totalMinutes: 56,
+    totalMinutes: 52,
     steps: [
       { stepType: 'WarmUp',   durationSec: 600, zone: 'z2', label: 'Warm-up Z2' },
       { stepType: 'Run',      durationSec: 480, zone: 'z4', label: 'Threshold 1/3 — Z4' },
@@ -71,12 +192,11 @@ const FALLBACK_STRUCTURES: Record<string, WorkoutStructure> = {
       { stepType: 'Run',      durationSec: 480, zone: 'z4', label: 'Threshold 2/3 — Z4' },
       { stepType: 'Recovery', durationSec: 240, zone: 'z1', label: 'Recovery 2/3 — Z1' },
       { stepType: 'Run',      durationSec: 480, zone: 'z4', label: 'Threshold 3/3 — Z4' },
-      { stepType: 'Recovery', durationSec: 240, zone: 'z1', label: 'Recovery 3/3 — Z1' },
       { stepType: 'Cooldown', durationSec: 600, zone: 'z1', label: 'Cool-down Z1' },
     ]
   },
   VO2Max: {
-    totalMinutes: 46,
+    totalMinutes: 43,
     steps: [
       { stepType: 'WarmUp',   durationSec: 600, zone: 'z2', label: 'Warm-up Z2' },
       { stepType: 'Run',      durationSec: 240, zone: 'z5', label: 'VO2 Max 1/4 — Z5' },
@@ -86,7 +206,6 @@ const FALLBACK_STRUCTURES: Record<string, WorkoutStructure> = {
       { stepType: 'Run',      durationSec: 240, zone: 'z5', label: 'VO2 Max 3/4 — Z5' },
       { stepType: 'Recovery', durationSec: 180, zone: 'z1', label: 'Recovery 3/4 — Z1' },
       { stepType: 'Run',      durationSec: 240, zone: 'z5', label: 'VO2 Max 4/4 — Z5' },
-      { stepType: 'Recovery', durationSec: 180, zone: 'z1', label: 'Recovery 4/4 — Z1' },
       { stepType: 'Cooldown', durationSec: 480, zone: 'z1', label: 'Cool-down Z1' },
     ]
   },
@@ -128,12 +247,15 @@ const buildFromStructure = (
   workoutType: string
 ) => {
   const isLongRide = workoutType === 'LongRide';
+  // Open-ended only when the LongRide is ONE ride block. With two work blocks (e.g. 40 min Z2
+  // then 10 min Z3) making each Lap-press would throw away the planned durations.
+  const openEnded  = isLongRide && structure.steps.filter(s => s.stepType === 'Run').length === 1;
   const builder = new WorkoutBuilder(WorkoutType.Cycling, name, description);
   for (const step of structure.steps) {
     const stepType = STEP_TYPE_MAP[step.stepType] ?? StepType.Run;
     // LongRide main block: open-ended — athlete presses Lap to end.
     // All other steps (including WarmUp/Cooldown on interval workouts) use a fixed timer.
-    const useOpenEnd = isLongRide && step.stepType === 'Run';
+    const useOpenEnd = openEnded && step.stepType === 'Run';
     const duration   = useOpenEnd
       ? new LapPressDuration()
       : TimeDuration.fromSeconds(step.durationSec);
@@ -249,10 +371,13 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
 
     // Resolve structure: AI-generated is always preferred.
     // Fallback only fires if the plan has the type but no structure (shouldn't normally happen).
+    // Sanitised here as well as at generation time, so plans stored before the check existed
+    // never put a dead block on the watch either.
     let structure: WorkoutStructure;
     let aiProvided: boolean;
-    if (entry.structure?.steps?.length) {
-      structure  = entry.structure;
+    const cleaned = sanitizeStructure(entry.structure, type);
+    if (cleaned) {
+      structure  = cleaned;
       aiProvided = true;
     } else if (FALLBACK_STRUCTURES[type]) {
       logger.warn(`[Sync] No AI structure for ${type} — using built-in fallback`);
@@ -352,8 +477,9 @@ export const syncFreeWorkout = async (
   // Prefer the AI structure; fall back to the built-in template only if it is missing.
   const usingFallback: string[] = [];
   let resolved: WorkoutStructure;
-  if (structure?.steps?.length) {
-    resolved = structure;
+  const cleaned = sanitizeStructure(structure, type);
+  if (cleaned) {
+    resolved = cleaned;
   } else if (FALLBACK_STRUCTURES[type]) {
     logger.warn(`[Sync] Free mode: no AI structure for ${type} — using built-in fallback`);
     resolved = FALLBACK_STRUCTURES[type]!;
