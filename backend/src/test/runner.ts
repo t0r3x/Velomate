@@ -16,7 +16,9 @@ import { spawnSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { config as loadDotenv } from 'dotenv';
-import { ATHLETES } from './athletes';
+import { ATHLETES, type FitnessLevel, type TrainingPhase } from './athletes';
+import { evaluatePlan, type EvaluationResult } from './evaluator';
+import { localDate } from '../utils';
 import type { PlanEntry } from '../services/database.service';
 
 const backendDir     = path.join(__dirname, '../..');
@@ -59,6 +61,22 @@ async function main() {
 
   fs.mkdirSync(testDataDir, { recursive: true });
 
+  // `npm test -- --report-only` rebuilds report.html from the result JSONs already on disk —
+  // no Gemini calls — so a change to the evaluator or the report can be checked for free.
+  if (process.argv.includes('--report-only')) {
+    const existing: AthleteResult[] = [];
+    const missing: { name: string; reason: string }[] = [];
+    for (const athlete of ATHLETES) {
+      const resultPath = path.join(testDataDir, `${athlete.id}.json`);
+      if (fs.existsSync(resultPath)) existing.push(JSON.parse(fs.readFileSync(resultPath, 'utf8')));
+      else missing.push({ name: athlete.name, reason: 'no result from the last run' });
+    }
+    const reportPath = path.join(testDataDir, 'report.html');
+    fs.writeFileSync(reportPath, generateReport(existing, missing), 'utf8');
+    console.log(`Report rebuilt from ${existing.length} stored result(s) → ${reportPath}`);
+    return;
+  }
+
   const geminiConfig = readGeminiConfig();
   if (!geminiConfig) {
     console.error(
@@ -74,8 +92,19 @@ async function main() {
   console.log(`Output dir   : ${testDataDir}\n`);
 
   const results: AthleteResult[] = [];
+  // Athletes whose run failed — listed in the report rather than silently missing from it.
+  const failures: { name: string; reason: string }[] = [];
+  const errorLine = (txt?: string): string => {
+    const lines = (txt ?? '').trim().split('\n');
+    return lines.find(l => l.includes('Error:')) ?? lines[0] ?? 'unknown error';
+  };
 
-  for (const athlete of ATHLETES) {
+  // Five back-to-back plan generations ran into Gemini's per-minute limit (429) on the last
+  // two athletes. A pause between them keeps a run inside it. TEST_ATHLETE_DELAY_MS overrides.
+  const delayMs = Number(process.env.TEST_ATHLETE_DELAY_MS ?? 15_000);
+
+  for (const [index, athlete] of ATHLETES.entries()) {
+    if (index > 0 && delayMs > 0) await new Promise(resolve => setTimeout(resolve, delayMs));
     const dbPath     = path.join(testDataDir, `${athlete.id}.db`);
     const resultPath = path.join(testDataDir, `${athlete.id}.json`);
 
@@ -102,11 +131,14 @@ async function main() {
     if (child.status !== 0) {
       console.log('FAILED');
       if (child.stderr?.trim()) process.stderr.write(`[${athlete.id}] ${child.stderr.trim()}\n`);
+      // child.error is set when spawnSync itself gave up (e.g. the 120s timeout).
+      failures.push({ name: athlete.name, reason: child.error ? child.error.message : errorLine(child.stderr) });
       continue;
     }
 
     if (!fs.existsSync(resultPath)) {
       console.log('FAILED (no result file written)');
+      failures.push({ name: athlete.name, reason: 'no result file written' });
       if (child.stderr?.trim()) process.stderr.write(`[${athlete.id}] ${child.stderr.trim()}\n`);
       continue;
     }
@@ -116,6 +148,7 @@ async function main() {
       result = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
     } catch {
       console.log('FAILED (JSON parse error)');
+      failures.push({ name: athlete.name, reason: 'result file was not valid JSON' });
       continue;
     }
 
@@ -127,7 +160,7 @@ async function main() {
 
   // ── HTML report ─────────────────────────────────────────────────────────────
   const reportPath = path.join(testDataDir, 'report.html');
-  fs.writeFileSync(reportPath, generateReport(results), 'utf8');
+  fs.writeFileSync(reportPath, generateReport(results, failures), 'utf8');
   console.log(`Report saved → ${reportPath}`);
 
   // Open in default browser
@@ -195,8 +228,44 @@ function planRow(entry: PlanEntry): string {
     </tr>`;
 }
 
+/** The evaluator's verdict for one athlete — the report used to show plans with no judgement at all. */
+function evaluate(r: AthleteResult): EvaluationResult {
+  return evaluatePlan(
+    r.fitnessLevel as FitnessLevel,
+    r.recommendation?.weeklyPlan ?? [],
+    (r.trainingPhase || 'build') as TrainingPhase,
+    { ridesIn21Days: r.ridesCount, averageRideMinutes: r.analysis?.averageRideDurationMinutes ?? 0 }
+  );
+}
+
+const STATUS_COLOR: Record<string, string> = { ok: '#188038', warn: '#b06000', fail: '#c5221f' };
+const VERDICT_COLOR: Record<string, string> = { excellent: '#188038', good: '#1e8e3e', acceptable: '#b06000', poor: '#c5221f' };
+
+function evaluationHtml(ev: EvaluationResult): string {
+  const rows = ev.checks.map(c => `
+    <tr>
+      <td>${c.label}</td>
+      <td style="text-align:center">${c.planned}</td>
+      <td style="text-align:center">${c.expected}</td>
+      <td style="color:${STATUS_COLOR[c.status]};font-weight:bold;text-transform:uppercase;font-size:11px">${c.status}</td>
+    </tr>`).join('');
+  return `
+    <div style="margin-top:14px">
+      <h3 style="margin:0 0 6px;font-size:15px">Evaluation (first 7 days) —
+        <span style="color:${VERDICT_COLOR[ev.verdict]}">${ev.verdict} · ${ev.score}/100</span></h3>
+      <div style="font-size:12px;color:#666;margin-bottom:6px">${ev.criteria.description}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:#f0f0f0;font-size:11px;text-transform:uppercase;letter-spacing:.4px">
+          <th style="text-align:left">Check</th><th>Planned</th><th>Expected</th><th style="text-align:left">Status</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
 function athleteSection(r: AthleteResult): string {
-  const today = new Date().toISOString().slice(0, 10);
+  // Local date, like the app and the evaluator — the UTC date lags a day after midnight here.
+  const today = localDate();
   const planEntries: PlanEntry[] = (r.recommendation?.weeklyPlan ?? [])
     .filter((e: PlanEntry) => e.date >= today)
     .slice(0, 14);
@@ -243,22 +312,28 @@ function athleteSection(r: AthleteResult): string {
         <tbody>${planEntries.map(planRow).join('')}</tbody>
       </table>
       ${loadHtml}
+      ${evaluationHtml(evaluate(r))}
     </div>
   </section>`;
 }
 
-function generateReport(results: AthleteResult[]): string {
+function generateReport(results: AthleteResult[], failures: { name: string; reason: string }[] = []): string {
   const now = new Date().toLocaleString('nl-NL', { timeZone: 'Europe/Amsterdam' });
+  const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   const summary = results.map(r => {
     const load = r.recommendation?.loadAssessment;
+    const ev   = evaluate(r);
     return `<li style="margin:4px 0">
       <strong>${r.name}</strong>
       <span style="background:${LEVEL_BORDER[r.fitnessLevel]};color:#fff;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:bold;text-transform:uppercase;margin-left:6px">${r.fitnessLevel}</span>
       <span style="background:${PHASE_BORDER[r.trainingPhase||'base']};color:#fff;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:bold;text-transform:uppercase;margin-left:4px">${r.trainingPhase}</span>
+      · <strong style="color:${VERDICT_COLOR[ev.verdict]}">${ev.verdict} ${ev.score}/100</strong>
       ${load ? `· fatigue <em>${load.fatigue}</em> · trend <em>${load.weeklyLoadTrend}</em>` : ''}
     </li>`;
-  }).join('');
+  }).join('') + failures.map(f => `<li style="margin:4px 0;color:#c5221f">
+      <strong>${esc(f.name)}</strong> — not run: ${esc(f.reason)}
+    </li>`).join('');
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -276,7 +351,7 @@ function generateReport(results: AthleteResult[]): string {
 </head>
 <body>
   <h1>Velomate Plan Test Report</h1>
-  <p style="color:#666;margin:4px 0 6px;font-size:14px">Generated: ${now} · ${results.length} athletes</p>
+  <p style="color:#666;margin:4px 0 6px;font-size:14px">Generated: ${now} · ${results.length} of ${results.length + failures.length} athletes · model ${esc(process.env.TEST_GEMINI_MODEL ?? '?')}</p>
 
   <div style="background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:16px 20px;margin:20px 0">
     <strong>Summary</strong>

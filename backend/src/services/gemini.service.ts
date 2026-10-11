@@ -261,12 +261,18 @@ const buildTrainingLoadBlock = (): string => {
     if (!rideDates.has(d)) { lastRestDay = d; break; }
   }
 
+  // Rides per week over the same covered blocks — the FREQUENCY rule in the plan prompt is
+  // keyed on this number, so it has to be stated rather than left for the model to count.
+  const avgRidesPerWeek = Math.round(
+    (weeks.slice(0, blocksCovered).reduce((s, w) => s + w.rides, 0) / blocksCovered) * 10
+  ) / 10;
+
   const withZones = acts.filter(a => parseZones(a.timeInZones)).length;
 
   return `TRAINING LOAD (pre-computed from the full ride history — use these figures, do not re-derive them):
 - Last 7 days: ${weeks[0].rides} ride(s), ${fmt(weeks[0].minutes)} total, ${weeks[0].z3plus} min in Z3+
 - Preceding 7-day blocks (most recent first): ${weeks.slice(1).map(w => `${fmt(w.minutes)} (${w.rides} rides)`).join(', ')}
-- ${blocksCovered}-week average: ${fmt(avgPerWeek)} per week${blocksCovered < weeks.length ? ` (only ${historyDays} days of ride history are stored — do not read this as a long-term baseline)` : ''}
+- ${blocksCovered}-week average: ${fmt(avgPerWeek)} and ${avgRidesPerWeek} rides per week${blocksCovered < weeks.length ? ` (only ${historyDays} days of ride history are stored — do not read this as a long-term baseline)` : ''}
 - Days since last hard effort (>=10 min in Z4/Z5): ${daysSinceHard ?? 'no such effort in stored history'}
 - Consecutive training days: ${streak}${lastRide ? ` (most recent ride ${lastRide})` : ''}
 - Most recent day without a ride: ${lastRestDay ?? 'none in the last 28 days'}
@@ -731,7 +737,9 @@ STRICT RULES:
 - changeNote is the athlete's explanation for why their plan looks different today than it did yesterday. They see the exact list of changed days alongside it, so an invented change is immediately visible as a lie. Write it for them, not about yourself: "Thursday drops to Tempo because this morning's check-in reported 2/5", not "I have adjusted the plan".
 - nextWeekFocus describes weeklyPlan[7..13] AS A WHOLE (the training theme/rationale) — it is not a day-by-day recap, those already have their own "reason"
 - totalMinutes MUST equal Math.round(sum(durationSec) / 60)
-- COMPACT STRUCTURES: Sprint max 6 interval sets, Threshold max 3 sets, VO2Max max 4 sets. Step labels must be ≤ 4 words. reason fields: 1 short sentence only.`;
+- COMPACT STRUCTURES: Sprint max 6 interval sets, Threshold max 3 sets, VO2Max max 4 sets. Step labels must be ≤ 4 words. reason fields: 1 short sentence only.
+- FREQUENCY: match the athlete's current frequency. Each week (weeklyPlan[0..6] and weeklyPlan[7..13]) gets about the rides-per-week average from the TRAINING LOAD block, rounded, as non-Rest days. Go below it only when recovery signals call for it (fatigue, low check-ins or feeling, high rpe); go above it by at most ONE ride, and only when those signals are good. Someone riding twice a week does not become a four-day-a-week rider because a plan says so — and someone riding four times a week should not be cut to two without a reason.
+- SPACING: never put two quality sessions (Tempo, Threshold, VO2Max, Sprint) on consecutive days, in either week. A Rest day or a LongRide goes between them. Tempo counts — it is easier than Threshold, but two days of structured intensity in a row is still the pattern this rule exists to prevent.`;
 
 const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, activityDays = 21, pinnedTodayType?: string): string => {
   const today     = localDate();
