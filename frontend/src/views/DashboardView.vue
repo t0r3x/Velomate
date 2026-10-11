@@ -44,6 +44,7 @@ import ActivitiesCard from '@/components/activities/ActivitiesCard.vue'
 import AiPlanCard     from '@/components/recommendation/AiPlanCard.vue'
 import FreeTrainingCard from '@/components/recommendation/FreeTrainingCard.vue'
 import ProfileSetupView from '@/views/ProfileSetupView.vue'
+import { bootStep } from '@/utils/boot'
 
 const panelOpen        = ref(false)
 const profileModalOpen = ref(false)
@@ -68,7 +69,7 @@ async function loadActiveMode() {
 watch(() => settingsStore.freeTrainingMode, () => { loadActiveMode() })
 
 onMounted(async () => {
-  activitiesStore.loadFromDb()
+  const ridesLoaded = activitiesStore.loadFromDb()
   authStore.startPolling()
 
   // The router guard already initialised the settings store, so freeTrainingMode is
@@ -76,6 +77,10 @@ onMounted(async () => {
   const freeMode = settingsStore.freeTrainingMode
 
   await loadActiveMode()
+  // First paint waits for this (utils/boot.ts): the rides and the plan are on screen
+  // together, instead of the card's "Updating…" placeholder showing first.
+  await Promise.resolve(ridesLoaded).catch(() => undefined)
+  bootStep('view')
 
   // Watch for output regenerated in the background — not just by our own Garmin sync
   // below, but also independently by the backend's startup/hourly auto-check

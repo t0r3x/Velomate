@@ -52,7 +52,10 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
 
   /** Load the stored suggestion — no AI call. */
   async function fetchCached() {
-    state.value = 'loading'
+    // Same as the plan store: a re-fetch keeps the suggestion on screen instead of flashing
+    // the loading state over it.
+    const hadSuggestion = state.value === 'loaded' && suggestion.value != null
+    if (!hadSuggestion) state.value = 'loading'
     try {
       const data = await getFreeTraining()
       if ('notConfigured' in data) { state.value = 'not-configured'; return }
@@ -67,6 +70,7 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
       applyPayload(data)
     } catch (err) {
       console.error('[FreeTraining] fetchCached failed:', err)
+      if (hadSuggestion) return
       errorMessage.value = 'Failed to connect to backend.'
       state.value = 'error'
     }

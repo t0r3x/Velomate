@@ -91,7 +91,7 @@ function createWindow() {
     minWidth: 1000,
     minHeight: 650,
     title: 'Velomate',
-    backgroundColor: '#0b0d12',
+    backgroundColor: '#080b14', // = slate --surface-0, so the window and the app's first frame are the same colour
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'electron', 'preload.js'),

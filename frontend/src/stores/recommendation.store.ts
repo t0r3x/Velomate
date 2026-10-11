@@ -36,7 +36,11 @@ export const useRecommendationStore = defineStore('recommendation', () => {
 
   /** Load cached plan from DB — no AI call. */
   async function fetchCached() {
-    state.value = 'loading'
+    // Re-fetching while a plan is on screen keeps it there. Dropping to 'loading' made the
+    // card flash "Updating AI Training Plan…" for seconds on every launch, right after the
+    // dashboard's own Garmin sync re-fetched a plan that was already showing.
+    const hadPlan = state.value === 'loaded' && recommendation.value != null
+    if (!hadPlan) state.value = 'loading'
     try {
       const data = await getRecommendation()
       if ('notConfigured' in data) { state.value = 'not-configured'; return }
@@ -52,6 +56,7 @@ export const useRecommendationStore = defineStore('recommendation', () => {
       state.value = 'loaded'
     } catch (err) {
       console.error('[Recommendation] fetchCached failed:', err)
+      if (hadPlan) return   // a failed background re-fetch keeps the plan that is showing
       errorMessage.value = 'Failed to connect to backend.'
       state.value = 'error'
     }

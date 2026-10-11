@@ -263,6 +263,11 @@ body.is-electron .app-shell {
   flex-direction: column;
   min-height: 100vh;
   padding: 1.5rem;
+  /* width: 100% is load-bearing. As a flex item with auto side margins (inside the
+     column-flex .dashboard-shell) the container is sized to its content, not stretched —
+     so while the first plan was generating, the short "Updating…" line shrank the whole
+     dashboard to ~1030px and centred it. Long content (the intro text, a full plan) hid it. */
+  width: 100%;
   max-width: 1600px;
   margin: 0 auto;
 }
@@ -3341,3 +3346,7 @@ html[data-theme='mintberry'] .bg-glow-2 {
 .workout-preview-section.is-open .workout-preview-list {
   max-height: 1200px;
 }
+/* First-paint gate (utils/boot.ts): the app stays invisible until fonts, icons and the first
+   view are ready, so it never paints in stages. The page background still shows, so the
+   window is never white. */
+html.app-booting #app { visibility: hidden; }
