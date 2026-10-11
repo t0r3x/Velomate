@@ -180,7 +180,16 @@ body {
   border-color: transparent;
   background: var(--surface-2);
 }
-.activity-item:hover { border-color: var(--hairline-strong); }
+/* The outline promises a click, so it only shows when a click does something: the whole
+   ride opens the rating editor (ActivityItem.vue) — and nothing while it is already open. */
+.activity-item.is-clickable { cursor: pointer; }
+.activity-item.is-clickable:hover { border-color: var(--hairline-strong); }
+.activity-item:not(.is-clickable):hover { border-color: transparent; }
+.activity-item.is-clickable:focus-visible {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 18%, transparent);
+}
 
 .activity-details-main { display: contents; }
 
@@ -588,3 +597,70 @@ body {
 .checkin-answer { flex: none; white-space: nowrap; }
 .checkin-answer-note { flex: 1 1 0; min-width: 0; }
 .checkin-links { flex: none; }
+
+/* ── Final pass: one set of measurements ──────────────────────────────────────
+   Measured, not eyeballed. Before this block: five inner-panel paddings (9/14, 12/15,
+   14/16, 18/20 px), four dialog widths, three dialog gaps, a dialog title 0.8px larger
+   than the rest, big-dialog headers inset 24px while their bodies sat at 32 or 36px, and
+   outlined buttons 2px taller than filled ones. */
+
+/* Panels inside a card: one padding. */
+.checkin-block,
+.activity-item,
+.wdp-panel { padding: 1rem 1.25rem; }
+
+/* Callouts (Assessment, Focus, Why, coverage note): one padding, one text inset. */
+.ai-load-insight,
+.ai-next-week-emphasis,
+.plan-changes-note { padding: 0.75rem 1rem; }
+.week-coverage-note { padding: 0.6rem 1rem; margin-bottom: 0.75rem; }
+
+/* Vertical rhythm inside the training card: 1rem between blocks, everywhere. */
+.checkin-block { margin-bottom: 1rem; }
+.ai-week-section { margin-bottom: 1rem; }
+.ai-load-assessment { margin-top: 1rem; padding-top: 1rem; }
+.ai-load-insight,
+.ai-next-week-emphasis { margin-top: 0.6rem; }
+
+/* Buttons: outlined and filled are the same height. Only the outline had a border, so
+   it measured 45px against 43px — visible when the two sit side by side. */
+.btn:not(.btn-secondary) { border: 1px solid transparent; }
+
+/* Big dialogs (Connections, Training Profile): header, body and footer share one 32px
+   inset, so the title lines up with the content under it. */
+.settings-panel-header,
+.tp-header { padding: 1.25rem 2rem; }
+.settings-panel-body { padding: 1.75rem 2rem; }
+.tp-body { padding: 1.5rem 2rem; }
+.settings-panel-footer,
+.tp-footer { padding: 1.25rem 2rem 1.5rem; }
+
+/* Small dialogs (confirm, pause, move, preferences, what changed): one width, one gap,
+   one title size. Sync result keeps its own width — it lists every synced workout. The
+   overlay prefix out-ranks each dialog's scoped rule. */
+.confirm-overlay .glass-panel.confirm-dialog:not(.sync-result-dialog) {
+  max-width: 400px;
+  gap: 1rem;
+}
+.confirm-overlay .glass-panel.confirm-dialog .confirm-header { font-size: 1.05rem; }
+
+/* Phones: re-apply the tighter panel padding, which the final-pass rules above would
+   otherwise override (same specificity, later in the file). */
+@media (max-width: 640px) {
+  .activity-item,
+  .wdp-panel { padding: 0.95rem 1rem; }
+  .checkin-block { padding: 0.85rem 1rem; }
+  .ai-load-insight,
+  .ai-next-week-emphasis,
+  .plan-changes-note { padding: 0.7rem 0.85rem; }
+  .settings-panel-header,
+  .tp-header { padding: 1rem 1.25rem; }
+  .settings-panel-body,
+  .tp-body { padding: 1.25rem; }
+  .settings-panel-footer,
+  .tp-footer { padding: 1rem 1.25rem 1.25rem; }
+}
+
+/* Connections: the key help text sat 8px above the API KEY label — closer than any field
+   to the next. Give the form the same breathing room as a new field. */
+.settings-panel-body .helper-text + form { margin-top: 0.75rem; }

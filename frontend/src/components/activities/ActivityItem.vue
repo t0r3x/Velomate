@@ -1,5 +1,14 @@
 <template>
-  <li class="activity-item">
+  <!-- The whole ride is the target for rating it, not just the pencil: the hover outline
+       already promised that clicking it does something. Inert while the editor is open. -->
+  <li
+    class="activity-item"
+    :class="{ 'is-clickable': !editing }"
+    :tabindex="editing ? undefined : 0"
+    :title="editing ? undefined : rateTitle"
+    @click="onItemClick"
+    @keydown.enter.self="onItemClick"
+  >
     <div class="activity-details-main">
       <span class="activity-title">{{ activity.name || 'Cycling Activity' }}</span>
       <span class="activity-meta">{{ meta }}</span>
@@ -206,6 +215,17 @@ function openEditor() {
   draftRpe.value     = rpe.value
   draftFeeling.value = feeling.value
   editing.value      = true
+}
+
+/**
+ * A click anywhere on the ride opens the rating editor. Controls handle their own clicks:
+ * without the button/input guard, Cancel would close the editor and the same click would
+ * bubble up here and reopen it.
+ */
+function onItemClick(e: Event) {
+  if (editing.value) return
+  if ((e.target as HTMLElement).closest('button, input, a')) return
+  openEditor()
 }
 
 async function save() {

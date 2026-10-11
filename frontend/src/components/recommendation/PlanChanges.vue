@@ -105,7 +105,9 @@ const dayLabel = (date: string) => {
   gap: 0.6rem;
   color: var(--text-primary);
 }
-.confirm-header > i { color: var(--text-muted); }
+
+/* Accent title icon, like every other dialog. */
+.confirm-header > i { color: var(--primary-color); }
 
 .plan-changes-close { margin-left: auto; }
 

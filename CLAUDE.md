@@ -485,6 +485,15 @@ controls, no all-caps titles, no serif.
   use it as a left bar. Week cells carry **no** type colour of their own — only the coloured icon and
   label. A coloured bar per cell was tried and removed: next to the accent frame of the selected day
   the colours fought each other. Selection (`WeekDayCell.vue`) is an outline, never a fill.
+- **One set of measurements** (the "Final pass" block in `premium.css` — measured in the browser,
+  not eyeballed): inner panels (check-in, ride, workout detail) pad `1rem 1.25rem`; callouts
+  (Assessment, Focus, Why, coverage note) pad `0.75rem 1rem`; blocks in the training card sit
+  `1rem` apart. Big dialogs (Connections, Training Profile) inset header, body and footer by the
+  same `2rem`, so the title lines up with the content. Small dialogs are all `400px` wide with a
+  `1rem` gap (sync result excepted — it lists workouts); every dialog title is `1.05rem` with an
+  accent icon, except where the colour means something (amber pause, red skip). Filled and
+  outlined buttons are the same height — non-outline buttons carry a transparent 1px border. Phone
+  overrides are re-applied after that block, because it comes later in the file.
 
 ## Frontend architecture (Vue 3 + Pinia + Vue Router)
 
