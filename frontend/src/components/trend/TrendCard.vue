@@ -58,7 +58,12 @@
           <dt>Form</dt>
           <dd>
             Yesterday's fitness minus yesterday's fatigue: how fresh you start today. The word next to
-            it compares form with your fitness, so it means the same at any level:
+            it compares form with your fitness, so it means the same at any level.
+            At {{ LOW_VOLUME_RIDES_PER_WEEK }} rides a week or fewer the two outer bands read calmer, because
+            one ride moves the numbers a lot:
+            <template v-for="(alias, band) in LOW_VOLUME_LABELS" :key="band">
+              <strong>{{ band }}</strong> shows as <strong>{{ alias.label }}</strong><template v-if="band === 'Overreaching'"> and </template>
+            </template>.
             <table class="trend-help-bands">
               <tbody>
                 <tr v-for="b in FORM_BANDS" :key="b.label">
@@ -74,6 +79,20 @@
           <dd>
             One bar per week: the average daily load of that week, split by heart-rate zone. Same unit
             as the lines, which is why they share one scale.
+          </dd>
+
+          <dt><span class="trend-swatch trend-swatch--band"></span>The shaded gap</dt>
+          <dd>
+            The space between the two lines is your form. Violet where fitness is above fatigue (fresh),
+            pink where fatigue is above fitness (carrying fatigue). The wider the gap, the bigger the number.
+          </dd>
+
+          <dt>Feel and Plan rows</dt>
+          <dd>
+            Under the chart, on the same dates: your daily check-ins and post-ride feeling as faces (a
+            check-in wins when there are both), and the workouts the coach planned, faded when skipped.
+            Hover a day for the RPE, your note and the coach's score. The plan row reaches back only as
+            far as the app keeps history: two weeks of plan, or your last suggestions in free mode.
           </dd>
 
           <dt>Showing and hiding</dt>
@@ -165,6 +184,15 @@
             >
               <span class="trend-key" :style="{ background: s.color }"></span>{{ s.label }}
             </button>
+            <button
+              type="button"
+              class="trend-legend-item"
+              :class="{ 'is-off': hiddenLines.includes('form') }"
+              :aria-pressed="!hiddenLines.includes('form')"
+              @click="toggleLine('form')"
+            >
+              <span class="trend-swatch trend-swatch--band"></span>Form
+            </button>
             <span class="trend-legend-sep" aria-hidden="true"></span>
             <button
               v-for="(z, i) in ZONE_LABELS" :key="z"
@@ -182,6 +210,7 @@
         <TrendChart
           :points="rangePoints" :weeks="rangeWeeks"
           :hidden-lines="hiddenLines" :hidden-zones="hiddenZones"
+          :feel-by-date="feelByDate" :plan-by-date="planByDate"
           @toggle-line="toggleLine" @toggle-zone="toggleZone"
         />
 
@@ -226,18 +255,27 @@ import { useActivitiesStore } from '@/stores/activities.store'
 import { useProfileStore }    from '@/stores/profile.store'
 import { useSettingsStore }   from '@/stores/settings.store'
 import {
-  buildDailySeries, buildWeeklyZones, formLabel, formExplanation, addDays, FITNESS_DAYS, FORM_BANDS
+  buildDailySeries, buildWeeklyZones, formLabel, formExplanation, addDays, FITNESS_DAYS, FORM_BANDS,
+  LOW_VOLUME_LABELS, LOW_VOLUME_RIDES_PER_WEEK
 } from '@/utils/trainingLoad'
-import { isoDate } from '@/utils'
+import { isoDate, toFeeling } from '@/utils'
+import { getCheckinsSince } from '@/api/client'
+import { useCheckinStore }        from '@/stores/checkin.store'
+import { useRecommendationStore } from '@/stores/recommendation.store'
+import { useFreeTrainingStore }   from '@/stores/freeTraining.store'
+import type { DailyCheckin } from '@/types'
 import TrendChart from './TrendChart.vue'
 
-type LineKey = 'fitness' | 'fatigue'
+type LineKey = 'fitness' | 'fatigue' | 'form'
 
 const activitiesStore = useActivitiesStore()
 const profileStore    = useProfileStore()
 const settingsStore   = useSettingsStore()
+const checkinStore        = useCheckinStore()
+const recommendationStore = useRecommendationStore()
+const freeTrainingStore   = useFreeTrainingStore()
 
-const LINE_SERIES: { key: LineKey; label: string; color: string }[] = [
+const LINE_SERIES: { key: 'fitness' | 'fatigue'; label: string; color: string }[] = [
   { key: 'fitness', label: 'Fitness', color: 'var(--series-fitness)' },
   { key: 'fatigue', label: 'Fatigue', color: 'var(--series-fatigue)' },
 ]
@@ -299,13 +337,69 @@ const daily = computed(() => buildDailySeries(activitiesStore.activities, maxHr.
 const today = computed(() => daily.value[daily.value.length - 1] ?? null)
 const weekAgo = computed(() => daily.value[daily.value.length - 8] ?? null)
 const shortHistory = computed(() => daily.value.length < FITNESS_DAYS)
-const formWord = computed(() => (today.value ? formLabel(today.value.form, today.value.fitness) : ''))
+const formWord = computed(() =>
+  today.value ? formLabel(today.value.form, today.value.fitness, today.value.ridesPerWeek) : ''
+)
 
 const rangeDays = computed(() => RANGES.find(r => r.id === range.value)!.days)
 const rangePoints = computed(() => daily.value.slice(-rangeDays.value))
 const rangeWeeks = computed(() => {
   const from = rangePoints.value[0]?.date ?? isoDate()
   return buildWeeklyZones(activitiesStore.activities, maxHr.value, from)
+})
+
+// ── Feel row: check-ins plus the post-ride rating ────────────────────────────
+// /api/checkin only returns the last few rows (enough for the strip), so the chart asks for
+// the whole year itself, and again whenever today's answer changes.
+const checkins = ref<DailyCheckin[]>([])
+async function loadCheckins() {
+  try {
+    checkins.value = (await getCheckinsSince(addDays(isoDate(), -370))).checkins
+  } catch {
+    checkins.value = []   // the rows are extra; the chart works without them
+  }
+}
+onMounted(loadCheckins)
+watch(() => checkinStore.today, loadCheckins)
+
+/** RPE and feeling come per ride; on a day with two rides the longer one speaks for the day. */
+const feelByDate = computed(() => {
+  const out: Record<string, { checkin?: { feeling: number; note: string | null }; rideFeeling?: number; rpe?: number }> = {}
+  const longest = new Map<string, number>()
+  for (const a of activitiesStore.activities) {
+    const d = (a.startTime ?? '').slice(0, 10)
+    if (!d || (a.perceivedExertion == null && a.feelingAfterExercise == null)) continue
+    if ((longest.get(d) ?? -1) >= (a.durationMinutes ?? 0)) continue
+    longest.set(d, a.durationMinutes ?? 0)
+    out[d] = {
+      ...out[d],
+      rideFeeling: a.feelingAfterExercise != null ? toFeeling(a.feelingAfterExercise) : undefined,
+      rpe: a.perceivedExertion != null ? Math.round(a.perceivedExertion / 10) : undefined,
+    }
+  }
+  for (const c of checkins.value) out[c.date] = { ...out[c.date], checkin: { feeling: c.feeling, note: c.note } }
+  return out
+})
+
+// ── Plan row: what the coach had prescribed, and how it went ─────────────────
+// Only as far back as the app keeps it: the plan holds a rolling 14 days of history, free mode
+// its last suggestions. Rest days are left out; there is nothing to compare them with.
+const planByDate = computed(() => {
+  const out: Record<string, { type: string; state: 'done' | 'skipped' | 'planned'; score: number | null; note: string | null }> = {}
+  const now = isoDate()
+  if (settingsStore.freeTrainingMode) {
+    for (const s of freeTrainingStore.history) {
+      if (s.status !== 'completed' || !s.completedDate) continue
+      out[s.completedDate] = { type: s.workoutType, state: 'done', score: s.executionScore ?? null, note: s.executionNote ?? null }
+    }
+  } else {
+    for (const e of recommendationStore.recommendation?.weeklyPlan ?? []) {
+      if (e.type === 'Rest' || e.date > now || e.isPlaceholder) continue
+      const state = e.status === 'completed' ? 'done' : e.status === 'planned' ? 'planned' : 'skipped'
+      out[e.date] = { type: e.type, state, score: e.executionScore ?? null, note: e.executionNote ?? null }
+    }
+  }
+  return out
 })
 
 const tableRows = computed(() => {
@@ -337,7 +431,9 @@ const formatDay = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('e
 </script>
 
 <style scoped>
-.trend-card { flex: none; margin-bottom: 1.75rem; position: relative; }
+/* Its own layer above the cards below: the tooltip and the help panel are taller than the card
+   and hang over Rides and Training, whose inputs otherwise painted on top of them. */
+.trend-card { flex: none; margin-bottom: 1.75rem; position: relative; z-index: 2; }
 
 .trend-help-btn {
   display: inline-flex;
@@ -365,6 +461,9 @@ const formatDay = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('e
   left: 1.75rem;
   z-index: 10;
   width: min(500px, calc(100% - 3.5rem));
+  /* It outgrew short windows: scroll inside rather than run past the bottom of the app. */
+  max-height: calc(100dvh - 14rem);
+  overflow-y: auto;
   padding: 1rem 1.25rem;
   background: var(--surface-3);
   border: 1px solid var(--hairline);
@@ -508,6 +607,12 @@ const formatDay = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('e
 .trend-key { display: inline-block; width: 12px; height: 2px; border-radius: 1px; }
 .trend-swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; }
 .trend-legend-sep { width: 1px; align-self: stretch; background: var(--hairline); }
+/* The form band's key: its two halves, like the shading between the lines. */
+.trend-swatch--band {
+  background: linear-gradient(135deg, var(--series-fitness) 50%, var(--series-fatigue) 50%);
+  opacity: 0.55;
+}
+.trend-help-list dd strong { color: var(--text-primary); font-weight: 600; }
 
 .trend-empty-state { margin: 0; }
 

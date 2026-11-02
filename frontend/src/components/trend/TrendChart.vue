@@ -1,5 +1,5 @@
 <template>
-  <div ref="wrap" class="trend-chart">
+  <div ref="wrap" class="trend-chart" @pointermove="onMove" @pointerleave="hoverIndex = null">
     <svg
       v-if="width > 0"
       :width="width"
@@ -7,9 +7,14 @@
       class="trend-svg"
       role="img"
       :aria-label="ariaLabel"
-      @pointermove="onMove"
-      @pointerleave="hoverIndex = null"
     >
+      <defs>
+        <!-- Form is the gap between the two lines. Each half of the band is the same polygon
+             (fitness forward, fatigue back), clipped to the side of the other line it belongs on. -->
+        <clipPath :id="`${uid}-above-fatigue`"><path :d="aboveClip('fatigue')" /></clipPath>
+        <clipPath :id="`${uid}-above-fitness`"><path :d="aboveClip('fitness')" /></clipPath>
+      </defs>
+
       <!-- Recessive grid: solid hairlines, never dashed. -->
       <g class="grid">
         <line v-for="t in yTicks" :key="t" :x1="PAD_L" :x2="PAD_L + plotW" :y1="y(t)" :y2="y(t)" />
@@ -36,9 +41,15 @@
         />
       </g>
 
-      <!-- Lines: wash, line, and a wide transparent stroke on top that takes the click. -->
+      <!-- Form band: violet where fitness is above fatigue (fresh), pink where fatigue is above
+           fitness (tired). It needs both lines, so it goes when either is hidden. -->
+      <g v-if="showBand" class="band">
+        <path :d="bandPolygon" :clip-path="`url(#${uid}-above-fatigue)`" :style="{ fill: 'var(--series-fitness)' }" />
+        <path :d="bandPolygon" :clip-path="`url(#${uid}-above-fitness)`" :style="{ fill: 'var(--series-fatigue)' }" />
+      </g>
+
+      <!-- Lines, and a wide transparent stroke on top that takes the click. -->
       <g v-for="s in visibleLines" :key="s.key">
-        <path v-if="s.area" :d="areaPath(s.key)" class="area" :style="{ fill: s.color }" />
         <path :d="linePath(s.key)" class="line" :style="{ stroke: s.color }" />
         <path
           :d="linePath(s.key)"
@@ -78,17 +89,39 @@
           text-anchor="middle" class="value-label value-label--bar"
         >{{ Math.round(hoverBar.visibleLoad) }}/day · {{ fmtHours(hoverBar.week.totalMinutes) }}</text>
       </g>
-
     </svg>
+
+    <!-- Rows on the same time axis: how it felt, and what the coach had planned. HTML rather
+         than SVG so the faces and workout icons are the same Font Awesome glyphs as elsewhere. -->
+    <div v-if="width > 0 && (feelMarks.length || planMarks.length)" class="trend-rows">
+      <div v-if="feelMarks.length" class="trend-row">
+        <span class="trend-row-label">Feel</span>
+        <i
+          v-for="m in feelMarks" :key="'f' + m.date"
+          class="fa-regular trend-mark" :class="[FEEL[m.feeling].icon, `feel-${m.feeling}`]"
+          :style="{ left: `${m.x}px` }"
+          aria-hidden="true"
+        ></i>
+      </div>
+      <div v-if="planMarks.length" class="trend-row">
+        <span class="trend-row-label">Plan</span>
+        <i
+          v-for="m in planMarks" :key="'p' + m.date"
+          class="fa-solid trend-mark" :class="[workoutTypeIcon[m.type] ?? 'fa-circle', `wt-${m.type.toLowerCase()}`, `plan-${m.state}`]"
+          :style="{ left: `${m.x}px` }"
+          aria-hidden="true"
+        ></i>
+      </div>
+      <div v-if="hoverIndex !== null" class="trend-rows-cross" :style="{ left: `${x(hoverIndex)}px` }"></div>
+    </div>
 
     <div v-if="hoverPoint" class="trend-tooltip" :style="tooltipStyle">
       <div class="tt-date">{{ formatDay(hoverPoint.date) }}</div>
-      <!-- Form leads the tooltip and stands out: it is the "how fresh am I" answer the chart's
-           lines only imply. No line of its own (the athlete tried a form strip and rejected it). -->
+      <!-- Form leads the tooltip, set like the Form stat above the chart. -->
       <div class="tt-form">
         <span class="tt-form-label">Form</span>
         <span class="tt-form-value">{{ signed(Math.round(hoverPoint.form)) }}</span>
-        <span class="tt-form-word">{{ formLabel(hoverPoint.form, hoverPoint.fitness) }}</span>
+        <span class="tt-form-word">{{ formLabel(hoverPoint.form, hoverPoint.fitness, hoverPoint.ridesPerWeek) }}</span>
       </div>
       <div v-for="s in LINES" :key="'tt' + s.key" class="tt-row" :class="{ 'is-hidden': hiddenLines.includes(s.key) }">
         <span class="tt-key" :style="{ background: s.color }"></span>
@@ -97,6 +130,33 @@
       </div>
       <div class="tt-foot">{{ hoverPoint.rides ? `Ridden this day: load ${hoverPoint.load}` : 'Rest day' }}</div>
 
+      <template v-if="hoverFeel">
+        <div class="tt-date tt-section">How it felt</div>
+        <div v-if="hoverFeel.checkin" class="tt-row">
+          <i class="fa-regular tt-icon" :class="[FEEL[hoverFeel.checkin.feeling].icon, `feel-${hoverFeel.checkin.feeling}`]"></i>
+          <strong>{{ hoverFeel.checkin.feeling }}/5</strong>
+          <span>Check-in · {{ FEEL[hoverFeel.checkin.feeling].label }}</span>
+        </div>
+        <!-- Notes start under the icon, at the tooltip's left edge, and use its full width. -->
+        <div v-if="hoverFeel.checkin?.note" class="tt-note">"{{ hoverFeel.checkin.note }}"</div>
+        <div v-if="hoverFeel.rideFeeling || hoverFeel.rpe" class="tt-row">
+          <i v-if="hoverFeel.rideFeeling" class="fa-regular tt-icon" :class="[FEEL[hoverFeel.rideFeeling].icon, `feel-${hoverFeel.rideFeeling}`]"></i>
+          <span v-else class="tt-key tt-key--none"></span>
+          <strong>{{ hoverFeel.rideFeeling ? `${hoverFeel.rideFeeling}/5` : '–' }}</strong>
+          <span>After the ride{{ hoverFeel.rpe ? ` · RPE ${hoverFeel.rpe}` : '' }}</span>
+        </div>
+      </template>
+
+      <template v-if="hoverPlan">
+        <div class="tt-date tt-section">Coach</div>
+        <div class="tt-row">
+          <i class="fa-solid tt-icon" :class="[workoutTypeIcon[hoverPlan.type] ?? 'fa-circle', `wt-${hoverPlan.type.toLowerCase()}`]"></i>
+          <strong>{{ hoverPlan.score != null ? hoverPlan.score : '–' }}</strong>
+          <span>{{ workoutTypeLabel[hoverPlan.type] ?? hoverPlan.type }} · {{ PLAN_STATE_LABEL[hoverPlan.state] }}</span>
+        </div>
+        <div v-if="hoverPlan.note" class="tt-note">{{ hoverPlan.note }}</div>
+      </template>
+
       <template v-if="hoverBar">
         <div class="tt-date tt-section">Week of {{ formatDay(hoverBar.week.weekStart, false) }}</div>
         <div class="tt-row">
@@ -104,14 +164,16 @@
           <strong>{{ Math.round(hoverBar.loadPerDay) }}</strong>
           <span>load / day · {{ fmtHours(hoverBar.week.totalMinutes) }} · {{ hoverBar.week.rides }} ride{{ hoverBar.week.rides === 1 ? '' : 's' }}</span>
         </div>
-        <!-- Only zones actually ridden that week: five rows of "0 min" made the tooltip taller than the chart. -->
-        <template v-for="(m, z) in hoverBar.week.zoneMinutes" :key="'z' + z">
-          <div v-if="Math.round(m) > 0" class="tt-row" :class="{ 'is-hidden': hiddenZones.includes(z) }">
-            <span class="tt-key" :style="{ background: `var(--z${z + 1}-color)` }"></span>
-            <strong>{{ Math.round(m) }} min</strong>
-            <span>{{ ZONE_LABELS[z] }}</span>
-          </div>
-        </template>
+        <!-- Minutes per ridden zone on one line: a row per zone made the tooltip taller than the
+             chart and hang over the cards below. -->
+        <div class="tt-zones">
+          <template v-for="(m, z) in hoverBar.week.zoneMinutes" :key="'z' + z">
+            <span v-if="Math.round(m) > 0" class="tt-zone" :class="{ 'is-hidden': hiddenZones.includes(z) }">
+              <span class="tt-key" :style="{ background: `var(--z${z + 1}-color)` }"></span>{{ ZONE_LABELS[z] }}
+              <strong>{{ Math.round(m) }}m</strong>
+            </span>
+          </template>
+        </div>
       </template>
     </div>
 
@@ -124,24 +186,48 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { DayPoint, WeekPoint } from '@/utils/trainingLoad'
-import { isoDate } from '@/utils'
 import { formLabel } from '@/utils/trainingLoad'
+import { isoDate, workoutTypeIcon, workoutTypeLabel } from '@/utils'
 
 type LineKey = 'fitness' | 'fatigue'
+type SeriesKey = LineKey | 'form'
+
+interface DayFeel {
+  checkin?: { feeling: number; note: string | null }
+  rideFeeling?: number   // 1-5, post-ride feeling of the day's (longest) ride
+  rpe?: number           // 1-10
+}
+interface DayPlan {
+  type: string
+  state: 'done' | 'skipped' | 'planned'
+  score: number | null
+  note: string | null
+}
 
 const props = defineProps<{
   points: DayPoint[]
   weeks: WeekPoint[]
-  hiddenLines: LineKey[]
+  hiddenLines: SeriesKey[]
   hiddenZones: number[]
+  feelByDate: Record<string, DayFeel>
+  planByDate: Record<string, DayPlan>
 }>()
-const emit = defineEmits<{ toggleLine: [LineKey]; toggleZone: [number] }>()
+const emit = defineEmits<{ toggleLine: [SeriesKey]; toggleZone: [number] }>()
 
-const LINES: { key: LineKey; label: string; color: string; area: boolean }[] = [
-  { key: 'fitness', label: 'Fitness', color: 'var(--series-fitness)', area: true },
-  { key: 'fatigue', label: 'Fatigue', color: 'var(--series-fatigue)', area: false },
+const LINES: { key: LineKey; label: string; color: string }[] = [
+  { key: 'fitness', label: 'Fitness', color: 'var(--series-fitness)' },
+  { key: 'fatigue', label: 'Fatigue', color: 'var(--series-fatigue)' },
 ]
 const ZONE_LABELS = ['Z1', 'Z2', 'Z3', 'Z4', 'Z5']
+/** Same faces and words as the check-in strip and the ride ratings. */
+const FEEL: Record<number, { icon: string; label: string }> = {
+  1: { icon: 'fa-face-dizzy',      label: 'Exhausted' },
+  2: { icon: 'fa-face-tired',      label: 'Tired' },
+  3: { icon: 'fa-face-smile',      label: 'Normal' },
+  4: { icon: 'fa-face-grin',       label: 'Good' },
+  5: { icon: 'fa-face-grin-stars', label: 'Strong' },
+}
+const PLAN_STATE_LABEL: Record<DayPlan['state'], string> = { done: 'ridden', skipped: 'skipped', planned: 'planned' }
 
 const PAD_L = 30, PAD_R = 92, PAD_T = 20, PAD_B = 20
 const plotH       = 162
@@ -149,6 +235,10 @@ const PLOT_BOTTOM = PAD_T + plotH
 const HEIGHT      = PLOT_BOTTOM + PAD_B
 const GAP = 2          // surface gap between stacked segments
 const RADIUS = 4       // rounded data end, square at the baseline
+const MARK_MIN_GAP = 13 // px between row icons; closer ones collapse into one
+
+// Unique per instance: clip-path ids are document-global.
+const uid = `trend-${Math.random().toString(36).slice(2, 8)}`
 
 const wrap  = ref<HTMLElement | null>(null)
 const width = ref(0)
@@ -163,6 +253,7 @@ const plotW = computed(() => Math.max(10, width.value - PAD_L - PAD_R))
 const lastIndex = computed(() => props.points.length - 1)
 const fromDate  = computed(() => props.points[0]?.date ?? isoDate())
 const visibleLines = computed(() => LINES.filter(s => !props.hiddenLines.includes(s.key)))
+const showBand = computed(() => !props.hiddenLines.includes('form') && visibleLines.value.length === 2)
 const valueAt = (key: LineKey, i: number) => props.points[i]?.[key] ?? 0
 
 const dayIndex = (date: string) =>
@@ -215,10 +306,18 @@ const y = (v: number) => PAD_T + plotH - (v / yMax.value) * plotH
 function linePath(key: LineKey): string {
   return props.points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p[key]).toFixed(1)}`).join('')
 }
-function areaPath(key: LineKey): string {
-  if (props.points.length === 0) return ''
-  const base = y(0).toFixed(1)
-  return `${linePath(key)}L${x(lastIndex.value).toFixed(1)},${base}L${x(0).toFixed(1)},${base}Z`
+/** Fitness forward, fatigue back: the area between the two lines. */
+const bandPolygon = computed(() => {
+  if (props.points.length < 2) return ''
+  const back = [...props.points.keys()].reverse()
+    .map(i => `L${x(i).toFixed(1)},${y(props.points[i].fatigue).toFixed(1)}`).join('')
+  return `${linePath('fitness')}${back}Z`
+})
+/** Everything above a line: the clip that keeps only the part of the band on that side of it. */
+function aboveClip(key: LineKey): string {
+  if (props.points.length < 2) return ''
+  const top = (PAD_T - 1).toFixed(1)
+  return `${linePath(key)}L${x(lastIndex.value).toFixed(1)},${top}L${x(0).toFixed(1)},${top}Z`
 }
 
 /** Rect path with only the top corners rounded (the data end), square at the bottom. */
@@ -272,16 +371,53 @@ const endLabelLines = computed(() => {
   return visibleLines.value.filter(s => s.key === 'fitness')
 })
 
+// ── Feel and plan rows ───────────────────────────────────────────────────────
+
+/**
+ * Icons that would overlap collapse into one. For feel the worse day wins: a bad day is the
+ * one worth seeing. The tooltip still has every day.
+ */
+function placeMarks<T extends { x: number }>(marks: T[], keepSecond: (kept: T, next: T) => boolean): T[] {
+  const out: T[] = []
+  for (const m of marks) {
+    const last = out[out.length - 1]
+    if (last && m.x - last.x < MARK_MIN_GAP) {
+      if (keepSecond(last, m)) out[out.length - 1] = m
+      continue
+    }
+    out.push(m)
+  }
+  return out
+}
+const inRange = (date: string) => date >= fromDate.value && date <= (props.points[lastIndex.value]?.date ?? today)
+
+const feelMarks = computed(() => {
+  const marks = Object.entries(props.feelByDate)
+    .filter(([date, f]) => inRange(date) && (f.checkin || f.rideFeeling))
+    .map(([date, f]) => ({ date, x: x(dayIndex(date)), feeling: (f.checkin?.feeling ?? f.rideFeeling)! }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+  return placeMarks(marks, (kept, next) => next.feeling < kept.feeling)
+})
+const planMarks = computed(() => {
+  const marks = Object.entries(props.planByDate)
+    .filter(([date]) => inRange(date))
+    .map(([date, p]) => ({ date, x: x(dayIndex(date)), type: p.type, state: p.state }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+  return placeMarks(marks, () => false)
+})
+
 // ── Hover ────────────────────────────────────────────────────────────────────
 
 const hoverIndex = ref<number | null>(null)
 function onMove(e: PointerEvent) {
   if (props.points.length === 0) return
-  const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
   const i = Math.round(((e.clientX - rect.left - PAD_L) / plotW.value) * (props.points.length - 1))
   hoverIndex.value = Math.min(props.points.length - 1, Math.max(0, i))
 }
 const hoverPoint = computed(() => (hoverIndex.value === null ? null : props.points[hoverIndex.value]))
+const hoverFeel  = computed(() => (hoverPoint.value ? props.feelByDate[hoverPoint.value.date] ?? null : null))
+const hoverPlan  = computed(() => (hoverPoint.value ? props.planByDate[hoverPoint.value.date] ?? null : null))
 /** The week the hovered day falls in: its bar lifts, and its numbers join the tooltip. */
 const hoverWeekIndex = computed(() => {
   if (hoverIndex.value === null) return null
@@ -289,7 +425,7 @@ const hoverWeekIndex = computed(() => {
   return i < 0 ? null : i
 })
 const hoverBar = computed(() => (hoverWeekIndex.value === null ? null : bars.value[hoverWeekIndex.value]))
-const tooltipOnRight = computed(() => hoverIndex.value !== null && x(hoverIndex.value) <= width.value - 230)
+const tooltipOnRight = computed(() => hoverIndex.value !== null && x(hoverIndex.value) <= width.value - 240)
 const tooltipStyle = computed(() => {
   if (hoverIndex.value === null) return {}
   const px = x(hoverIndex.value)
@@ -314,7 +450,7 @@ const fmtHours = (min: number) => `${Math.floor(min / 60)}h${String(Math.round(m
 const ariaLabel = computed(() => {
   const last = props.points[lastIndex.value]
   if (!last) return 'Fitness, fatigue and weekly load: no data'
-  return `Fitness and fatigue over ${props.points.length} days, with weekly load by heart-rate zone behind them. Today: fitness ${Math.round(last.fitness)}, fatigue ${Math.round(last.fatigue)}, form ${Math.round(last.form)}.`
+  return `Fitness and fatigue over ${props.points.length} days, the gap between them shaded as form, with weekly load by heart-rate zone behind them. Today: fitness ${Math.round(last.fitness)}, fatigue ${Math.round(last.fatigue)}, form ${Math.round(last.form)}.`
 })
 </script>
 
@@ -325,9 +461,9 @@ const ariaLabel = computed(() => {
 .axis-text text { fill: var(--text-muted); font-size: 0.68rem; font-variant-numeric: tabular-nums; }
 .seg { cursor: pointer; opacity: 0.55; transition: opacity var(--transition-fast); }
 .seg.is-hovered { opacity: 0.85; }
-/* The wash and the visible stroke sit on top of the bars but must not take their clicks:
-   the wash covers most of the plot. Only .hit (lines) and .seg (bars) are clickable. */
-.area { opacity: 0.1; stroke: none; pointer-events: none; }
+/* The band and the visible strokes sit on top of the bars but must not take their clicks.
+   Only .hit (lines) and .seg (bars) are clickable. */
+.band path { opacity: 0.16; pointer-events: none; }
 .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; pointer-events: none; }
 .hit { fill: none; stroke: transparent; stroke-width: 14; cursor: pointer; pointer-events: stroke; }
 .dot { stroke: var(--panel-bg); stroke-width: 2; }
@@ -348,8 +484,68 @@ const ariaLabel = computed(() => {
 .deco { pointer-events: none; }
 .crosshair line { stroke: var(--hairline-strong); stroke-width: 1; }
 
+/* Feel and plan rows: one line of icons each, under the month labels. */
+.trend-rows { position: relative; margin-top: 0.15rem; }
+.trend-row { position: relative; height: 22px; }
+.trend-row-label {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.trend-mark {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 0.78rem;
+  pointer-events: none;
+}
+.trend-mark.plan-done { color: var(--wt); }
+.trend-mark.plan-skipped { color: var(--wt); opacity: 0.3; }
+.trend-mark.plan-planned { color: var(--wt); opacity: 0.55; }
+.trend-rows-cross {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--hairline-strong);
+  pointer-events: none;
+}
+
 .trend-empty {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   margin: 0; font-size: 0.8rem; color: var(--text-muted); pointer-events: none;
 }
+</style>
+
+<!-- Feeling colours: the same five as the ride rating badges (.act-feeling-badge in style.css),
+     shared by the row icons and the tooltip, which is rendered in this component too. -->
+<style>
+.trend-chart .feel-1 { color: #ef4444; }
+.trend-chart .feel-2 { color: #f97316; }
+.trend-chart .feel-3 { color: var(--text-secondary); }
+.trend-chart .feel-4 { color: #10b981; }
+.trend-chart .feel-5 { color: #818cf8; }
+.trend-tooltip .tt-icon { flex: none; width: 10px; font-size: 0.72rem; text-align: center; }
+.trend-tooltip i.tt-icon[class*='wt-'] { color: var(--wt); }
+.trend-tooltip .tt-note {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0.05rem 0 0.25rem;
+  max-width: 240px;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+.trend-tooltip .tt-zones { display: flex; flex-wrap: wrap; gap: 0.15rem 0.6rem; max-width: 240px; line-height: 1.6; }
+.trend-tooltip .tt-zone { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--text-secondary); }
+.trend-tooltip .tt-zone strong { font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.trend-tooltip .tt-zone.is-hidden { opacity: 0.45; }
 </style>

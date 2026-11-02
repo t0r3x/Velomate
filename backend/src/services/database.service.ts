@@ -532,6 +532,12 @@ export const deleteCheckin = (date: string): boolean => {
 };
 
 /** Most recent check-ins, newest first. */
+/** Every check-in on or after `from` (YYYY-MM-DD), oldest first. For the Trend card's feel row. */
+export const getCheckinsSince = (from: string): DailyCheckin[] => {
+  const rows = db.prepare('SELECT * FROM daily_checkin WHERE date >= ? ORDER BY date ASC').all(from) as any[];
+  return rows.map(r => ({ date: r.date, feeling: r.feeling, note: r.note ?? null, updatedAt: r.updatedAt }));
+};
+
 export const getRecentCheckins = (limit = 10): DailyCheckin[] => {
   const rows = db.prepare('SELECT * FROM daily_checkin ORDER BY date DESC LIMIT ?').all(limit) as any[];
   return rows.map(r => ({ date: r.date, feeling: r.feeling, note: r.note ?? null, updatedAt: r.updatedAt }));

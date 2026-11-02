@@ -17,6 +17,7 @@ import {
   getCheckin,
   deleteCheckin,
   getRecentCheckins,
+  getCheckinsSince,
   upsertAnalysis,
   getStoredAnalysis,
   upsertProfileDB,
@@ -538,6 +539,16 @@ app.get('/api/checkin', (_req: Request, res: Response) => {
     today:   getCheckin(localDate()),
     history: getRecentCheckins(10)
   });
+});
+
+// The whole check-in history from a date, for the Trend card. /api/checkin only returns the last
+// few rows, which is right for the strip and the prompt but far too short for a 1-year chart.
+app.get('/api/checkins', (req: Request, res: Response) => {
+  const from = typeof req.query.from === 'string' ? req.query.from : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+    return res.status(400).json({ error: 'from must be a date (YYYY-MM-DD).' });
+  }
+  res.json({ checkins: getCheckinsSince(from) });
 });
 
 app.post('/api/checkin', (req: Request, res: Response) => {

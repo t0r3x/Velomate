@@ -19,6 +19,8 @@ import { isoDate } from '@/utils'
 
 export const FITNESS_DAYS = 42
 export const FATIGUE_DAYS = 7
+/** Ride frequency is measured over the last four weeks. */
+const RIDE_RATE_DAYS = 28
 
 export interface DayPoint {
   date: string        // YYYY-MM-DD
@@ -27,6 +29,7 @@ export interface DayPoint {
   fitness: number
   fatigue: number
   form: number
+  ridesPerWeek: number  // trailing 4 weeks (or what history there is), for the low-volume form words
 }
 
 export interface WeekPoint {
@@ -92,12 +95,16 @@ export function buildDailySeries(activities: Activity[], maxHr: number, today = 
   const points: DayPoint[] = []
   let fitness = 0
   let fatigue = 0
+  const window: number[] = []   // rides per day, last RIDE_RATE_DAYS days
   for (let d = first; d <= today; d = addDays(d, 1)) {
     const day = loadByDate.get(d) ?? { load: 0, rides: 0 }
     const form = fitness - fatigue   // yesterday's values: how fresh you start this day
     fitness += (day.load - fitness) / FITNESS_DAYS
     fatigue += (day.load - fatigue) / FATIGUE_DAYS
-    points.push({ date: d, load: Math.round(day.load), rides: day.rides, fitness, fatigue, form })
+    window.push(day.rides)
+    if (window.length > RIDE_RATE_DAYS) window.shift()
+    const ridesPerWeek = (window.reduce((a, b) => a + b, 0) / window.length) * 7
+    points.push({ date: d, load: Math.round(day.load), rides: day.rides, fitness, fatigue, form, ridesPerWeek })
   }
   return points
 }
@@ -137,14 +144,35 @@ export const FORM_BANDS: { label: string; min: number; range: string; meaning: s
   { label: 'Overreaching', min: -Infinity, range: 'below -30%',     meaning: 'Fatigue well above fitness. Recovery comes first.' },
 ]
 
-export function formLabel(form: number, fitness: number): string {
+/**
+ * At two rides a week or fewer the two outer bands overstate things. Fitness stays low because
+ * the weekly load is spread over six weeks, so a single hard ride lifts fatigue far above it for
+ * a few days ("Overreaching"), and a few rest days read as very fresh ("Transition"). Both are the
+ * normal rhythm of a low-volume rider, so they get calmer words. The numbers do not change.
+ */
+export const LOW_VOLUME_RIDES_PER_WEEK = 2
+export const LOW_VOLUME_LABELS: Record<string, { label: string; meaning: string }> = {
+  Overreaching: {
+    label: 'Recovering',
+    meaning: 'A hard ride at low weekly volume lifts fatigue far above fitness for a few days. Normal at your rhythm; it passes within two or three days.',
+  },
+  Transition: {
+    label: 'Rested',
+    meaning: 'With few rides a week fitness stays low, so a few rest days quickly read as very fresh.',
+  },
+}
+
+export function formLabel(form: number, fitness: number, ridesPerWeek = Infinity): string {
   if (fitness < 1) return 'No base yet'
   const pct = (form / fitness) * 100
-  return FORM_BANDS.find(b => pct > b.min)?.label ?? 'Overreaching'
+  const band = FORM_BANDS.find(b => pct > b.min)?.label ?? 'Overreaching'
+  return ridesPerWeek <= LOW_VOLUME_RIDES_PER_WEEK ? (LOW_VOLUME_LABELS[band]?.label ?? band) : band
 }
 
 export function formExplanation(label: string): string {
-  return FORM_BANDS.find(b => b.label === label)?.meaning ?? 'Ride a few weeks to build a baseline.'
+  return FORM_BANDS.find(b => b.label === label)?.meaning
+    ?? Object.values(LOW_VOLUME_LABELS).find(l => l.label === label)?.meaning
+    ?? 'Ride a few weeks to build a baseline.'
 }
 
 export { addDays, mondayOf }

@@ -90,6 +90,9 @@ export const postActivityFeedback = (
 
 // ── Daily check-in ────────────────────────────────────────────────────────────
 
+export const getCheckinsSince = (from: string) =>
+  request<{ checkins: DailyCheckin[] }>(`/api/checkins?from=${encodeURIComponent(from)}`)
+
 export const getCheckin = () =>
   request<{ today: DailyCheckin | null; history: DailyCheckin[] }>('/api/checkin')
 

@@ -319,7 +319,8 @@ POST   /api/activities/refresh              ← fetch from Garmin, upsert DB, re
                                                → triggers instant AI regen on newly-completed rides
                                                  (non-blocking, gated by instant_score_on_new_activity)
 
-GET    /api/checkin                         ← { today: DailyCheckin | null, history[] }
+GET    /api/checkin                         ← { today: DailyCheckin | null, history[] } (last 10 rows)
+GET    /api/checkins?from=YYYY-MM-DD        ← { checkins[] } every check-in since a date, for the Trend card
 DELETE /api/checkin                         ← clears today's answer (back to never-answered) and
                                                re-plans without it; no-op when there was none
 POST   /api/checkin                         ← { feeling: 1-5, note? } → upserts today, triggers
@@ -562,11 +563,28 @@ depend on what a model decided to say.
   each element also shows its own value beside it (line values next to the crosshair dots, on the side
   away from the tooltip; "51/day · 2h02" on the cap of the hovered week's bar), in text tokens with a
   surface halo. That replaces a second axis, which is the usual PMC-chart answer and the one to avoid.
-- **Form has no line.** A form strip under the chart (same time axis, own zero line) was built and the
-  athlete rejected it. Form instead **leads the tooltip** as its own block, set exactly like the Form stat
-  above the chart (eyebrow label, figure, band word) and above the fitness and fatigue rows. An accent
-  edge and a bigger figure were tried first and read as too loud. It is also in the header
-  stat and the table. Don't add it back as a series.
+- **Form is the shaded gap between the two lines**, not a line of its own: violet where fitness is above
+  fatigue (fresh), pink where fatigue is above it. Each half is the same polygon (fitness forward, fatigue
+  back) clipped to the area above the other line (`clipPath` ids are per instance). The athlete rejected a
+  form strip under the chart and wanted form "between the lines", and form cannot be a positive line on the
+  main axis: it is a difference, so any always-positive version would need an invented offset. "Form" in
+  the legend toggles the band; it also disappears when either line is hidden. The tooltip leads with form,
+  set like the header stat (eyebrow, figure, word); an accent edge and a bigger figure read as too loud.
+- **Low-volume words**: at ≤ 2 rides/week (`ridesPerWeek` on each `DayPoint`, trailing 28 days) the outer
+  bands are renamed, Overreaching → **Recovering** and Transition → **Rested** (`LOW_VOLUME_LABELS`). One ride
+  moves a low-volume athlete's numbers so far that the intervals.icu words overstated a normal rhythm. The
+  numbers are unchanged; the help panel says so.
+- **Feel and Plan rows** under the chart, on the same x-axis, as HTML (Font Awesome faces and workout icons,
+  the same glyphs and feeling colours as the check-in strip and ride ratings). Feel = the day's check-in,
+  else the longest ride's post-ride feeling; RPE and the note are in the tooltip. Overlapping icons collapse
+  and the **worse** feeling wins. Plan = the coach's session per day (faded when skipped), only as far back
+  as the app keeps it: the plan's rolling 14 days of history, or free mode's completed suggestions. Check-ins
+  come from `GET /api/checkins?from=` (the strip's `/api/checkin` returns only 10 rows), refetched when
+  today's answer changes. Hover works over the rows too (the listener is on the wrapper, not the svg).
+- **The card is `z-index: 2`**: the tooltip and help panel hang over Rides and Training, whose inputs painted
+  on top of them otherwise. The help panel scrolls inside `max-height: calc(100dvh - 14rem)`. Zone minutes in
+  the tooltip sit on one line and the coach's note is clamped to two, to keep the tooltip from running far
+  past the card.
   Zones are labelled just "Z1".."Z5" everywhere on the card (the athlete asked for the names to go).
 - **The explanation lives behind a "?" next to the title** (`.trend-help`, a floating panel: Escape, its
   close button, the "?" or a click outside closes it; focus moves in on open and back to the "?" on
