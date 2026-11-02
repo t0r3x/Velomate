@@ -1,0 +1,1 @@
+{{RIDE_COUNT}} ride(s) of {{MIN_MINUTES}}+ min in the last 90 days averaged above LTHR (e.g. {{EXAMPLE_DATE}}: {{EXAMPLE_MINUTES}} min at {{EXAMPLE_HR}} bpm vs LTHR {{LTHR}}). LTHR is roughly the highest HR sustainable for about an hour, so it is probably set too low and the Z4/Z5 minutes overstate how hard these rides were.

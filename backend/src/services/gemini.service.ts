@@ -19,6 +19,7 @@ import {
 import { localDate, toRpe, toFeeling, USER_TZ, APP_NAME } from '../utils';
 import { sanitizeStructure, normalizeWorkoutType } from './workout.service';
 import logger from '../logger';
+import { loadPrompt, renderPrompt } from '../prompts/loader';
 
 // ── Key helpers ───────────────────────────────────────────────────────────────
 
@@ -447,13 +448,7 @@ interface PauseContext {
 // a coaching tweak lands in both modes instead of silently drifting apart.
 
 /** How to read the activity JSON — zone units, rpe/feeling scales and how to weight them. */
-const ACTIVITY_DATA_NOTES = `How to read RECENT ACTIVITIES — one line per ride, columns in this order:
-  date | duration | average HR | distance | minutes per HR zone | athlete rating
-Zone figures are minutes spent in each Garmin HR zone (z1=lowest, z5=highest intensity), from Garmin's default 5-zone system based on max HR — boundaries may differ slightly from the athlete's custom LTHR zones. "zones=n/a" means Garmin supplied no zone breakdown for that ride; "unrated" means the athlete answered neither post-ride prompt.
-rpe = athlete-reported perceived exertion after the ride (1=very easy, 5=moderate, 10=maximal effort). Absent = not rated.
-feeling = athlete-reported post-ride feeling (1=exhausted/very tired, 2=tired, 3=normal, 4=good, 5=strong/excellent). Absent = not rated.
-When rpe and feeling are present, weight them heavily — they are direct athlete feedback on recovery state. High rpe (≥8) or low feeling (≤2) after a session signals real fatigue even if HR data looks moderate.
-The reverse matters just as much: HR zones can be set wrong. When rides repeatedly show long Z4/Z5 time (30+ minutes) at rpe ≤ 7 with feeling ≥ 3, the zone boundaries are most likely too low for this athlete. Judge the intensity of those rides by rpe and feeling, do NOT read them as overreaching or as a reason to prescribe easier riding, and say in loadAssessment.insight that the HR profile may need re-checking. An HR CALIBRATION line under HR PROFILE, when present, states this from the numbers.`;
+const ACTIVITY_DATA_NOTES = loadPrompt('shared/activity-data-notes');
 
 /**
  * Evidence, computed from the numbers, that the athlete's HR profile is set too low.
@@ -475,7 +470,7 @@ const buildHrCalibrationLines = (profile: any, analysis: any): string => {
   const peak  = analysis?.maxRecordedHr;
 
   if (maxHr && peak && peak > maxHr + 2) {
-    lines.push(`Peak HR recorded in the last 90 days (${peak} bpm) is above the configured Max HR (${maxHr} bpm). Unless that peak was a sensor spike, the configured zones sit too low.`);
+    lines.push(renderPrompt('shared/hr-calibration-peak', { PEAK_HR: peak, MAX_HR: maxHr }));
   }
 
   if (lthr) {
@@ -490,7 +485,14 @@ const buildHrCalibrationLines = (profile: any, analysis: any): string => {
     );
     if (above.length > 0) {
       const ex = above[0];
-      lines.push(`${above.length} ride(s) of ${HR_CALIBRATION_MIN_RIDE_MIN}+ min in the last 90 days averaged above LTHR (e.g. ${ex.startTime.slice(0, 10)}: ${ex.durationMinutes} min at ${ex.averageHr} bpm vs LTHR ${lthr}). LTHR is roughly the highest HR sustainable for about an hour, so it is probably set too low and the Z4/Z5 minutes overstate how hard these rides were.`);
+      lines.push(renderPrompt('shared/hr-calibration-lthr', {
+        RIDE_COUNT:      above.length,
+        MIN_MINUTES:     HR_CALIBRATION_MIN_RIDE_MIN,
+        EXAMPLE_DATE:    ex.startTime.slice(0, 10),
+        EXAMPLE_MINUTES: ex.durationMinutes,
+        EXAMPLE_HR:      ex.averageHr,
+        LTHR:            lthr,
+      }));
     }
   }
 
@@ -510,57 +512,11 @@ const buildHrCalibrationLines = (profile: any, analysis: any): string => {
  * the same signal has to come out as a gentler session held back by coachNote. Saying
  * "make it Rest" to free mode would be an instruction it is forbidden to follow.
  */
-const buildCheckinNotes = (freeMode: boolean): string => `DAILY CHECK-INS — how to weigh them:
-A check-in is the athlete telling you directly how they feel, on a day that may or may not contain a ride.
-It is the most direct signal you get, and it OUTRANKS anything you would infer from heart rate or volume.
-Scale: 1=exhausted, 2=tired, 3=normal, 4=good, 5=strong. A free-text note may explain why.
-- A check-in marked TODAY is their current recovery state${freeMode
-  ? ', and it decides BOTH what the next session should be and how long they should wait before riding it. At 1 or 2, choose a gentler session than the load figures alone would justify, set priority to "low", and say plainly in coachNote that they should not ride it yet and what has to be true first.'
-  : ". At 1 or 2, lower today's intensity or make today a Rest day, regardless of what the load figures suggest."}
-  Name the check-in in your reason, so the athlete can see you listened.
-- Two or more consecutive days at 1-2 are genuine accumulated fatigue even when the ride data looks unremarkable. ${freeMode ? 'Hold the next session back further — not merely make it lighter.' : 'Ease off the coming days, not only today.'}
-- A 4 or 5 confirms the athlete is READY (see the READINESS check in CALIBRATION). On its own it is not a reason to add load, but it removes any reason to hold back.
-- Days without a check-in carry NO information. Never read a missing day as either good or bad.
-- Notes often mention things outside cycling — sleep, work, illness, another sport. Take them at face value: they are usually the reason the numbers look the way they do. Velomate deliberately does not import non-cycling activities, so a note is the only way you will hear about them.`;
+const buildCheckinNotes = (freeMode: boolean): string =>
+  renderPrompt('shared/checkin-notes', { MODE_RULES: loadPrompt(freeMode ? 'free/checkin-rules' : 'plan/checkin-rules') });
 
 /** The six workout types and their step templates. Caller supplies the header line. */
-const WORKOUT_TYPE_GUIDELINES = `Sprint (requires neuromuscular recovery — use athlete's own history to judge adequate rest):
-  Warm-up [WarmUp]: 480-720 sec Z2
-  Intervals: 4-6 sets of [Sprint [Run] 20-45 sec Z5 → Recovery [Recovery] 180-300 sec Z1]
-  Cool-down [Cooldown]: 480-720 sec Z1
-  Short maximal bursts — trains neuromuscular power. Fewer/shorter when less fresh.
-  Recovery window: judge this from the TRAINING LOAD figures. At 5 or more rides per week with no
-  negative recovery signals, 24-36h between hard sessions is this athlete's established pattern.
-  At 4 or fewer rides per week, allow 48h+ before a sprint session.
-
-VO2Max (requires good recovery — sustained Z5 is more demanding than Sprint):
-  Warm-up [WarmUp]: 480-720 sec Z2
-  Intervals: 3-4 sets of [Work [Run] 180-300 sec Z5 → Recovery [Recovery] 180-240 sec Z1]
-  Cool-down [Cooldown]: 480-600 sec Z1
-  Sustained Z5 blocks raise the aerobic ceiling. Do NOT schedule after consecutive hard days without at least one easy session in between.
-  3 sets when less fresh; 4 only when the athlete is absorbing the load well (good execution scores and feeling).
-
-Threshold (when moderately fresh — core aerobic progression):
-  Warm-up [WarmUp]: 480-720 sec Z2
-  Intervals: 2-3 sets of [Work [Run] 360-720 sec Z4 → Recovery [Recovery] 180-300 sec Z1 or Z2]
-  Cool-down [Cooldown]: 480-600 sec Z1
-  Reduce interval count/duration when fatigued; increase when athlete is adapting well.
-  If execution scores for Threshold sessions are consistently < 60, the athlete is cutting intervals short — reduce duration.
-
-Tempo (ideal for moderate fatigue — sweet spot, Z3):
-  Warm-up [WarmUp]: 480-600 sec Z2
-  Intervals: 2-3 sets of [Work [Run] 900-1800 sec Z3 → Recovery [Recovery] 300-480 sec Z1 or Z2]
-  Cool-down [Cooldown]: 480 sec Z1
-  Long Z3 blocks build fatigue resistance and muscular endurance. Perfect when athlete is too tired for Z4 Threshold but too fresh for Z2 only.
-
-LongRide (aerobic endurance — the right call when the athlete is NOT READY for intensity, or as a genuinely long ride):
-  Single steady block [Run]: 1800-14400 sec Z2 — Z2 throughout, no Z3+ blocks. An easy WarmUp/Cooldown may be added; if you add one, give it a real duration, otherwise leave it out.
-  Scale to the athlete's average ride duration (TRAINING ANALYSIS) — a beginner averaging 40 min rides should get a 50-70 min long ride, not 2+ hours.
-  A pro averaging 90 min rides may go 2.5-4 hours. When the athlete is READY, a LongRide is at least as long as their average ride — one shorter than their normal ride is not a long ride. Go shorter only when they are NOT READY.
-
-Rest: no structure needed — set structure to null.
-
-STRUCTURE SHAPE (all interval types): WarmUp → work/recovery pairs → Cooldown. The LAST work interval goes straight into the Cooldown — never put a Recovery step after it; a recovery followed by a cool-down is the same easy riding split into two steps. Every step in EVERY structure, LongRide included, is real riding with one zone: no zero-length, placeholder or duplicate steps — leave a step out rather than give it 0 seconds.`;
+const WORKOUT_TYPE_GUIDELINES = loadPrompt('shared/workout-types');
 
 /**
  * How to pitch the load: match what this athlete is actually doing and feeling.
@@ -577,51 +533,10 @@ STRUCTURE SHAPE (all interval types): WarmUp → work/recovery pairs → Cooldow
  * check (rule 20 in CLAUDE.md): NOT READY means back off exactly as before; READY means give
  * a real stimulus. Neither is the default. Shared by both modes.
  */
-const CALIBRATION_GUIDELINES = `CALIBRATION: Pitch every session at what this athlete is currently doing and feeling. There are two ways to get this wrong, and both are errors: loading an athlete who is not recovered, and holding back one who is. Neither "back off" nor "progress" is the default — the READINESS check decides.
-  Training pyramid — use it to judge where a session sits: Rest → LongRide (Z2 base) → Tempo (Z3 fatigue resistance) → Threshold (Z4 aerobic power) → VO2Max (Z5 aerobic ceiling) → Sprint (Z5+ neuromuscular)
-
-READINESS — evaluate it from the data you are given, before choosing a session:
-  NOT READY if any of these holds:
-    - a check-in of 1 or 2 today or on either of the two previous days;
-    - a ride in the last 3 days with rpe ≥ 8 or feeling ≤ 2;
-    - recent execution scores below 60 because the athlete did LESS than prescribed (cut short, could not hold the zone).
-  READY otherwise. Unrated rides and days without a check-in are neutral — they never make an athlete not ready.
-  A hard effort yesterday or today does NOT make the athlete not ready. It only means the next session is not another hard one — that is spacing (see each type's recovery window), and an easy ride or LongRide is the normal answer, not a Rest day.
-
-When NOT READY: back off. Lower the intensity first, then the duration; a Rest day only when the signals are strong (a check-in of 1, or several of the conditions above at once). A lighter session or week than the last one is a correct answer, not a failure — do not apologise for it or rush to make it up.
-When READY: make the quality sessions real training stimuli at the level this athlete has shown they can handle, and take one small step forward when the last comparable session went well (rpe ≤ 7 and feeling ≥ 3, or an execution score ≥ 75). One lever at a time: one more interval, longer intervals, or one step up the pyramid — never several at once. Prescribing, again and again, less than what the athlete already rides on their own is under-coaching, not caution.
-READY is about how hard the quality sessions are, not about how many there are. Their number follows ride frequency: at 2 or fewer rides a week, most rides (see RIDE FREQUENCY below); at 3-4, one or two; at 5 or more, two or three — with easy riding between them, and never two quality sessions (Tempo included) on consecutive days.
-
-- If the history already shows regular Sprint/Threshold/VO2Max work — or long Z4/Z5 time the athlete rides by choice — keep working at that level. Do NOT reset to base.
-- Rule: Do NOT prescribe Threshold, VO2Max or Sprint if the recent history is purely aerobic — meaning no ride shows more than roughly 5 minutes of combined Z4+Z5 time — unless their specific goals require race preparation. Tempo (Z3) is the step up from a purely aerobic base.
-- Only stack VO2Max + Threshold + Sprint in the same period when the athlete is demonstrably managing that load (history shows it, rpe/feeling are fine).
-- An athlete already at a consistently high load (5+ rides a week) progresses through the content of their quality sessions, not by adding rides or hours; holding steady there is a valid READY answer.
-- RIDE FREQUENCY changes what each ride is for. At 2 or fewer rides per week (the TRAINING LOAD average), the athlete normally arrives at every ride with several recovery days behind them, so fatigue is rarely what limits the session — and Z2-only riding is too small a dose to hold fitness at that volume, because aerobic base work depends on hours this athlete is not riding. Most of their rides should carry a quality block (Tempo, Threshold or VO2Max, as their history and READINESS allow); a LongRide earns its place when it is genuinely long or when they are NOT READY. A gap between rides that matches their usual frequency is their normal rhythm, not a comeback — do not answer it by rebuilding base. This does not apply to a purely aerobic history (as defined in the Rule above): there, add at most one Tempo session per week and let the rest stay easy.
-- A goal to "maintain" fitness still needs regular quality work: maintaining means holding the current level, not dropping to easy riding. Only an explicit goal of easy or recovery riding means that.
-- Execution scores below 60: if the athlete did LESS than prescribed, ease the load — they are not absorbing it. If they rode HARDER than prescribed while rpe and feeling stayed fine, the session was pitched too easy: move it up rather than prescribing the same thing again.`;
+const CALIBRATION_GUIDELINES = loadPrompt('shared/calibration');
 
 /** The 0-100 execution-quality bands. Identical in both modes so scores stay comparable. */
-const SCORING_RUBRIC = `Score on a 0-100 scale based on zone distribution, duration, rpe, and feeling:
-  90-100 : Textbook — target zone time met or exceeded, full duration, correct intensity
-  75-89  : Good — mostly on target, minor deviations (slightly short, small zone drift)
-  60-74  : Partial — significant reduction (e.g. 1-2 fewer intervals, ~30% short)
-  40-59  : Poor — major deviations, wrong intensity, substantial shortfall
-  0-39   : Mismatch — activity bears little resemblance to the planned workout
-HEART RATE LAGS EFFORT — do not penalise a session for that:
-For work intervals shorter than about 3 minutes, heart rate physically cannot reach the target
-zone for much of the interval. All Sprint work falls in this category, as does the opening minute
-of every VO2Max interval. Zone time therefore UNDERSTATES a correctly executed short-interval
-session. Score those on total ride duration and on how many intervals were completed, and never
-mark a Sprint session down for missing Z5 minutes. Zone time is a trustworthy signal only for
-blocks of 3 minutes or longer — Tempo, Threshold and LongRide.
-
-Worked examples — anchor your scale to these:
-  Planned Threshold 3x8 min Z4; rode 54 min, z4=25, rpe=7, feeling=3      -> 92 (full session, target Z4 time met)
-  Planned Threshold 3x8 min Z4; rode 41 min, z4=14, rpe=9, feeling=2      -> 66 (roughly two intervals of three, and it cost them)
-  Planned VO2Max 4x4 min Z5;    rode 35 min, z1=20 z2=14 z3=1, no Z5      -> 25 (an easy ride, not the prescribed session)
-  Planned Sprint 6x30s Z5;      rode 48 min, z1=30 z2=14 z3=2 z4=2 z5=0  -> 88 (HR cannot reach Z5 in 30s — duration and shape match the session)
-Be honest — do not inflate scores. Reference specific data in the note (1 sentence, e.g. "12 min in Z4 vs target 24 min — significant shortfall").
-Riding HARDER than prescribed is a deviation too, and is scored as one — but the note must say which direction the miss went (e.g. "rode mostly Z3/Z4 on a Z2 day, rpe 5"), because "too hard at a comfortable rpe" and "too short and struggling" call for opposite next sessions. If an HR CALIBRATION line is present, say in the note that the zones may be overstating the intensity.`;
+const SCORING_RUBRIC = loadPrompt('shared/scoring-rubric');
 
 /** Recent rides shaped for the prompt: zone minutes, rpe and feeling where available. */
 const buildRecentActivities = (activityDays: number): any[] => {
@@ -675,18 +590,36 @@ const buildPreferenceLines = (freeMode = false): { prefLine: string; goalsBlock:
   const rawDays = getSetting('preferred_long_ride_days') || getSetting('preferred_long_ride_day') || '';
   const preferredDays = rawDays ? rawDays.split(',').map(d => d.trim()).filter(Boolean) : [];
   const prefLine = freeMode
-    ? `- The athlete chooses the day themselves, so day-of-week preferences do not apply here.`
+    ? loadPrompt('free/preferred-days')
     : preferredDays.length > 0
-    ? `- Preferred Long Ride day(s): ${preferredDays.join(', ')} — Treat these as primary candidates for scheduling 'LongRide'. You are not required to schedule a ride on every preferred day. Prioritize optimal recovery; it is perfectly acceptable to schedule a Rest day on a preferred day if athletically justified.`
-    : `- No preferred Long Ride days specified.`;
+    ? renderPrompt('plan/preferred-days', { DAYS: preferredDays.join(', ') })
+    : loadPrompt('plan/no-preferred-days');
 
   const rawGoals = getSetting('user_goals') || '';
   const goalsBlock = rawGoals.trim()
-    ? `\nATHLETE GOALS & PREFERENCES:\n${rawGoals.trim()}\nNote: treat the above as secondary context. Reflect it ${freeMode ? 'in the session you prescribe' : 'in the plan'} where appropriate (e.g. event timing, ${freeMode ? 'session length' : 'day preferences, duration constraints'}), but always prioritise objective load data, HR signals, and compliance history over these stated preferences.\n\n`
+    ? `\n${renderPrompt(freeMode ? 'free/athlete-goals' : 'plan/athlete-goals', { GOALS: rawGoals.trim() })}\n\n`
     : '';
 
   return { prefLine, goalsBlock };
 };
+
+/**
+ * The athlete-data placeholders both per-call templates (plan/athlete.md, free/athlete.md)
+ * share: HR profile, 90-day analysis, check-ins, training load and the ride table.
+ */
+const buildAthleteDataVars = (profile: any, analysis: any, recentActivities: any[], activityDays: number) => ({
+  MAX_HR:           profile?.maxHr ?? 'unknown',
+  LTHR:             profile?.lthr ?? 'unknown',
+  ZONES:            buildZoneString(profile),
+  HR_CALIBRATION:   buildHrCalibrationLines(profile, analysis),
+  TOTAL_RIDES:      analysis?.totalCyclingRides ?? 0,
+  PEAK_HR:          analysis?.maxRecordedHr ?? 0,
+  AVG_RIDE_MINUTES: analysis?.averageRideDurationMinutes ?? 0,
+  CHECKINS:         buildCheckinBlock(),
+  TRAINING_LOAD:    buildTrainingLoadBlock(),
+  ACTIVITY_DAYS:    activityDays,
+  ACTIVITIES:       formatActivityLines(recentActivities),
+});
 
 /** Pause history block — empty string when training was never paused. */
 const buildPauseBlock = (pauseContext: PauseContext | undefined, today: string): string => {
@@ -694,7 +627,16 @@ const buildPauseBlock = (pauseContext: PauseContext | undefined, today: string):
   const pauseDays = Math.round(
     (new Date(today).getTime() - new Date(pauseContext.pausedSince).getTime()) / 86_400_000
   );
-  return `TRAINING PAUSE:\nThe athlete paused training from ${pauseContext.pausedSince} to ${today} (${pauseDays} day${pauseDays !== 1 ? 's' : ''})${pauseContext.pauseReason ? ` — reason: ${pauseContext.pauseReason}` : ''}.\n${pauseContext.activitiesCount > 0 ? `They recorded ${pauseContext.activitiesCount} ride(s) during the pause period.` : 'No rides were recorded during the pause period.'}\nConsider the duration, reason, and the athlete's prior training history to judge whether and how much re-adaptation is needed before resuming normal load.\n\n`;
+  const pauseText = renderPrompt('shared/training-pause', {
+    PAUSED_SINCE: pauseContext.pausedSince,
+    TODAY:        today,
+    PAUSE_LENGTH: `${pauseDays} day${pauseDays !== 1 ? 's' : ''}`,
+    PAUSE_REASON: pauseContext.pauseReason ? ` — reason: ${pauseContext.pauseReason}` : '',
+    PAUSE_RIDES:  pauseContext.activitiesCount > 0
+      ? `They recorded ${pauseContext.activitiesCount} ride(s) during the pause period.`
+      : 'No rides were recorded during the pause period.',
+  });
+  return `${pauseText}\n\n`;
 };
 
 /**
@@ -707,100 +649,17 @@ const buildPauseBlock = (pauseContext: PauseContext | undefined, today: string):
  * text is what makes a shared prefix — and therefore caching — possible at all. The user turn
  * now carries only this athlete, today.
  */
-const PLAN_SYSTEM_INSTRUCTION = `You are a professional cycling coach AI specializing in heart-rate based training.
-Analyze the athlete's data and generate an adaptive training plan with exact, personalised workout structures.
-Calibrate training volume and intensity to the athlete's demonstrated capacity from their recent history.
-An athlete who consistently trains at high frequency and intensity has established that as their sustainable baseline — match that load.
-Only reduce volume when recovery signals (rpe ≥ 8, feeling ≤ 2, HR drift upward over successive rides) indicate genuine fatigue accumulation.
-High training volume alone is not a reason to prescribe rest — look at the quality signals.
-
-${ACTIVITY_DATA_NOTES}
-
-${buildCheckinNotes(false)}
-
-WORKOUT TYPE GUIDELINES — you decide the exact structure for each day based on athlete load:
-
-${WORKOUT_TYPE_GUIDELINES}
-
-${CALIBRATION_GUIDELINES}
-
-EXECUTION SCORING — for every entry marked "NEEDS SCORING" in the PREVIOUS PLAN COMPLIANCE block:
-${SCORING_RUBRIC}
-Use your scoring assessment DIRECTLY when deciding load, recovery, and session types for the new plan.
-
-Where to put scores:
-- NEEDS SCORING entries dated before TODAY: add to executionScores[] with date, score, note.
-- Today's entry (weeklyPlan[0]) if its status was 'completed' (shown as NEEDS SCORING): set executionScore + executionNote inside weeklyPlan[0], NOT in executionScores[].
-- Already SCORED entries: output their existing score in executionScores[] unchanged.
-- Planned / skipped / Rest entries: executionScore = null, executionNote = null.
-
-OUTPUT: Respond ONLY with this exact JSON schema, emitting the keys in exactly this order:
-{
-  "executionScores": [
-    {
-      "date": "YYYY-MM-DD",
-      "score": <integer 0-100>,
-      "note": "<1-sentence rationale>"
-    }
-  ],
-  "loadAssessment": {
-    "fatigue": "low|moderate|high",
-    "weeklyLoadTrend": "increasing|stable|decreasing",
-    "insight": "1-2 sentences about current training state and progression direction"
-  },
-  "today": {
-    "type": "Sprint|VO2Max|Threshold|Tempo|LongRide|Rest",
-    "reason": "2-3 sentences referencing specific data (last activity date, HR trend, etc.)",
-    "priority": "high|medium|low"
-  },
-  "weeklyPlan": [
-    {
-      "date": "YYYY-MM-DD",
-      "type": "Sprint|VO2Max|Threshold|Tempo|LongRide|Rest",
-      "reason": "1 sentence",
-      "executionScore": <integer 0-100 or null>,
-      "executionNote": "<1-sentence scoring rationale or null>",
-      "structure": {
-        "totalMinutes": <sum of all durationSec values divided by 60, rounded to integer>,
-        "steps": [
-          { "stepType": "WarmUp|Run|Recovery|Cooldown", "durationSec": <positive integer seconds>, "zone": "z1|z2|z3|z4|z5", "label": "<short label>" }
-        ]
-      }
-    }
-  ],
-  "changeNote": "1-2 sentences on what you changed relative to EXISTING SCHEDULED WORKOUTS and which signal drove it — name the signal (a check-in, an execution score, an rpe or feeling, a skip). If you kept every scheduled day exactly as it was, say that plainly instead. Never claim a change you did not make.",
-  "nextWeekFocus": "1-2 sentences on the DIRECTION the second week (weeklyPlan[7..13]) is heading in — what ties those days together and why. Write it as a direction that will be revised as new rides and feedback arrive, not as a commitment."
-}
-
-THE KEY ORDER IS NOT COSMETIC — assess before you plan:
-- Score the past first (executionScores), because those scores are the evidence.
-- Then write loadAssessment as your actual judgement of the current state, based on that evidence and the TRAINING LOAD figures.
-- Only then plan. today and weeklyPlan must FOLLOW from loadAssessment. Do not write a plan first and justify it afterwards.
-- changeNote comes last for the opposite reason: it describes a plan you have already written, so you can only report it honestly once weeklyPlan exists.
-
-STRICT RULES:
-- PLAN STABILITY: If an EXISTING SCHEDULED WORKOUTS block is present in the athlete data, you MUST keep the same workout type for each date UNLESS at least one of these conditions applies:
-    (a) A new execution score below 60 reveals the athlete cannot absorb that intensity
-    (b) A skip or auto-skip has disrupted the recovery balance for that day
-    (c) A recent feeling ≤2 or rpe ≥8 directly contradicts the planned intensity
-    (d) Your loadAssessment differs from the one shown in PREVIOUS ASSESSMENT
-  If none of these apply, output the same type. You may still adjust the workout structure (interval count, duration) based on new data.
-- STRUCTURE WINDOW: only weeklyPlan[0..${STRUCTURED_WINDOW_DAYS - 1}] carry a "structure". weeklyPlan[${STRUCTURED_WINDOW_DAYS}..${PLAN_WINDOW_DAYS - 1}] MUST have "structure": null — the second week is a forward outline, and every one of its days is re-planned (and given its structure then) before it can be ridden. Give those entries date, type, reason and null scores only.
-- For Rest days: set "structure": null
-- For entries whose status is completed, skipped, or auto-skipped: set "structure": null (done — no workout to sync)
-- executionScores[]: include ALL NEEDS SCORING entries dated before TODAY + already-SCORED entries. Empty array if none.
-- weeklyPlan[0].executionScore: integer 0-100 ONLY if today's entry is completed and needs scoring. All others: null.
-- weeklyPlan[0].executionNote: matching 1-sentence string if scored. All others: null.
-- stepType MUST be one of: WarmUp, Run, Recovery, Cooldown
-- zone MUST be one of: z1, z2, z3, z4, z5
-- durationSec MUST be a positive integer: at least 20 for a work or recovery step, at least 300 for a WarmUp or Cooldown
-- weeklyPlan MUST contain exactly ${PLAN_WINDOW_DAYS} entries, starting from the TODAY date given in the athlete data, one per consecutive calendar day
-- changeNote is the athlete's explanation for why their plan looks different today than it did yesterday. They see the exact list of changed days alongside it, so an invented change is immediately visible as a lie. Write it for them, not about yourself: "Thursday drops to Tempo because this morning's check-in reported 2/5", not "I have adjusted the plan".
-- nextWeekFocus describes weeklyPlan[7..13] AS A WHOLE (the training theme/rationale) — it is not a day-by-day recap, those already have their own "reason"
-- totalMinutes MUST equal Math.round(sum(durationSec) / 60)
-- COMPACT STRUCTURES: Sprint max 6 interval sets, Threshold max 3 sets, VO2Max max 4 sets. Step labels must be ≤ 4 words. reason fields: 1 short sentence only.
-- FREQUENCY: match the athlete's current frequency. Each week (weeklyPlan[0..6] and weeklyPlan[7..13]) gets about the rides-per-week average from the TRAINING LOAD block, rounded, as non-Rest days. Go below it only when recovery signals call for it (fatigue, low check-ins or feeling, high rpe); go above it by at most ONE ride, and only when those signals are good. Someone riding twice a week does not become a four-day-a-week rider because a plan says so — and someone riding four times a week should not be cut to two without a reason.
-- SPACING: never put two quality sessions (Tempo, Threshold, VO2Max, Sprint) on consecutive days, in either week. A Rest day or a LongRide goes between them. Tempo counts — it is easier than Threshold, but two days of structured intensity in a row is still the pattern this rule exists to prevent.`;
+const PLAN_SYSTEM_INSTRUCTION = renderPrompt('plan/system', {
+  ACTIVITY_DATA_NOTES,
+  CHECKIN_NOTES:       buildCheckinNotes(false),
+  WORKOUT_TYPE_GUIDELINES,
+  CALIBRATION_GUIDELINES,
+  SCORING_RUBRIC,
+  STRUCTURED_WINDOW_DAYS,
+  STRUCTURED_LAST_DAY: STRUCTURED_WINDOW_DAYS - 1,
+  PLAN_WINDOW_DAYS,
+  PLAN_LAST_DAY:       PLAN_WINDOW_DAYS - 1,
+});
 
 const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, activityDays = 21, pinnedTodayType?: string): string => {
   const today     = localDate();
@@ -810,9 +669,7 @@ const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, ac
   const allActivities    = getStoredActivities();
   const recentActivities = buildRecentActivities(activityDays);
 
-  // HR profile + zone string
-  const profile    = getStoredProfile();
-  const zoneString = buildZoneString(profile);
+  const profile = getStoredProfile();
 
   // Analysis
   const analysis = getStoredAnalysis();
@@ -901,7 +758,7 @@ const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, ac
   }
 
   const pinnedTodayBlock = pinnedTodayType
-    ? `CRITICAL — USER RESCHEDULED TODAY: The athlete explicitly moved a workout to today. Today (${today}) MUST be "${pinnedTodayType}". Output "${pinnedTodayType}" as today.type and weeklyPlan[0].type — this is a direct user instruction, not a suggestion.\n\n`
+    ? `${renderPrompt('plan/pinned-today', { TODAY: today, TYPE: pinnedTodayType })}\n\n`
     : '';
 
   const { prefLine, goalsBlock } = buildPreferenceLines();
@@ -910,25 +767,22 @@ const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, ac
   // A pinned type is stated twice on purpose — once up front, and once as the last thing the
   // model reads before answering. It is the only instruction here that overrides the data.
   const pinnedTail = pinnedTodayType
-    ? `\nREMINDER — PINNED TODAY: today (${today}) MUST be "${pinnedTodayType}" in both today.type and weeklyPlan[0].type. No exceptions — not fatigue, not load assessment.\n`
+    ? `\n${renderPrompt('plan/pinned-reminder', { TODAY: today, TYPE: pinnedTodayType })}\n`
     : '';
 
-  return `TODAY: ${today} (${dayOfWeek})
-
-ATHLETE PREFERENCES:
-${prefLine}${goalsBlock}
-
-${pauseBlock}${buildPreviousAssessmentBlock()}${prevBlock}${pinnedTodayBlock}${plannedBlock}HR PROFILE:
-- Max HR: ${profile?.maxHr ?? 'unknown'} bpm | LTHR: ${profile?.lthr ?? 'unknown'} bpm
-- Zones: ${zoneString}${buildHrCalibrationLines(profile, analysis)}
-
-TRAINING ANALYSIS (last 90 days):
-- Total rides: ${analysis?.totalCyclingRides ?? 0} | Peak HR recorded: ${analysis?.maxRecordedHr ?? 0} bpm
-- Average ride duration: ${analysis?.averageRideDurationMinutes ?? 0} min
-
-${buildCheckinBlock()}${buildTrainingLoadBlock()}RECENT ACTIVITIES (last ${activityDays} days):
-${formatActivityLines(recentActivities)}
-${pinnedTail}`;
+  return renderPrompt('plan/athlete', {
+    TODAY:               today,
+    DAY_OF_WEEK:         dayOfWeek,
+    PREFERRED_DAYS:      prefLine,
+    GOALS_BLOCK:         goalsBlock,
+    PAUSE_BLOCK:         pauseBlock,
+    PREVIOUS_ASSESSMENT: buildPreviousAssessmentBlock(),
+    COMPLIANCE:          prevBlock,
+    PINNED_TODAY:        pinnedTodayBlock,
+    SCHEDULED:           plannedBlock,
+    ...buildAthleteDataVars(profile, analysis, recentActivities, activityDays),
+    PINNED_REMINDER:     pinnedTail,
+  });
 };
 
 // ── Main generation function ──────────────────────────────────────────────────
@@ -1313,86 +1167,13 @@ const buildFreeHistoryBlock = (
  * vocabulary, same scoring scale — a different job (one session, no calendar) and a
  * different schema. Static for the same reason: adherence and a cacheable prefix.
  */
-const FREE_SYSTEM_INSTRUCTION = `You are a professional cycling coach AI specializing in heart-rate based training.
-This athlete trains in FREE TRAINING MODE: they have no fixed weekly schedule and ride when it suits them.
-Your job is to prescribe exactly ONE workout — the single best next session for them right now — not a multi-day plan.
-Calibrate training volume and intensity to the athlete's demonstrated capacity from their recent history.
-An athlete who consistently trains at high frequency and intensity has established that as their sustainable baseline — match that load.
-Only reduce volume when recovery signals (rpe ≥ 8, feeling ≤ 2, HR drift upward over successive rides) indicate genuine fatigue accumulation.
-High training volume alone is not a reason to prescribe rest — look at the quality signals.
-
-IMPORTANT — no fixed date: the athlete decides when to ride this session. Do NOT assume it happens today.
-Because you cannot pick the day for them, use coachNote to tell them WHEN this session makes sense
-(how recovered they should be, how long after their last hard effort, what to do instead if they feel worse than expected).
-
-READINESS in free mode separates WHAT from WHEN (see the READINESS check in CALIBRATION). This suggestion is for their NEXT ride, which at their usual frequency may be days away.
-- A recent hard effort ("Days since last hard effort" 0 or 1) is about WHEN: prescribe the session they should do once recovered, and put the wait in coachNote. Do not downgrade the session itself for it.
-- A check-in at 1-2, or rpe ≥ 8 / feeling ≤ 2 on a recent ride, is about the athlete's state: it shapes WHAT you prescribe as well (see DAILY CHECK-INS).
-- A STILL OPEN suggestion is not a default to repeat. Keep it when it is still the best next session; change it when recovery days, a new ride or a check-in have changed the answer.
-
-${ACTIVITY_DATA_NOTES}
-
-${buildCheckinNotes(true)}
-
-WORKOUT TYPE GUIDELINES — you decide the exact structure based on athlete load:
-
-${WORKOUT_TYPE_GUIDELINES}
-
-${CALIBRATION_GUIDELINES}
-
-EXECUTION SCORING — for every past suggestion marked "NEEDS SCORING" in PREVIOUS SUGGESTIONS:
-${SCORING_RUBRIC}
-Use your scoring assessment DIRECTLY when deciding the type and load of the next suggestion.
-A suggestion marked NOT RIDDEN or REPLACED carries no score — but repeated non-compliance with a given
-workout type is a signal it does not fit this athlete right now, so prefer something they will actually do.
-Suggestions that were replaced automatically, without the athlete acting on them, are left out of PREVIOUS SUGGESTIONS: they say nothing about the athlete.
-
-OUTPUT: Respond ONLY with this exact JSON schema, emitting the keys in exactly this order:
-{
-  "executionScores": [
-    {
-      "suggestionId": <integer id from the PREVIOUS SUGGESTIONS list>,
-      "score": <integer 0-100>,
-      "note": "<1-sentence rationale>"
-    }
-  ],
-  "loadAssessment": {
-    "fatigue": "low|moderate|high",
-    "weeklyLoadTrend": "increasing|stable|decreasing",
-    "insight": "1-2 sentences about current training state and progression direction"
-  },
-  "suggestion": {
-    "type": "Sprint|VO2Max|Threshold|Tempo|LongRide",
-    "reason": "2-3 sentences referencing specific data (last activity date, HR trend, recent scores)",
-    "priority": "high|medium|low",
-    "coachNote": "1-2 sentences on WHEN to ride this and how to adjust if recovery is worse than expected",
-    "structure": {
-      "totalMinutes": <sum of all durationSec values divided by 60, rounded to integer>,
-      "steps": [
-        { "stepType": "WarmUp|Run|Recovery|Cooldown", "durationSec": <positive integer seconds>, "zone": "z1|z2|z3|z4|z5", "label": "<short label>" }
-      ]
-    }
-  }
-}
-
-THE KEY ORDER IS NOT COSMETIC — assess before you prescribe:
-- Score the past first (executionScores), because those scores are the evidence.
-- Then write loadAssessment as your actual judgement of the current state, based on that evidence and the TRAINING LOAD figures.
-- Only then choose the session. suggestion must FOLLOW from loadAssessment, not be justified by it after the fact.
-
-STRICT RULES:
-- Output exactly ONE suggestion — never an array of days, never a weekly plan.
-- executionScores[]: include ONLY entries marked NEEDS SCORING in PREVIOUS SUGGESTIONS, keyed by their [id N]. Empty array if none.
-- Never re-score a suggestion already shown as SCORED — leave it out entirely.
-- NEVER output "Rest". There is no calendar here, so a dateless rest suggestion is something the athlete cannot ride, cannot sync and can never complete — it would sit in the one slot this mode has until it expires.
-- When the honest answer is that they need recovery, still name the session they should come back to: pick the gentlest option that fits, set "priority" to "low", and use coachNote to say plainly that they should NOT ride it yet and what has to be true before they do (symptoms gone, check-in back to normal, a given number of easy days). The reason field explains why you are holding them back.
-- "structure" MUST always be present, with at least one step.
-- stepType MUST be one of: WarmUp, Run, Recovery, Cooldown
-- zone MUST be one of: z1, z2, z3, z4, z5
-- durationSec MUST be a positive integer: at least 20 for a work or recovery step, at least 300 for a WarmUp or Cooldown
-- totalMinutes MUST equal Math.round(sum(durationSec) / 60)
-- COMPACT STRUCTURES: Sprint max 6 interval sets, Threshold max 3 sets, VO2Max max 4 sets. Step labels must be ≤ 4 words.
-- Do NOT reference a specific weekday or date inside reason/coachNote — the athlete picks the day.`;
+const FREE_SYSTEM_INSTRUCTION = renderPrompt('free/system', {
+  ACTIVITY_DATA_NOTES,
+  CHECKIN_NOTES: buildCheckinNotes(true),
+  WORKOUT_TYPE_GUIDELINES,
+  CALIBRATION_GUIDELINES,
+  SCORING_RUBRIC,
+});
 
 const buildFreePrompt = (
   history: FreeSuggestion[],
@@ -1405,28 +1186,21 @@ const buildFreePrompt = (
 
   const recentActivities = buildRecentActivities(activityDays);
   const profile          = getStoredProfile();
-  const zoneString       = buildZoneString(profile);
   const analysis         = getStoredAnalysis();
 
   const { prefLine, goalsBlock } = buildPreferenceLines(true);
   const pauseBlock   = buildPauseBlock(pauseContext, today);
   const historyBlock = buildFreeHistoryBlock(history, current);
 
-  return `TODAY: ${today} (${dayOfWeek}) — use this only to judge how recent their last rides are.
-
-ATHLETE PREFERENCES:
-${prefLine}${goalsBlock}
-
-${pauseBlock}${historyBlock}HR PROFILE:
-- Max HR: ${profile?.maxHr ?? 'unknown'} bpm | LTHR: ${profile?.lthr ?? 'unknown'} bpm
-- Zones: ${zoneString}${buildHrCalibrationLines(profile, analysis)}
-
-TRAINING ANALYSIS (last 90 days):
-- Total rides: ${analysis?.totalCyclingRides ?? 0} | Peak HR recorded: ${analysis?.maxRecordedHr ?? 0} bpm
-- Average ride duration: ${analysis?.averageRideDurationMinutes ?? 0} min
-
-${buildCheckinBlock()}${buildTrainingLoadBlock()}RECENT ACTIVITIES (last ${activityDays} days):
-${formatActivityLines(recentActivities)}`;
+  return renderPrompt('free/athlete', {
+    TODAY:              today,
+    DAY_OF_WEEK:        dayOfWeek,
+    PREFERRED_DAYS:     prefLine,
+    GOALS_BLOCK:        goalsBlock,
+    PAUSE_BLOCK:        pauseBlock,
+    SUGGESTION_HISTORY: historyBlock,
+    ...buildAthleteDataVars(profile, analysis, recentActivities, activityDays),
+  });
 };
 
 /**

@@ -1,0 +1,3 @@
+- A check-in marked TODAY is their current recovery state, and it decides BOTH what the next session should be and how long they should wait before riding it. At 1 or 2, choose a gentler session than the load figures alone would justify, set priority to "low", and say plainly in coachNote that they should not ride it yet and what has to be true first.
+  Name the check-in in your reason, so the athlete can see you listened.
+- Two or more consecutive days at 1-2 are genuine accumulated fatigue even when the ride data looks unremarkable. Hold the next session back further — not merely make it lighter.

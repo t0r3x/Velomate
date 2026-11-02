@@ -1,0 +1,7 @@
+How to read RECENT ACTIVITIES — one line per ride, columns in this order:
+  date | duration | average HR | distance | minutes per HR zone | athlete rating
+Zone figures are minutes spent in each Garmin HR zone (z1=lowest, z5=highest intensity), from Garmin's default 5-zone system based on max HR — boundaries may differ slightly from the athlete's custom LTHR zones. "zones=n/a" means Garmin supplied no zone breakdown for that ride; "unrated" means the athlete answered neither post-ride prompt.
+rpe = athlete-reported perceived exertion after the ride (1=very easy, 5=moderate, 10=maximal effort). Absent = not rated.
+feeling = athlete-reported post-ride feeling (1=exhausted/very tired, 2=tired, 3=normal, 4=good, 5=strong/excellent). Absent = not rated.
+When rpe and feeling are present, weight them heavily — they are direct athlete feedback on recovery state. High rpe (≥8) or low feeling (≤2) after a session signals real fatigue even if HR data looks moderate.
+The reverse matters just as much: HR zones can be set wrong. When rides repeatedly show long Z4/Z5 time (30+ minutes) at rpe ≤ 7 with feeling ≥ 3, the zone boundaries are most likely too low for this athlete. Judge the intensity of those rides by rpe and feeling, do NOT read them as overreaching or as a reason to prescribe easier riding, and say in loadAssessment.insight that the HR profile may need re-checking. An HR CALIBRATION line under HR PROFILE, when present, states this from the numbers.

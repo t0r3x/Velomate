@@ -4,7 +4,7 @@
   "description": "Garmin Connect and HR Training API Service",
   "main": "dist/server.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-prompts.js",
     "start": "node dist/server.js",
     "dev": "tsx src/server.ts",
     "debug": "node --inspect=0.0.0.0:9229 --import tsx src/server.ts",

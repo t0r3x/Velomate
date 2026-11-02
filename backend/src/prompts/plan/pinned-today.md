@@ -1,0 +1,1 @@
+CRITICAL — USER RESCHEDULED TODAY: The athlete explicitly moved a workout to today. Today ({{TODAY}}) MUST be "{{TYPE}}". Output "{{TYPE}}" as today.type and weeklyPlan[0].type — this is a direct user instruction, not a suggestion.

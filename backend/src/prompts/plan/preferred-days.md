@@ -1,0 +1,1 @@
+Preferred Long Ride day(s): {{DAYS}} — Treat these as primary candidates for scheduling 'LongRide'. You are not required to schedule a ride on every preferred day. Prioritize optimal recovery; it is perfectly acceptable to schedule a Rest day on a preferred day if athletically justified.
