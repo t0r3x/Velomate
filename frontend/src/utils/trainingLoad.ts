@@ -125,25 +125,26 @@ export function buildWeeklyZones(activities: Activity[], maxHr: number, from: st
  * knowing the fitness it is measured against, while a percentage reads the same for a
  * beginner and a racer. Bands follow intervals.icu's.
  */
+/**
+ * The form bands, highest first: form as a percentage of fitness, above `min`. One list feeds
+ * both the label and the explanation panel, so the help text can never drift from the logic.
+ */
+export const FORM_BANDS: { label: string; min: number; range: string; meaning: string }[] = [
+  { label: 'Transition',   min: 25,        range: 'above +25%',     meaning: 'Very rested. Good before an event, but fitness is fading if it lasts.' },
+  { label: 'Fresh',        min: 5,         range: '+5% to +25%',    meaning: 'Rested and ready for a hard session.' },
+  { label: 'Neutral',      min: -10,       range: '-10% to +5%',    meaning: 'Balanced: training and recovery roughly even.' },
+  { label: 'Building',     min: -30,       range: '-30% to -10%',   meaning: 'Carrying training fatigue. The productive zone for building fitness.' },
+  { label: 'Overreaching', min: -Infinity, range: 'below -30%',     meaning: 'Fatigue well above fitness. Recovery comes first.' },
+]
+
 export function formLabel(form: number, fitness: number): string {
   if (fitness < 1) return 'No base yet'
   const pct = (form / fitness) * 100
-  if (pct > 25)  return 'Transition'
-  if (pct > 5)   return 'Fresh'
-  if (pct >= -10) return 'Neutral'
-  if (pct >= -30) return 'Building'
-  return 'Overreaching'
+  return FORM_BANDS.find(b => pct > b.min)?.label ?? 'Overreaching'
 }
 
 export function formExplanation(label: string): string {
-  switch (label) {
-    case 'Transition':   return 'Very rested. Good before an event, but fitness is fading if it lasts.'
-    case 'Fresh':        return 'Rested and ready for a hard session.'
-    case 'Neutral':      return 'Balanced: training and recovery roughly even.'
-    case 'Building':     return 'Carrying training fatigue. The productive zone for building fitness.'
-    case 'Overreaching': return 'Fatigue well above fitness. Recovery comes first.'
-    default:             return 'Ride a few weeks to build a baseline.'
-  }
+  return FORM_BANDS.find(b => b.label === label)?.meaning ?? 'Ride a few weeks to build a baseline.'
 }
 
 export { addDays, mondayOf }

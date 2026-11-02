@@ -562,6 +562,11 @@ depend on what a model decided to say.
   each element also shows its own value beside it (line values next to the crosshair dots, on the side
   away from the tooltip; "51/day · 2h02" on the cap of the hovered week's bar), in text tokens with a
   surface halo. That replaces a second axis, which is the usual PMC-chart answer and the one to avoid.
+- **The explanation lives behind a "?" next to the title** (`.trend-help`, a floating panel: Escape, its
+  close button, the "?" or a click outside closes it; focus moves in on open and back to the "?" on
+  Escape). It explains load, fitness, fatigue, form, the bars and click-to-hide, and marks today's form
+  band. The bands come from `FORM_BANDS` in `trainingLoad.ts`, which `formLabel()` uses too, so the help
+  text cannot drift from the logic. The note that used to sit under the chart moved in there.
 - **Click-to-hide**: clicking a line, a bar segment or a legend item hides that series (a whole line, or
   one zone in every week); the legend is the way back and is a keyboard-reachable toggle (`aria-pressed`).
   The y-axis rescales to what is visible. Only `.hit` (lines) and `.seg` (bars) take pointer events:
@@ -569,7 +574,8 @@ depend on what a model decided to say.
   each of them swallowed clicks until made `pointer-events: none`.
 - Built by the dataviz method: 2px lines, 10% area wash, bars ≤24px at 55% opacity (they sit behind the
   lines) with a 4px rounded top and a 2px surface gap between zones, solid hairline grid, end labels never nudged (on collision only Fitness keeps its label),
-  crosshair + one tooltip with every series, a table view with every value. The line colours are palette
+  crosshair + one tooltip with every series (72% opaque, no blur and no shadow, so the chart stays visible
+  under it, at the athlete's request), a table view with every value. The line colours are palette
   slots 7 + 5, validated per theme surface; in the light themes Fatigue sits at 2.7:1, which the end labels and
   the table view are the required relief for. Bars use the zone ramp (`--z1..z5-color`), whose meaning they share.
 

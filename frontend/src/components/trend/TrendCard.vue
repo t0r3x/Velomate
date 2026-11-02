@@ -3,6 +3,92 @@
     <div class="card-header">
       <i class="fa-solid fa-chart-line header-icon"></i>
       <h2>Trend</h2>
+      <button
+        ref="helpButton"
+        type="button"
+        class="trend-help-btn"
+        :aria-expanded="helpOpen"
+        aria-controls="trend-help"
+        title="How these numbers work"
+        aria-label="How these numbers work"
+        @click.stop="helpOpen = !helpOpen"
+      >
+        <i class="fa-regular fa-circle-question"></i>
+      </button>
+
+      <!-- Explanation of every number on the card. Floats over the chart; Escape, the button or a
+           click outside closes it. -->
+      <div
+        v-if="helpOpen"
+        id="trend-help"
+        ref="helpPanel"
+        class="trend-help"
+        role="dialog"
+        aria-label="How these numbers work"
+        @click.stop
+      >
+        <div class="trend-help-head">
+          <span>How these numbers work</span>
+          <button type="button" class="trend-help-close" aria-label="Close" @click="helpOpen = false">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <dl class="trend-help-list">
+          <dt>Load</dt>
+          <dd>
+            Every ride gets a score from your heart rate: each minute in zone 1 counts 1 point, in zone 2
+            counts 2, up to 5 points per minute in zone 5. An easy hour is about 120, an hour with real
+            intervals 200 or more. It uses Garmin's own zone split, so the HR zones set in Velomate do
+            not change it.
+          </dd>
+
+          <dt><span class="trend-key" style="background: var(--series-fitness)"></span>Fitness</dt>
+          <dd>
+            Your average daily load over roughly the last six weeks (a 42-day weighted average). It
+            rises slowly when you train consistently and fades slowly when you stop: this is your base.
+          </dd>
+
+          <dt><span class="trend-key" style="background: var(--series-fatigue)"></span>Fatigue</dt>
+          <dd>
+            The same average over roughly the last week (7 days). It jumps after a hard ride and drops
+            quickly with rest.
+          </dd>
+
+          <dt>Form</dt>
+          <dd>
+            Yesterday's fitness minus yesterday's fatigue: how fresh you start today. The word next to
+            it compares form with your fitness, so it means the same at any level:
+            <table class="trend-help-bands">
+              <tbody>
+                <tr v-for="b in FORM_BANDS" :key="b.label" :class="{ 'is-current': b.label === formWord }">
+                  <th scope="row">{{ b.label }}</th>
+                  <td class="trend-help-range">{{ b.range }}</td>
+                  <td>{{ b.meaning }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </dd>
+
+          <dt>Bars</dt>
+          <dd>
+            One bar per week: the average daily load of that week, split by heart-rate zone. Same unit
+            as the lines, which is why they share one scale.
+          </dd>
+
+          <dt>Showing and hiding</dt>
+          <dd>
+            Click a line, a bar or a legend item to hide it; click the legend item again to bring it
+            back. Hover anywhere on the chart for that day's and that week's exact values.
+          </dd>
+        </dl>
+
+        <p class="trend-help-foot">
+          Fitness needs about six weeks of rides to mean much<template v-if="shortHistory">, and your
+          stored history covers only {{ daily.length }} days, so it still reads low</template>. These
+          numbers come from your rides only; the AI coach does not set them.
+        </p>
+      </div>
 
       <!-- Today's numbers stay visible when the charts are collapsed. -->
       <div v-if="today" class="trend-stats">
@@ -99,11 +185,6 @@
           @toggle-line="toggleLine" @toggle-zone="toggleZone"
         />
 
-        <p class="trend-note">
-          Bars: average daily load per week, by zone (same unit as the lines; fitness is their 42-day average).
-          Click a line, a bar or a legend item to hide it; click the legend again to bring it back.
-          <template v-if="shortHistory"> Fitness needs about six weeks of rides to settle, so the first weeks read low.</template>
-        </p>
       </template>
 
       <!-- The table twin: every value the charts show, without hovering. -->
@@ -140,12 +221,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue'
 import { useActivitiesStore } from '@/stores/activities.store'
 import { useProfileStore }    from '@/stores/profile.store'
 import { useSettingsStore }   from '@/stores/settings.store'
 import {
-  buildDailySeries, buildWeeklyZones, formLabel, formExplanation, addDays, FITNESS_DAYS
+  buildDailySeries, buildWeeklyZones, formLabel, formExplanation, addDays, FITNESS_DAYS, FORM_BANDS
 } from '@/utils/trainingLoad'
 import { isoDate } from '@/utils'
 import TrendChart from './TrendChart.vue'
@@ -166,6 +247,28 @@ const RANGES = [
   { id: '6m', label: '6M', days: 182 },
   { id: '1y', label: '1Y', days: 365 },
 ] as const
+
+// ── Help panel ───────────────────────────────────────────────────────────────
+const helpOpen   = ref(false)
+const helpButton = ref<HTMLButtonElement | null>(null)
+const helpPanel  = ref<HTMLElement | null>(null)
+const closeHelp  = () => { helpOpen.value = false }
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && helpOpen.value) {
+    helpOpen.value = false
+    helpButton.value?.focus()
+  }
+}
+// Focus moves into the panel when it opens, so keyboard and screen-reader users land on it.
+watch(helpOpen, open => { if (open) nextTick(() => helpPanel.value?.querySelector<HTMLElement>('button')?.focus()) })
+onMounted(() => {
+  document.addEventListener('click', closeHelp)
+  document.addEventListener('keydown', onKeydown)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('click', closeHelp)
+  document.removeEventListener('keydown', onKeydown)
+})
 
 const range     = ref<(typeof RANGES)[number]['id']>('6m')
 const tableView = ref(false)
@@ -234,7 +337,88 @@ const formatDay = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('e
 </script>
 
 <style scoped>
-.trend-card { flex: none; margin-bottom: 1.75rem; }
+.trend-card { flex: none; margin-bottom: 1.75rem; position: relative; }
+
+.trend-help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-left: -0.2rem;
+  padding: 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.trend-help-btn:hover,
+.trend-help-btn[aria-expanded='true'] { color: var(--primary-color); }
+.trend-help-btn:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+
+/* A genuinely floating layer, so it gets the overlay shadow (the one shadow token). */
+.trend-help {
+  position: absolute;
+  top: 4.4rem;
+  left: 1.75rem;
+  z-index: 10;
+  width: min(500px, calc(100% - 3.5rem));
+  padding: 1rem 1.25rem;
+  background: var(--surface-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-overlay);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.trend-help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.trend-help-close {
+  padding: 0.2rem 0.35rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+.trend-help-close:hover { color: var(--text-primary); background: var(--raise); }
+.trend-help-close:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+.trend-help-list { margin: 0; }
+.trend-help-list dt {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.65rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.trend-help-list dt:first-child { margin-top: 0; }
+.trend-help-list dd { margin: 0.15rem 0 0; }
+.trend-help-bands { width: 100%; margin-top: 0.4rem; border-collapse: collapse; font-size: 0.76rem; }
+.trend-help-bands th, .trend-help-bands td { padding: 0.25rem 0.5rem; vertical-align: top; text-align: left; }
+.trend-help-bands th { font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+.trend-help-range { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+/* Today's band: an accent edge, never a tinted fill (the visual-language rule for panels with a meaning). */
+.trend-help-bands tr.is-current th { box-shadow: inset 2px 0 0 var(--primary-color); }
+.trend-help-bands tr.is-current td { color: var(--text-primary); }
+.trend-help-foot { margin: 0.75rem 0 0; padding-top: 0.6rem; border-top: 1px solid var(--hairline); font-size: 0.74rem; color: var(--text-muted); }
+
+@media (max-width: 640px) {
+  .trend-help { left: 1rem; width: calc(100% - 2rem); }
+}
 .trend-card.is-collapsed .card-header { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
 .trend-card .card-header { flex-wrap: wrap; row-gap: 0.75rem; }
 
@@ -328,7 +512,6 @@ const formatDay = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('e
 .trend-swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; }
 .trend-legend-sep { width: 1px; align-self: stretch; background: var(--hairline); }
 
-.trend-note { margin: 0.35rem 0 0; font-size: 0.72rem; color: var(--text-muted); }
 .trend-empty-state { margin: 0; }
 
 .trend-table-wrap { max-height: 240px; overflow: auto; }
@@ -356,10 +539,12 @@ const formatDay = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('e
   min-width: 150px;
   padding: 0.5rem 0.7rem;
   font-size: 0.75rem;
-  background: var(--surface-3);
-  border: 1px solid var(--hairline);
+  /* See-through, so the chart under it stays readable while hovering. Plain transparency,
+     no backdrop blur: a panel that blurs what is under itself is the glassmorphism the visual
+     language rules out. No drop shadow either: it would muddy exactly what should show through. */
+  background: color-mix(in srgb, var(--surface-3) 72%, transparent);
+  border: 1px solid var(--hairline-strong);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-overlay);
   pointer-events: none;
 }
 .trend-tooltip .tt-date { margin-bottom: 0.3rem; font-size: 0.7rem; color: var(--text-muted); }
