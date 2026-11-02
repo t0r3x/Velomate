@@ -47,10 +47,16 @@
     <Teleport to="body">
       <div v-if="tip" class="trend-tooltip ride-tooltip ah-tooltip" :style="{ left: `${tipPos.left}px`, top: `${tipPos.top}px` }">
         <div class="tt-date">{{ tip.title }}</div>
-        <div v-for="(line, i) in tip.lines" :key="i" class="tt-row" :class="{ 'is-warn-row': line.warn }">
-          <i class="fa-solid tt-icon" :class="line.warn ? 'fa-triangle-exclamation ah-tt-warn' : 'fa-circle-info ah-tt-info'"></i>
-          <span>{{ line.text }}</span>
-        </div>
+        <template v-for="(line, i) in tip.lines" :key="i">
+          <div class="tt-row" :class="{ 'is-warn-row': line.warn }">
+            <i class="fa-solid tt-icon" :class="line.warn ? 'fa-triangle-exclamation ah-tt-warn' : 'fa-circle-info ah-tt-info'"></i>
+            <span>{{ line.text }}</span>
+          </div>
+          <!-- The rides behind a warning, so the athlete can find them in the list. -->
+          <ul v-if="line.rides?.length" class="ah-tt-rides">
+            <li v-for="r in line.rides" :key="r">{{ r }}</li>
+          </ul>
+        </template>
         <div class="tt-foot">{{ tip.hint }}</div>
       </div>
     </Teleport>
@@ -69,6 +75,8 @@ import { useFreeTrainingStore }   from '@/stores/freeTraining.store'
 import { useTimeAgo }             from '@/composables/useTimeAgo'
 import StatusDot   from '@/components/ui/StatusDot.vue'
 import { isElectron } from '@/utils/electron'
+import type { Activity } from '@/types'
+import { HR_PEAK_MARGIN, averagedAboveLthr, peakAboveMax, recentRides, rideSummary } from '@/utils/hrCalibration'
 import veloIcon from '@/assets/velomate_icon.png'
 
 // The dialogs these open live in DashboardView, which keeps at most one open at a time.
@@ -106,9 +114,6 @@ const { timeAgo }   = useTimeAgo()
 
 /** Garmin data older than this reads as stale: the plan is then built on rides that may be missing. */
 const STALE_SYNC_HOURS = 48
-/** Same thresholds as buildHrCalibrationLines() in the backend, so header and coach agree. */
-const HR_PEAK_MARGIN = 2
-const HR_LTHR_MIN_RIDE_MIN = 60
 
 const MODEL_LABELS: Record<string, string> = {
   'gemini-3.8-flash': 'Accurate',
@@ -139,22 +144,35 @@ watch(aiBusy, (busy, was) => { if (was && !busy) settingsStore.reload() })
 const paused = computed(() => activeStore.value.state === 'paused')
 
 // ── Heart rate profile ───────────────────────────────────────────────────────
-const hrWarnings = computed(() => {
+/** How many rides a warning names before it says "and N more". */
+const HR_RIDES_LISTED = 3
+const listRides = (rides: Activity[], hr: 'avg' | 'max') => [
+  ...rides.slice(0, HR_RIDES_LISTED).map(a => rideSummary(a, hr)),
+  ...(rides.length > HR_RIDES_LISTED ? [`and ${rides.length - HR_RIDES_LISTED} more`] : []),
+]
+
+interface TipLine { text: string; warn: boolean; rides?: string[] }
+
+const hrWarnings = computed<TipLine[]>(() => {
   const p = profileStore.profile
-  const out: string[] = []
+  const out: TipLine[] = []
   if (!p?.maxHr || !p?.lthr) return out
+  const rides = recentRides(activities.activities)
   const peak = activities.analysis?.maxRecordedHr ?? 0
   if (peak > p.maxHr + HR_PEAK_MARGIN) {
-    out.push(`Your peak recorded heart rate (${peak} bpm) is above your Max HR (${p.maxHr} bpm). Unless that was a sensor spike, your zones sit too low.`)
+    out.push({
+      text: `Your peak recorded heart rate (${peak} bpm) is above your Max HR (${p.maxHr} bpm). Unless that was a sensor spike, your zones sit too low.`,
+      warn: true,
+      rides: listRides(rides.filter(a => peakAboveMax(a, p.maxHr)), 'max'),
+    })
   }
-  const cutoff = Date.now() - 90 * 86_400_000
-  const above = activities.activities.filter(a =>
-    new Date(a.startTime).getTime() >= cutoff &&
-    (a.durationMinutes ?? 0) >= HR_LTHR_MIN_RIDE_MIN &&
-    (a.averageHr ?? 0) > p.lthr
-  )
+  const above = rides.filter(a => averagedAboveLthr(a, p.lthr))
   if (above.length > 0) {
-    out.push(`${above.length} ride${above.length === 1 ? '' : 's'} of an hour or more averaged above your LTHR (${p.lthr} bpm). LTHR is about the highest heart rate you can hold for an hour, so it is probably set too low.`)
+    out.push({
+      text: `${above.length} ride${above.length === 1 ? '' : 's'} of an hour or more averaged above your LTHR (${p.lthr} bpm). LTHR is about the highest heart rate you can hold for an hour, so it is probably set too low.`,
+      warn: true,
+      rides: listRides(above, 'avg'),
+    })
   }
   return out
 })
@@ -241,7 +259,7 @@ const tip = computed(() => {
         title: 'Heart rate profile',
         lines: [
           { text: p ? `Max HR ${p.maxHr} bpm · LTHR ${p.lthr} bpm. Your zones are set from these.` : 'Not set yet.', warn: false },
-          ...hrWarnings.value.map(text => ({ text, warn: true })),
+          ...hrWarnings.value,
         ],
         hint: 'Click to review your training profile.',
       }
@@ -281,8 +299,9 @@ const tip = computed(() => {
 }
 
 /* Status items read like the Trend card's header stats: eyebrow label over a value. */
-.ah-status { display: flex; align-items: stretch; flex: 1; min-width: 0; gap: 0.25rem; flex-wrap: wrap; }
+.ah-status { display: flex; align-items: stretch; flex: 1; min-width: 0; gap: 0.6rem; flex-wrap: wrap; }
 .ah-item {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -295,7 +314,18 @@ const tip = computed(() => {
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
-.ah-item + .ah-item { box-shadow: inset 1px 0 0 var(--hairline); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+/* The divider sits in the gap, not on the item's edge: every item then gets the same fully
+   rounded hover, with air between it and the line (an edge divider squared off one side). */
+.ah-item + .ah-item::before {
+  content: '';
+  position: absolute;
+  left: calc(-0.3rem - 0.5px);
+  top: 22%;
+  bottom: 22%;
+  width: 1px;
+  background: var(--hairline);
+  pointer-events: none;
+}
 .ah-item:hover { background: var(--raise); }
 .ah-item:focus-visible { outline: none; }
 .kbd-nav .ah-item:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
@@ -376,4 +406,14 @@ const tip = computed(() => {
 .ah-tooltip .tt-row span:last-child { line-height: 1.45; padding: 0.1rem 0; }
 .ah-tooltip .ah-tt-warn { color: #f59e0b; }
 .ah-tooltip .ah-tt-info { color: var(--text-muted); }
+/* Indented under the warning text, past its icon. */
+.ah-tooltip .ah-tt-rides {
+  margin: 0.1rem 0 0.3rem;
+  padding-left: calc(10px + 0.45rem);
+  list-style: none;
+  font-size: 0.72rem;
+  line-height: 1.6;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
 </style>

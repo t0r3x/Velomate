@@ -16,7 +16,7 @@
       <div
         v-if="hasFeedback || editing"
         class="act-feedback"
-        @mouseenter="showTip"
+        @mouseenter="showTip($event, 'rating')"
         @mouseleave="hideTip"
       >
         <span v-if="rpe !== null" class="act-rpe-badge" :class="rpeClass">RPE {{ rpe }}</span>
@@ -42,7 +42,9 @@
 
     </div>
 
-    <div class="activity-stats-summary">
+    <!-- Hovering the numbers shows the ride's details: speed, max HR, time per zone, and whether
+         it is one of the rides the header's heart rate warning is about. -->
+    <div class="activity-stats-summary" @mouseenter="showTip($event, 'stats')" @mouseleave="hideTip">
       <div class="act-stat act-stat--dist">
         <span class="act-stat-val">{{ activity.distanceKm }} km</span>
         <span class="act-stat-label">Dist</span>
@@ -52,7 +54,10 @@
         <span class="act-stat-label">Time</span>
       </div>
       <div v-if="activity.averageHr > 0" class="act-stat act-stat--hr">
-        <span class="act-stat-val">{{ activity.averageHr }} bpm</span>
+        <span class="act-stat-val">
+          {{ activity.averageHr }} bpm
+          <i v-if="hrFlags.length" class="fa-solid fa-triangle-exclamation act-stat-flag" aria-label="Heart rate above your profile"></i>
+        </span>
         <span class="act-stat-label">Avg HR</span>
       </div>
     </div>
@@ -112,6 +117,50 @@
     <Teleport to="body">
       <div v-if="tip && !editing" ref="tipEl" class="trend-tooltip ride-tooltip" :style="{ left: `${tip.left}px`, top: `${tip.top}px` }">
         <div class="tt-date">{{ tipDate }}</div>
+        <template v-if="tip.kind === 'stats'">
+          <div class="tt-row">
+            <i class="fa-solid fa-route tt-icon tt-icon--muted"></i>
+            <strong>{{ activity.distanceKm }} km</strong>
+            <span>{{ speed ? `${speed} km/h average` : 'Distance' }}</span>
+          </div>
+          <div class="tt-row">
+            <i class="fa-regular fa-clock tt-icon tt-icon--muted"></i>
+            <strong>{{ duration }}</strong>
+            <span>Load {{ load }}</span>
+          </div>
+          <div v-if="activity.averageHr > 0" class="tt-row">
+            <i class="fa-solid fa-heart-pulse tt-icon tt-icon--hr"></i>
+            <strong>{{ activity.averageHr }} bpm</strong>
+            <span>average{{ activity.maxHr > 0 ? ` · max ${activity.maxHr}` : '' }}{{ avgZone ? ` · Z${avgZone}` : '' }}</span>
+          </div>
+          <div v-if="activity.averagePower > 0" class="tt-row">
+            <i class="fa-solid fa-bolt tt-icon tt-icon--muted"></i>
+            <strong>{{ activity.averagePower }} W</strong>
+            <span>average{{ activity.maxPower > 0 ? ` · max ${activity.maxPower}` : '' }}</span>
+          </div>
+
+          <template v-if="zoneMins.some(m => m > 0)">
+            <div class="tt-date tt-section">Time in zone</div>
+            <div class="tt-zones">
+              <template v-for="(m, z) in zoneMins" :key="'z' + z">
+                <span v-if="m > 0" class="tt-zone">
+                  <span class="tt-key" :style="{ background: `var(--z${z + 1}-color)` }"></span>Z{{ z + 1 }}
+                  <strong>{{ m }}m</strong>
+                </span>
+              </template>
+            </div>
+          </template>
+
+          <template v-if="hrFlags.length">
+            <div class="tt-date tt-section">Heart rate profile</div>
+            <div v-for="f in hrFlags" :key="f" class="tt-row tt-row--warn">
+              <i class="fa-solid fa-triangle-exclamation tt-icon tt-icon--warn"></i>
+              <span>{{ f }}</span>
+            </div>
+          </template>
+        </template>
+
+        <template v-else>
         <div class="tt-foot tt-foot--lead">Load {{ load }} · {{ activity.durationMinutes }} min</div>
 
         <template v-if="rpe !== null || feeling !== null">
@@ -138,6 +187,7 @@
           </div>
           <div v-if="planEntry.executionNote" class="tt-note">{{ planEntry.executionNote }}</div>
         </template>
+        </template>
       </div>
     </Teleport>
   </li>
@@ -147,7 +197,8 @@
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import type { Activity, PlanEntry } from '@/types'
 import { toRpe, toFeeling, ACTIVITY_TYPE_LABELS, workoutTypeLabel, workoutTypeIcon } from '@/utils'
-import { rideLoad } from '@/utils/trainingLoad'
+import { rideLoad, zoneMinutes } from '@/utils/trainingLoad'
+import { averagedAboveLthr, peakAboveMax } from '@/utils/hrCalibration'
 import { useActivitiesStore } from '@/stores/activities.store'
 import { useProfileStore }    from '@/stores/profile.store'
 import { useToast } from '@/composables/useToast'
@@ -232,12 +283,13 @@ const hasFeedback = computed(() =>
 // coach's note in full (the old native title was hard to read and cut off). Fixed position
 // and teleported, because the rides list scrolls and would clip anything absolute.
 
-const tip   = ref<{ left: number; top: number } | null>(null)
+type TipKind = 'rating' | 'stats'
+const tip   = ref<{ left: number; top: number; kind: TipKind } | null>(null)
 const tipEl = ref<HTMLElement | null>(null)
 
-function showTip(e: MouseEvent) {
+function showTip(e: MouseEvent, kind: TipKind) {
   const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  tip.value = { left: r.left, top: r.bottom + 8 }
+  tip.value = { left: r.left, top: r.bottom + 8, kind }
   document.addEventListener('scroll', hideTip, true)
   // Measure once rendered: flip above the row when there is no room below, keep it on screen.
   nextTick(() => {
@@ -246,7 +298,7 @@ function showTip(e: MouseEvent) {
     const h = el.offsetHeight, w = el.offsetWidth
     const top  = r.bottom + 8 + h > window.innerHeight - 8 ? Math.max(8, r.top - 8 - h) : r.bottom + 8
     const left = Math.min(r.left, window.innerWidth - 8 - w)
-    tip.value = { left, top }
+    tip.value = { left, top, kind }
   })
 }
 function hideTip() {
@@ -258,9 +310,41 @@ onBeforeUnmount(hideTip)
 const tipDate = computed(() =>
   new Date(props.activity.startTime).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
 )
+const loadMaxHr = computed(() =>
+  Math.max(profileStore.profile?.maxHr ?? 0, activitiesStore.analysis?.maxRecordedHr ?? 0) || 190)
 /** Same load as the Trend chart (zone TRIMP), so the two never disagree. */
-const load = computed(() => Math.round(rideLoad(props.activity,
-  Math.max(profileStore.profile?.maxHr ?? 0, activitiesStore.analysis?.maxRecordedHr ?? 0) || 190)))
+const load = computed(() => Math.round(rideLoad(props.activity, loadMaxHr.value)))
+/** Minutes per zone: Garmin's own split, as in the Trend chart. */
+const zoneMins = computed(() => zoneMinutes(props.activity, loadMaxHr.value).map(m => Math.round(m)))
+
+const speed = computed(() => {
+  const { distanceKm, durationMinutes } = props.activity
+  return distanceKm > 0 && durationMinutes > 0 ? (distanceKm / (durationMinutes / 60)).toFixed(1) : null
+})
+const duration = computed(() => {
+  const m = props.activity.durationMinutes ?? 0
+  return m >= 60 ? `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}` : `${m} min`
+})
+/** The zone the average HR falls in, by the athlete's own profile (not Garmin's split). */
+const avgZone = computed(() => {
+  const z = profileStore.profile?.zones
+  const hr = props.activity.averageHr
+  if (!z || !hr) return null
+  return ([z.z1, z.z2, z.z3, z.z4, z.z5].findIndex(b => hr <= b.max) + 1) || 5
+})
+/** This ride's share of the header's heart rate warning, by the same rules (utils/hrCalibration). */
+const hrFlags = computed(() => {
+  const p = profileStore.profile
+  if (!p?.maxHr || !p?.lthr) return []
+  const out: string[] = []
+  if (averagedAboveLthr(props.activity, p.lthr)) {
+    out.push(`Averaged ${props.activity.averageHr} bpm for over an hour, above your LTHR (${p.lthr} bpm). LTHR is about the highest heart rate you can hold for an hour, so it is probably set too low.`)
+  }
+  if (peakAboveMax(props.activity, p.maxHr)) {
+    out.push(`Peaked at ${props.activity.maxHr} bpm, above your Max HR (${p.maxHr} bpm). Unless that was a sensor spike, your zones sit too low.`)
+  }
+  return out
+})
 
 // ── Rating editor ────────────────────────────────────────────────────────────
 

@@ -566,7 +566,10 @@ same width, with the cards' 1.75rem content inset so the wordmark lines up with 
     model (`gemini_last_model` ≠ `gemini_model`). The settings are re-read when a generation finishes.
   - **Heart rate**: "158 / 180", with a warning when the zones look set too low, by the **same two rules as
     `buildHrCalibrationLines()`** in the backend (peak recorded HR > Max HR + 2; a 60+ min ride in the last 90
-    days averaging above LTHR), so the header and the coach never disagree. Clicking opens the training profile.
+    days averaging above LTHR), so the header and the coach never disagree. The tooltip **names the rides** behind each
+    warning (date, minutes, avg or max HR; three, then "and N more"), and those rides carry an amber triangle beside
+    their Avg HR in the list. The rules live once, in `utils/hrCalibration.ts`, used by the header and `ActivityItem.vue`.
+    Clicking opens the training profile.
   - **Training · Paused** appears only while training is paused.
 - **Actions** on the right use the same glyphs as the dialogs they open: `fa-user-gear` (Training Profile) and
   `fa-wrench` (Preferences). A `fa-sliders` button looked unrelated to the dialog and was replaced.
@@ -642,6 +645,9 @@ depend on what a model decided to say.
   variant (`.ride-tooltip`) is teleported to `body`, `position: fixed` and flipped above the row when there
   is no room below, because the rides list scrolls and clips anything absolute; it is opaque with the
   overlay shadow, since ride text read through even at 94%.
+  Hovering a ride's **numbers** (distance, time, avg HR) shows a second variant: speed, duration and load, avg/max HR
+  and the profile zone it averaged in, power when the ride has it, Garmin's minutes per zone, and the ride's own share
+  of the heart rate warning.
 - **Preferences uses the big dialog** (`tp-*`, the same as Training Profile and Connections): it was a
   360px confirm-style box that looked like a different app next to Training Profile. Sections: Appearance,
   AI coach, Updates (packaged only), About; settings still save on change, the footer only has Done.
