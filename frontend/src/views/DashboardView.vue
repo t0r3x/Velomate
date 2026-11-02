@@ -3,6 +3,7 @@
     <MenuBar @open-settings="panelOpen = true" @open-profile="profileModalOpen = true" />
 
     <div class="app-container dashboard-layout">
+      <TrendCard />
       <main class="dashboard-grid">
         <div class="col-assessment">
           <ActivitiesCard />
@@ -41,6 +42,7 @@ import { useAuthStore }          from '@/stores/auth.store'
 import MenuBar        from '@/components/layout/MenuBar.vue'
 import SettingsPanel  from '@/components/layout/SettingsPanel.vue'
 import ActivitiesCard from '@/components/activities/ActivitiesCard.vue'
+import TrendCard      from '@/components/trend/TrendCard.vue'
 import AiPlanCard     from '@/components/recommendation/AiPlanCard.vue'
 import FreeTrainingCard from '@/components/recommendation/FreeTrainingCard.vue'
 import ProfileSetupView from '@/views/ProfileSetupView.vue'

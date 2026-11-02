@@ -74,6 +74,9 @@ html[data-theme='light'] {
   --z3-color: #0e7490; /* Cyan/Tempo */
   --z4-color: #b45309; /* Orange/Threshold */
   --z5-color: #c62828; /* Red/Anaerobic */
+  /* Trend chart lines (validated: dataviz palette slots 7 + 5, light steps). */
+  --series-fitness: #6250d6;
+  --series-fatigue: #e87ba4;
 
   --shadow-overlay: 0 16px 40px rgba(0, 0, 0, 0.18);
 }
@@ -85,6 +88,9 @@ html[data-theme='midnight'] {
   --z3-color: #06b6d4; /* Cyan/Tempo */
   --z4-color: #f59e0b; /* Orange/Threshold */
   --z5-color: #ef4444; /* Red/Anaerobic */
+  /* Trend chart lines (validated: dataviz palette slots 7 + 5, dark steps). */
+  --series-fitness: #9085e9;
+  --series-fatigue: #d55181;
   --raise-subtle: rgba(255, 255, 255, 0.04);
   --raise: rgba(255, 255, 255, 0.08);
   --raise-strong: rgba(255, 255, 255, 0.15);
@@ -152,6 +158,9 @@ html[data-theme='mintberry'] {
   --z3-color: #0e7490; /* Cyan/Tempo */
   --z4-color: #b45309; /* Orange/Threshold */
   --z5-color: #c62828; /* Red/Anaerobic */
+  /* Trend chart lines (validated: dataviz palette slots 7 + 5, light steps). */
+  --series-fitness: #6250d6;
+  --series-fatigue: #e87ba4;
 
   --shadow-overlay: 0 16px 40px rgba(173, 20, 87, 0.20);
 }
@@ -165,6 +174,9 @@ html[data-theme='slate'] {
   --z3-color: #06b6d4; /* Cyan/Tempo */
   --z4-color: #f59e0b; /* Orange/Threshold */
   --z5-color: #ef4444; /* Red/Anaerobic */
+  /* Trend chart lines (validated: dataviz palette slots 7 + 5, dark steps). */
+  --series-fitness: #9085e9;
+  --series-fatigue: #d55181;
   --raise-subtle: rgba(255, 255, 255, 0.04);
   --raise: rgba(255, 255, 255, 0.08);
   --raise-strong: rgba(255, 255, 255, 0.15);

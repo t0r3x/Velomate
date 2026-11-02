@@ -60,7 +60,8 @@ velomate/
     │   ├── router/                    ← 3 routes + beforeEach auth/setup guard (replaces old setView())
     │   ├── stores/                    ← Pinia: auth, settings, profile, activities, recommendation
     │   ├── views/                     ← SetupView, ProfileSetupView, DashboardView
-    │   ├── components/                ← layout/, activities/, profile/, recommendation/, ui/
+    │   ├── components/                ← layout/, activities/, profile/, recommendation/, trend/, ui/
+    │   ├── utils/trainingLoad.ts      ← ride load (zone TRIMP), fitness/fatigue/form, weekly zone minutes
     │   ├── composables/                ← useTimeAgo, useUpdater, useToast, useConfirm, useZones, dialogs
     │   └── utils/electron.ts          ← isElectron(), electronAPI() wrapper
     └── dist/                          ← vite build output, served by Express in prod/packaged builds
@@ -296,6 +297,7 @@ mirrors the same two functions purely to give an actionable message before the r
 | `setup_complete` | `'1'` when user confirmed HR profile |
 | `instant_score_on_new_activity` | `'0'` disables instant regen-on-newly-completed-ride (default on, i.e. unset or `'1'`). Governs the **automatic** paths only — `/api/activities/refresh` and the auto-checks. Never gate explicit athlete input on it; see `triggerAdaptiveRegen()` |
 | `free_training_mode` | `'1'` replaces the 14-day plan with a single dateless suggestion (see "Free training mode") |
+| `trend_collapsed` | `'1'` folds the dashboard's Trend card to its header row (see "Trend card") |
 
 ---
 
@@ -337,6 +339,7 @@ POST   /api/settings/gemini-key             ← { apiKey } → forces regen on n
 DELETE /api/settings/gemini-key             ← removes the API key
 POST   /api/settings/gemini-model           ← { model } → normalized + format-validated, 400 on a bad ID
 POST   /api/settings/gemini-model-fallback  ← { enabled: boolean } → automatic model fallback (opt-out)
+POST   /api/settings/trend-collapsed        ← { collapsed: boolean } → Trend card folded or open
 POST   /api/settings/preferred-long-ride-days  ← { days: string[] }
 POST   /api/settings/inactivity-pause-days  ← { days: number } (1-365)
 POST   /api/settings/instant-score-on-new-activity  ← { enabled: boolean }
@@ -377,8 +380,9 @@ GET    *                                    ← SPA catch-all → serves Vue ind
 
 Tokens are split in two. **Global** tokens never vary by theme: the radius scale, `--shadow-overlay`,
 the font and the transitions. **Themeable** tokens are the surface ladder, `--surface-inset`, hairlines,
-the `--raise-*` overlays, text, secondary surfaces, the accent, the zone ramp and `--shadow-overlay` —
-25 in all, and each theme defines *exactly that set*.
+the `--raise-*` overlays, text, secondary surfaces, the accent, the zone ramp, the two trend-chart
+lines (`--series-fitness`, `--series-fatigue`) and `--shadow-overlay` — 27 in all, and each theme
+defines *exactly that set*.
 
 - A theme is a `html[data-theme='name']` block. `slate` is bound to `:root` as well, so it is both the
   default and what renders before the stored preference has loaded. Shipping: `slate` (default),
@@ -530,6 +534,44 @@ controls, no all-caps titles, no serif.
   `.dashboard-shell`, which sizes it to its content instead of stretching it. Long content (the first-plan
   intro, a full plan) hid that; while the very first plan generated, the short "Updating…" line shrank the
   whole dashboard to ~1030px and centred it.
+
+## Trend card (`components/trend/`)
+
+A full-width card above Rides and Training: the athlete's **own** view of their trend, so they can judge
+what they can handle without the coach telling them. It is plain arithmetic over the stored rides
+(`utils/trainingLoad.ts`), computed in the frontend, and **never sent to the AI**: what it shows must not
+depend on what a model decided to say.
+
+- **Load per ride = Edwards zone TRIMP**: minutes in zone N count N times. It uses Garmin's own
+  `timeInZones` split (based on Garmin's max HR), so a Velomate HR profile set too low does not inflate it
+  (gotcha 25). A ride without zone data is placed whole in the zone its average HR falls in (50/60/70/80/90 %
+  of the higher of profile max HR and peak recorded HR).
+- **Fitness / Fatigue** are exponentially weighted daily load over 42 / 7 days, from the first stored ride,
+  rest days included (the decay is half the picture). **Form = yesterday's fitness − yesterday's fatigue**:
+  how fresh you start today. Its word (Transition / Fresh / Neutral / Building / Overreaching) uses
+  intervals.icu's bands on form **as a % of fitness**, so it reads the same at any fitness level.
+- Layout: header row with the three numbers (they stay when the card is folded), range presets 3M / 6M /
+  1Y, a table toggle and a fold button (`trend_collapsed`, in the DB, not localStorage). Below: **one**
+  chart (`TrendChart.vue`) with the fitness and fatigue lines over weekly stacked bars by zone. The bars are
+  the week's **average daily load** (zone TRIMP / days elapsed in that week, so the current week is not read
+  as nearly empty on a Monday), not hours: that is the lines' own unit — fitness is the 42-day average of
+  exactly that — so it all shares one y-axis. A first version had a separate hours-per-week chart; the
+  athlete expected the bars inside the line chart, and hours on the same plot would have needed a second
+  y-axis. Hours and minutes per zone are in the tooltip and the table. The axis carries its unit
+  ("load / day") because without it the athlete read the scale as belonging to the lines only; on hover
+  each element also shows its own value beside it (line values next to the crosshair dots, on the side
+  away from the tooltip; "51/day · 2h02" on the cap of the hovered week's bar), in text tokens with a
+  surface halo. That replaces a second axis, which is the usual PMC-chart answer and the one to avoid.
+- **Click-to-hide**: clicking a line, a bar segment or a legend item hides that series (a whole line, or
+  one zone in every week); the legend is the way back and is a keyboard-reachable toggle (`aria-pressed`).
+  The y-axis rescales to what is visible. Only `.hit` (lines) and `.seg` (bars) take pointer events:
+  the crosshair dot lands exactly under the pointer and the fitness area wash covers most of the bars, and
+  each of them swallowed clicks until made `pointer-events: none`.
+- Built by the dataviz method: 2px lines, 10% area wash, bars ≤24px at 55% opacity (they sit behind the
+  lines) with a 4px rounded top and a 2px surface gap between zones, solid hairline grid, end labels never nudged (on collision only Fitness keeps its label),
+  crosshair + one tooltip with every series, a table view with every value. The line colours are palette
+  slots 7 + 5, validated per theme surface; in the light themes Fatigue sits at 2.7:1, which the end labels and
+  the table view are the required relief for. Bars use the zone ramp (`--z1..z5-color`), whose meaning they share.
 
 ## Frontend architecture (Vue 3 + Pinia + Vue Router)
 
@@ -812,3 +854,4 @@ Bump `version` in root `package.json` before every publish — it's both the rel
 25. **`buildHrCalibrationLines()` flags zones that are set too low**, from the numbers: peak HR recorded > configured Max HR + 2, or a ride of 60+ min averaging above LTHR. With zones too low every ride looks like a Z4/Z5 effort, a recovery-minded prompt prescribes Z2 forever, and the athlete — riding by feel at rpe 5-7 — "fails" every Z2 ride and gets a low score that justifies the next Z2 ride. `ACTIVITY_DATA_NOTES` tells the model to trust rpe/feeling over zone minutes in that case and to say the profile needs re-checking; the line is empty when nothing is off.
 26. **Prompt text is in `backend/src/prompts/*.md`, loaded by `prompts/loader.ts`.** `{{NAME}}` is the only syntax; `renderPrompt()` throws on a placeholder without a value *and* on a value without a placeholder, so a rename on one side fails at startup instead of silently dropping data from the prompt (the system instructions render at module load). Substitution is single-pass, so athlete-typed goals can never expand a placeholder. Files are normalised on read (BOM, CRLF → LF, one trailing newline) because Git on Windows checks them out as CRLF and the system instructions must be byte-identical everywhere. **tsc does not copy `.md`**: `npm run build` runs `scripts/copy-prompts.js` into `dist/prompts`, which Docker and the Electron package both ship as part of `dist/`. Dev and the test harness (tsx) read `src/prompts` directly. When the extraction was done, the request bodies for four scenarios (plan/free × full/bare) were compared byte for byte against the inline version and were identical — repeat that check after any change to the loader.
 27. **The model fallback must never go back up the chain.** `getModelChain()` is custom → Accurate → Super fast and stops at Super fast; a Super fast selection has no fallback. The 90s budget (`FALLBACK_AFTER_MS`) applies only to a model that has a successor, so turning the switch off restores the old behaviour exactly (one model, 7-minute timeout, 4 attempts). When the fallback fires it is logged as `… failed (status: reason) — falling back to <model>`; the plan itself does not record which model made it.
+28. **The Trend card is deliberately not the coach.** `utils/trainingLoad.ts` is computed client-side from the rides and never reaches a prompt; do not "reuse" its fitness/form numbers in the AI prompt without deciding that on purpose, because the point is an independent view the athlete can check the coach against. Its load is zone TRIMP from Garmin's zone split, so it is unaffected by the Velomate HR profile; changing that to profile zones would bring gotcha 25's miscalibration straight into the chart.

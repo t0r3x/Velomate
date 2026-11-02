@@ -694,6 +694,7 @@ app.get('/api/settings/gemini-key', (_req: Request, res: Response) => {
     preferredLongRideDays,
     geminiModel,
     geminiModelFallback:  isModelFallbackEnabled(),
+    trendCollapsed:       getSetting('trend_collapsed') === '1',
     inactivityPauseDays,
     instantScoreOnNewActivity,
     uiTheme,
@@ -794,6 +795,18 @@ app.post('/api/settings/gemini-model', (req: Request, res: Response) => {
   setSetting('gemini_model', normalized);
   logger.info(`[Settings] Gemini model set to: ${normalized}`);
   res.json({ saved: true, model: normalized });
+});
+
+// The dashboard's Trend card, folded to its header row. UI state, but stored here rather
+// than in localStorage: the DB is the app's single source of truth (theming is the one
+// documented exception, and only as a paint-time cache).
+app.post('/api/settings/trend-collapsed', (req: Request, res: Response) => {
+  const { collapsed } = req.body;
+  if (typeof collapsed !== 'boolean') {
+    return res.status(400).json({ error: 'collapsed must be a boolean.' });
+  }
+  setSetting('trend_collapsed', collapsed ? '1' : '0');
+  res.json({ saved: true });
 });
 
 // Opt-out: stored as '0' only when switched off, so every existing install starts with it on.

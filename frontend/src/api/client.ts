@@ -150,6 +150,12 @@ export const postGeminiModelFallback = (enabled: boolean) =>
     body: JSON.stringify({ enabled })
   })
 
+export const postTrendCollapsed = (collapsed: boolean) =>
+  request<void>('/api/settings/trend-collapsed', {
+    method: 'POST',
+    body: JSON.stringify({ collapsed })
+  })
+
 export const postPreferredDays = (days: string[]) =>
   request<void>('/api/settings/preferred-long-ride-days', {
     method: 'POST',

@@ -7,6 +7,7 @@ import {
   deleteGeminiKey,
   postGeminiModel,
   postGeminiModelFallback,
+  postTrendCollapsed,
   postPreferredDays,
   postInactivityPauseDays,
   postInstantScoreOnNewActivity,
@@ -50,6 +51,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const preferredLongRideDays = ref<string[]>([])
   const geminiModel         = ref('gemini-3.8-flash')
   const geminiModelFallback = ref(true)
+  const trendCollapsed      = ref(false)
   const inactivityPauseDays = ref(14)
   const instantScoreOnNewActivity = ref(true)
   const freeTrainingMode          = ref(false)
@@ -66,6 +68,7 @@ export const useSettingsStore = defineStore('settings', () => {
       preferredLongRideDays.value = Array.isArray(data.preferredLongRideDays) ? data.preferredLongRideDays : []
       geminiModel.value           = data.geminiModel || 'gemini-3.8-flash'
       geminiModelFallback.value   = data.geminiModelFallback ?? true
+      trendCollapsed.value        = data.trendCollapsed ?? false
       inactivityPauseDays.value   = data.inactivityPauseDays ?? 14
       instantScoreOnNewActivity.value = data.instantScoreOnNewActivity ?? true
       freeTrainingMode.value      = data.freeTrainingMode ?? false
@@ -89,6 +92,7 @@ export const useSettingsStore = defineStore('settings', () => {
       preferredLongRideDays.value = Array.isArray(data.preferredLongRideDays) ? data.preferredLongRideDays : []
       geminiModel.value           = data.geminiModel || 'gemini-3.8-flash'
       geminiModelFallback.value   = data.geminiModelFallback ?? true
+      trendCollapsed.value        = data.trendCollapsed ?? false
       inactivityPauseDays.value   = data.inactivityPauseDays ?? 14
       instantScoreOnNewActivity.value = data.instantScoreOnNewActivity ?? true
       freeTrainingMode.value      = data.freeTrainingMode ?? false
@@ -111,6 +115,20 @@ export const useSettingsStore = defineStore('settings', () => {
       return true
     } catch (err) {
       console.error('[Settings] saveAll failed:', err)
+      return false
+    }
+  }
+
+  /** Applied immediately; reverted if the write fails. */
+  async function saveTrendCollapsed(next: boolean): Promise<boolean> {
+    const previous = trendCollapsed.value
+    trendCollapsed.value = next
+    try {
+      await postTrendCollapsed(next)
+      return true
+    } catch (err) {
+      console.error('[Settings] saveTrendCollapsed failed:', err)
+      trendCollapsed.value = previous
       return false
     }
   }
@@ -209,6 +227,7 @@ export const useSettingsStore = defineStore('settings', () => {
     preferredLongRideDays,
     geminiModel,
     geminiModelFallback,
+    trendCollapsed,
     inactivityPauseDays,
     instantScoreOnNewActivity,
     freeTrainingMode,
@@ -221,6 +240,7 @@ export const useSettingsStore = defineStore('settings', () => {
     savePreferredDays,
     saveInactivityPauseDays,
     saveInstantScoreOnNewActivity,
+    saveTrendCollapsed,
     saveFreeTrainingMode,
     saveTheme,
     markSetupComplete
