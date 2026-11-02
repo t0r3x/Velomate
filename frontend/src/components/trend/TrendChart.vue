@@ -33,9 +33,7 @@
           role="button"
           :aria-label="`Hide ${ZONE_LABELS[seg.zone]}`"
           @click.stop="emit('toggleZone', seg.zone)"
-        >
-          <title>Click to hide {{ ZONE_LABELS[seg.zone] }}</title>
-        </path>
+        />
       </g>
 
       <!-- Lines: wash, line, and a wide transparent stroke on top that takes the click. -->
@@ -48,9 +46,7 @@
           role="button"
           :aria-label="`Hide ${s.label}`"
           @click.stop="emit('toggleLine', s.key)"
-        >
-          <title>Click to hide {{ s.label }}</title>
-        </path>
+        />
       </g>
 
       <!-- End markers + labels, never nudged: on collision only Fitness keeps its label. -->
