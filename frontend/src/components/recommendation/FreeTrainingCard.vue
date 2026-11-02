@@ -3,6 +3,51 @@
     <div class="card-header">
       <i class="fa-solid fa-brain header-icon"></i>
       <h2>Free Training</h2>
+      <HelpPopover title="How free training works">
+        <dl class="help-list">
+          <dt><i class="fa-solid fa-calendar-xmark"></i>One workout, no date</dt>
+          <dd>
+            The coach picks the single best next session. You decide when to ride it; the note on the
+            suggestion says when it makes sense. A <strong>low</strong> priority means: recover first, this is
+            the session to come back to.
+          </dd>
+          <dt><i class="fa-regular fa-face-smile"></i>How it reads you</dt>
+          <dd>
+            Your check-ins, ride ratings and heart rate zones decide how hard it goes. A check-in of 1 or 2,
+            or a ride that felt very hard (RPE 8 or more, feeling 2 or less), makes it hold back for a few
+            days. Otherwise you get a real training stimulus, and it takes one small step forward when the
+            last comparable session went well. What you tell it outranks anything it infers from heart rate.
+          </dd>
+          <dt><i class="fa-solid fa-cloud-arrow-up"></i>Syncing and matching</dt>
+          <dd>
+            Sync puts it on your Garmin calendar for the day you press the button. The first ride on or after
+            that day is matched to it and scored.
+          </dd>
+
+          <dt><i class="fa-solid fa-arrows-rotate"></i>When it changes</dt>
+          <dd>
+            After a new ride, a check-in or a ride rating, and once a day otherwise. A suggestion you synced but
+            have not ridden yet is never swapped out on its own. Ask for a different one with
+            <i class="fa-solid fa-arrows-rotate"></i>: the coach remembers what you turn down.
+          </dd>
+          <dt><i class="fa-solid fa-brain"></i>Scores</dt>
+          <dd>
+            After you ride a session the coach scores how well it matched, from 0 to 100:
+            <table class="help-bands">
+              <tbody>
+                <tr><th scope="row">90-100</th><td>Textbook: the planned zones and duration.</td></tr>
+                <tr><th scope="row">75-89</th><td>Good, with small deviations.</td></tr>
+                <tr><th scope="row">60-74</th><td>Partial: a clearly shorter or lighter version.</td></tr>
+                <tr><th scope="row">40-59</th><td>Poor: wrong intensity or a big shortfall.</td></tr>
+                <tr><th scope="row">0-39</th><td>A different ride than the one planned.</td></tr>
+              </tbody>
+            </table>
+            Riding <strong>less</strong> than planned makes the coach ease off; riding <strong>harder</strong> at a
+            comfortable RPE tells it the session was too easy. Short sprints are never marked down because
+            your heart rate could not catch up in 30 seconds.
+          </dd>
+        </dl>
+      </HelpPopover>
       <div v-if="freeStore.state === 'loaded'" class="card-header-actions">
         <button class="btn-icon-sm btn-icon-pause" title="Pause training (injury, illness or travel)" :disabled="pausing" @click="handlePause">
           <i class="fa-solid" :class="pausing ? 'fa-spinner fa-spin' : 'fa-circle-pause'"></i>
@@ -151,6 +196,7 @@
 </template>
 
 <script setup lang="ts">
+import HelpPopover from '@/components/ui/HelpPopover.vue'
 import { computed, ref } from 'vue'
 import { useFreeTrainingStore } from '@/stores/freeTraining.store'
 import { useToast }             from '@/composables/useToast'

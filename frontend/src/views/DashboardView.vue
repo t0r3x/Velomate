@@ -1,6 +1,10 @@
 <template>
   <div class="dashboard-shell">
-    <MenuBar @open-settings="panelOpen = true" @open-profile="profileModalOpen = true" />
+    <AppHeader
+      @open-settings="dialog = 'settings'"
+      @open-profile="dialog = 'profile'"
+      @open-preferences="dialog = 'preferences'"
+    />
 
     <div class="app-container dashboard-layout">
       <TrendCard />
@@ -9,38 +13,40 @@
           <ActivitiesCard />
         </div>
         <div class="col-schedule">
-          <FreeTrainingCard v-if="settingsStore.freeTrainingMode" @open-settings="panelOpen = true" />
-          <AiPlanCard v-else @open-settings="panelOpen = true" />
+          <FreeTrainingCard v-if="settingsStore.freeTrainingMode" @open-settings="dialog = 'settings'" />
+          <AiPlanCard v-else @open-settings="dialog = 'settings'" />
         </div>
       </main>
     </div>
   </div>
 
   <SettingsPanel v-model:open="panelOpen" />
+  <AboutDialog :open="dialog === 'preferences'" @close="dialog = null" />
 
   <!-- HR profile modal overlay -->
   <Teleport to="body">
     <Transition name="confirm-fade">
       <ProfileSetupView
-        v-if="profileModalOpen"
+        v-if="dialog === 'profile'"
         :modalMode="true"
-        @confirmed="profileModalOpen = false"
-        @cancelled="profileModalOpen = false"
+        @confirmed="dialog = null"
+        @cancelled="dialog = null"
       />
     </Transition>
   </Teleport>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useActivitiesStore }    from '@/stores/activities.store'
 import { useRecommendationStore } from '@/stores/recommendation.store'
 import { useFreeTrainingStore }   from '@/stores/freeTraining.store'
 import { useSettingsStore }      from '@/stores/settings.store'
 import { useAuthStore }          from '@/stores/auth.store'
 
-import MenuBar        from '@/components/layout/MenuBar.vue'
+import AppHeader      from '@/components/layout/AppHeader.vue'
 import SettingsPanel  from '@/components/layout/SettingsPanel.vue'
+import AboutDialog    from '@/components/layout/AboutDialog.vue'
 import ActivitiesCard from '@/components/activities/ActivitiesCard.vue'
 import TrendCard      from '@/components/trend/TrendCard.vue'
 import AiPlanCard     from '@/components/recommendation/AiPlanCard.vue'
@@ -48,8 +54,13 @@ import FreeTrainingCard from '@/components/recommendation/FreeTrainingCard.vue'
 import ProfileSetupView from '@/views/ProfileSetupView.vue'
 import { bootStep } from '@/utils/boot'
 
-const panelOpen        = ref(false)
-const profileModalOpen = ref(false)
+// One dialog at a time. In Electron the header sits in the title bar, above every backdrop, so
+// its items stay clickable while a dialog is open; opening another must replace it, not stack.
+const dialog = ref<'settings' | 'profile' | 'preferences' | null>(null)
+const panelOpen = computed({
+  get: () => dialog.value === 'settings',
+  set: (open: boolean) => { dialog.value = open ? 'settings' : dialog.value === 'settings' ? null : dialog.value },
+})
 const activitiesStore    = useActivitiesStore()
 const recommendationStore = useRecommendationStore()
 const freeTrainingStore  = useFreeTrainingStore()

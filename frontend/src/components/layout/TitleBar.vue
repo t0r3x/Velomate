@@ -5,9 +5,10 @@
       <span class="titlebar-title">Velomate</span>
     </div>
 
+    <!-- The app header (AppHeader.vue) teleports in here in Electron: status items and the two
+         settings buttons, in the title bar itself rather than as a second bar under it. It fills
+         the rest of the row; its empty space stays draggable, its buttons do not. -->
     <div id="titlebar-menu-slot" class="titlebar-menu-slot"></div>
-
-    <div class="titlebar-spacer"></div>
 
     <div v-if="!isMac" class="titlebar-controls">
       <button class="tb-btn" @click="api?.minimize()" aria-label="Minimize">
@@ -44,7 +45,7 @@ onMounted(() => {
   top: 0;
   left: 0;
   right: 0;
-  height: 38px;
+  height: var(--titlebar-h, 56px);
   display: flex;
   align-items: stretch;
   background: var(--surface-0);
@@ -57,9 +58,11 @@ onMounted(() => {
 .titlebar-drag {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-left: 14px;
-  padding-right: 10px;
+  gap: 10px;
+  padding-left: 18px;
+  padding-right: 18px;
+  margin: 12px 0;
+  border-right: 1px solid var(--hairline);
   flex-shrink: 0;
 }
 
@@ -68,32 +71,26 @@ onMounted(() => {
 }
 
 .titlebar-icon {
-  height: 15px;
-  width: 15px;
+  height: 22px;
+  width: 22px;
   object-fit: contain;
   flex-shrink: 0;
 }
 
 .titlebar-title {
   font-family: var(--font-numeric);
-  font-size: 0.85rem;
+  font-size: 1.05rem;
   font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--text-secondary);
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
   white-space: nowrap;
 }
 
-/* Real content (MenuBar, teleported here in Electron) renders inline in the
-   same row as the title — this is the non-draggable pocket it lands in. */
+/* Everything between the header's items and the window controls stays draggable. */
 .titlebar-menu-slot {
-  display: flex;
-  -webkit-app-region: no-drag;
-}
-
-/* Everything between the menu items and the window controls stays draggable. */
-.titlebar-spacer {
   flex: 1;
   min-width: 0;
+  display: flex;
   -webkit-app-region: drag;
 }
 
@@ -104,7 +101,7 @@ onMounted(() => {
 
 .tb-btn {
   width: 46px;
-  height: 38px;
+  height: var(--titlebar-h, 56px);
   display: flex;
   align-items: center;
   justify-content: center;

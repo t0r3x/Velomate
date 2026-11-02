@@ -30,6 +30,7 @@ export interface DayPoint {
   fatigue: number
   form: number
   ridesPerWeek: number  // trailing 4 weeks (or what history there is), for the low-volume form words
+  historyDays: number   // days since the first stored ride; form means little before FITNESS_DAYS
 }
 
 export interface WeekPoint {
@@ -96,7 +97,8 @@ export function buildDailySeries(activities: Activity[], maxHr: number, today = 
   let fitness = 0
   let fatigue = 0
   const window: number[] = []   // rides per day, last RIDE_RATE_DAYS days
-  for (let d = first; d <= today; d = addDays(d, 1)) {
+  let historyDays = 0
+  for (let d = first; d <= today; d = addDays(d, 1), historyDays++) {
     const day = loadByDate.get(d) ?? { load: 0, rides: 0 }
     const form = fitness - fatigue   // yesterday's values: how fresh you start this day
     fitness += (day.load - fitness) / FITNESS_DAYS
@@ -104,7 +106,7 @@ export function buildDailySeries(activities: Activity[], maxHr: number, today = 
     window.push(day.rides)
     if (window.length > RIDE_RATE_DAYS) window.shift()
     const ridesPerWeek = (window.reduce((a, b) => a + b, 0) / window.length) * 7
-    points.push({ date: d, load: Math.round(day.load), rides: day.rides, fitness, fatigue, form, ridesPerWeek })
+    points.push({ date: d, load: Math.round(day.load), rides: day.rides, fitness, fatigue, form, ridesPerWeek, historyDays })
   }
   return points
 }
@@ -162,7 +164,15 @@ export const LOW_VOLUME_LABELS: Record<string, { label: string; meaning: string 
   },
 }
 
-export function formLabel(form: number, fitness: number, ridesPerWeek = Infinity): string {
+/**
+ * Before about six weeks of history fitness is still climbing from zero (the series starts at
+ * the first stored ride), so form reads deeply negative after every ride. Naming a band then
+ * would be wrong: a new athlete saw "-25 Recovering" after three rides.
+ */
+export const EARLY_DAYS = { label: 'Early days', meaning: 'Fitness needs about six weeks of rides to settle, so form does not mean much yet.' }
+
+export function formLabel(form: number, fitness: number, ridesPerWeek = Infinity, historyDays = Infinity): string {
+  if (historyDays < FITNESS_DAYS) return EARLY_DAYS.label
   if (fitness < 1) return 'No base yet'
   const pct = (form / fitness) * 100
   const band = FORM_BANDS.find(b => pct > b.min)?.label ?? 'Overreaching'
@@ -170,6 +180,7 @@ export function formLabel(form: number, fitness: number, ridesPerWeek = Infinity
 }
 
 export function formExplanation(label: string): string {
+  if (label === EARLY_DAYS.label) return EARLY_DAYS.meaning
   return FORM_BANDS.find(b => b.label === label)?.meaning
     ?? Object.values(LOW_VOLUME_LABELS).find(l => l.label === label)?.meaning
     ?? 'Ride a few weeks to build a baseline.'

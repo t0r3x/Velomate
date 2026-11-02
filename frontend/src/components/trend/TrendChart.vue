@@ -93,9 +93,9 @@
 
     <!-- Rows on the same time axis: how it felt, and what the coach had planned. HTML rather
          than SVG so the faces and workout icons are the same Font Awesome glyphs as elsewhere. -->
-    <div v-if="width > 0 && (feelMarks.length || planMarks.length)" class="trend-rows">
-      <div v-if="feelMarks.length" class="trend-row">
-        <span class="trend-row-label">Feel</span>
+    <div v-if="width > 0 && (showFeelRow || showPlanRow)" class="trend-rows">
+      <div v-if="feelMarks.length && !hiddenRows.includes('feel')" class="trend-row">
+        <button type="button" class="trend-row-label" aria-label="Hide the Feel row" @click.stop="emit('toggleRow', 'feel')">Feel</button>
         <i
           v-for="m in feelMarks" :key="'f' + m.date"
           class="fa-regular trend-mark" :class="[FEEL[m.feeling].icon, `feel-${m.feeling}`]"
@@ -103,8 +103,8 @@
           aria-hidden="true"
         ></i>
       </div>
-      <div v-if="planMarks.length" class="trend-row">
-        <span class="trend-row-label">Plan</span>
+      <div v-if="planMarks.length && !hiddenRows.includes('plan')" class="trend-row">
+        <button type="button" class="trend-row-label" aria-label="Hide the Plan row" @click.stop="emit('toggleRow', 'plan')">Plan</button>
         <i
           v-for="m in planMarks" :key="'p' + m.date"
           class="fa-solid trend-mark" :class="[workoutTypeIcon[m.type] ?? 'fa-circle', `wt-${m.type.toLowerCase()}`, `plan-${m.state}`]"
@@ -121,7 +121,7 @@
       <div class="tt-form">
         <span class="tt-form-label">Form</span>
         <span class="tt-form-value">{{ signed(Math.round(hoverPoint.form)) }}</span>
-        <span class="tt-form-word">{{ formLabel(hoverPoint.form, hoverPoint.fitness, hoverPoint.ridesPerWeek) }}</span>
+        <span class="tt-form-word">{{ formLabel(hoverPoint.form, hoverPoint.fitness, hoverPoint.ridesPerWeek, hoverPoint.historyDays) }}</span>
       </div>
       <div v-for="s in LINES" :key="'tt' + s.key" class="tt-row" :class="{ 'is-hidden': hiddenLines.includes(s.key) }">
         <span class="tt-key" :style="{ background: s.color }"></span>
@@ -211,8 +211,9 @@ const props = defineProps<{
   hiddenZones: number[]
   feelByDate: Record<string, DayFeel>
   planByDate: Record<string, DayPlan>
+  hiddenRows: ('feel' | 'plan')[]
 }>()
-const emit = defineEmits<{ toggleLine: [SeriesKey]; toggleZone: [number] }>()
+const emit = defineEmits<{ toggleLine: [SeriesKey]; toggleZone: [number]; toggleRow: ['feel' | 'plan'] }>()
 
 const LINES: { key: LineKey; label: string; color: string }[] = [
   { key: 'fitness', label: 'Fitness', color: 'var(--series-fitness)' },
@@ -353,10 +354,23 @@ const bars = computed(() => weekLoads.value.map(w => {
 }))
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+/**
+ * Month starts on the axis, or Mondays as "27 Oct" when the range is too short to hold more than
+ * one month boundary (a new athlete's first weeks showed nothing but "Nov").
+ */
+const SHORT_RANGE_DAYS = 60
 const monthTicks = computed(() => {
   const ticks: { date: string; x: number; label: string }[] = []
   let lastX = -Infinity
+  const weekly = props.points.length <= SHORT_RANGE_DAYS
   props.points.forEach((p, i) => {
+    if (weekly) {
+      if (new Date(p.date + 'T12:00:00').getDay() !== 1) return
+      if (x(i) - lastX < 44 || x(i) > PAD_L + plotW.value - 20) return
+      lastX = x(i)
+      ticks.push({ date: p.date, x: x(i), label: `${parseInt(p.date.slice(8, 10), 10)} ${MONTHS[parseInt(p.date.slice(5, 7), 10) - 1]}` })
+      return
+    }
     if (!p.date.endsWith('-01')) return
     if (x(i) - lastX < 34 || x(i) > PAD_L + plotW.value - 20) return
     lastX = x(i)
@@ -405,6 +419,9 @@ const planMarks = computed(() => {
     .sort((a, b) => a.date.localeCompare(b.date))
   return placeMarks(marks, () => false)
 })
+
+const showFeelRow = computed(() => feelMarks.value.length > 0 && !props.hiddenRows.includes('feel'))
+const showPlanRow = computed(() => planMarks.value.length > 0 && !props.hiddenRows.includes('plan'))
 
 // ── Hover ────────────────────────────────────────────────────────────────────
 
@@ -492,12 +509,19 @@ const ariaLabel = computed(() => {
   left: 0;
   top: 50%;
   transform: translateY(-50%);
+  padding: 0;
+  font-family: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
   font-size: 0.58rem;
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
+.trend-row-label:hover { color: var(--text-primary); }
+.trend-row-label:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; border-radius: var(--radius-xs); }
 .trend-mark {
   position: absolute;
   top: 50%;

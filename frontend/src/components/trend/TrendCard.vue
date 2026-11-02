@@ -3,38 +3,8 @@
     <div class="card-header">
       <i class="fa-solid fa-chart-line header-icon"></i>
       <h2>Trend</h2>
-      <button
-        ref="helpButton"
-        type="button"
-        class="trend-help-btn"
-        :aria-expanded="helpOpen"
-        aria-controls="trend-help"
-        title="How these numbers work"
-        aria-label="How these numbers work"
-        @click.stop="helpOpen = !helpOpen"
-      >
-        <i class="fa-regular fa-circle-question"></i>
-      </button>
-
-      <!-- Explanation of every number on the card. Floats over the chart; Escape, the button or a
-           click outside closes it. -->
-      <div
-        v-if="helpOpen"
-        id="trend-help"
-        ref="helpPanel"
-        class="trend-help"
-        role="dialog"
-        aria-label="How these numbers work"
-        @click.stop
-      >
-        <div class="trend-help-head">
-          <span>How these numbers work</span>
-          <button type="button" class="trend-help-close" aria-label="Close" @click="helpOpen = false">
-            <i class="fa-solid fa-xmark"></i>
-          </button>
-        </div>
-
-        <dl class="trend-help-list">
+      <HelpPopover title="How these numbers work">
+        <dl class="help-list">
           <dt>Load</dt>
           <dd>
             Every ride gets a score from your heart rate: each minute in zone 1 counts 1 point, in zone 2
@@ -64,11 +34,11 @@
             <template v-for="(alias, band) in LOW_VOLUME_LABELS" :key="band">
               <strong>{{ band }}</strong> shows as <strong>{{ alias.label }}</strong><template v-if="band === 'Overreaching'"> and </template>
             </template>.
-            <table class="trend-help-bands">
+            <table class="help-bands">
               <tbody>
                 <tr v-for="b in FORM_BANDS" :key="b.label">
                   <th scope="row">{{ b.label }}</th>
-                  <td class="trend-help-range">{{ b.range }}</td>
+                  <td class="help-range">{{ b.range }}</td>
                   <td>{{ b.meaning }}</td>
                 </tr>
               </tbody>
@@ -97,17 +67,16 @@
 
           <dt>Showing and hiding</dt>
           <dd>
-            Click a line, a bar or a legend item to hide it; click the legend item again to bring it
-            back. Hover anywhere on the chart for that day's and that week's exact values.
+            Click a line, a bar, a row label or a legend item to hide it; click the legend item again
+            to bring it back. What you hide is remembered. Hover anywhere on the chart for that day's and that week's exact values.
           </dd>
         </dl>
-
-        <p class="trend-help-foot">
+        <template #foot>
           Fitness needs about six weeks of rides to mean much<template v-if="shortHistory">, and your
           stored history covers only {{ daily.length }} days, so it still reads low</template>. These
           numbers come from your rides only; the AI coach does not set them.
-        </p>
-      </div>
+        </template>
+      </HelpPopover>
 
       <!-- Today's numbers stay visible when the charts are collapsed. -->
       <div v-if="today" class="trend-stats">
@@ -205,13 +174,26 @@
             >
               <span class="trend-swatch" :style="{ background: `var(--z${i + 1}-color)` }"></span>{{ z }}
             </button>
+            <span v-if="rowItems.length" class="trend-legend-sep" aria-hidden="true"></span>
+            <!-- The rows under the chart. Their keys are the glyphs they show: a face, and the
+                 calendar of the AI Training Plan card. -->
+            <button
+              v-for="r in rowItems" :key="r.key"
+              type="button"
+              class="trend-legend-item"
+              :class="{ 'is-off': hiddenRows.includes(r.key) }"
+              :aria-pressed="!hiddenRows.includes(r.key)"
+              @click="toggleRow(r.key)"
+            >
+              <i class="trend-legend-icon" :class="r.icon"></i>{{ r.label }}
+            </button>
           </div>
         </div>
         <TrendChart
           :points="rangePoints" :weeks="rangeWeeks"
           :hidden-lines="hiddenLines" :hidden-zones="hiddenZones"
-          :feel-by-date="feelByDate" :plan-by-date="planByDate"
-          @toggle-line="toggleLine" @toggle-zone="toggleZone"
+          :feel-by-date="feelByDate" :plan-by-date="planByDate" :hidden-rows="hiddenRows"
+          @toggle-line="toggleLine" @toggle-zone="toggleZone" @toggle-row="toggleRow"
         />
 
       </template>
@@ -265,6 +247,7 @@ import { useRecommendationStore } from '@/stores/recommendation.store'
 import { useFreeTrainingStore }   from '@/stores/freeTraining.store'
 import type { DailyCheckin } from '@/types'
 import TrendChart from './TrendChart.vue'
+import HelpPopover from '@/components/ui/HelpPopover.vue'
 
 type LineKey = 'fitness' | 'fatigue' | 'form'
 
@@ -280,51 +263,37 @@ const LINE_SERIES: { key: 'fitness' | 'fatigue'; label: string; color: string }[
   { key: 'fatigue', label: 'Fatigue', color: 'var(--series-fatigue)' },
 ]
 const ZONE_LABELS = ['Z1', 'Z2', 'Z3', 'Z4', 'Z5']
+const ROW_ITEMS: { key: 'feel' | 'plan'; label: string; icon: string }[] = [
+  { key: 'feel', label: 'Feel', icon: 'fa-regular fa-face-smile' },
+  { key: 'plan', label: 'Plan', icon: 'fa-solid fa-calendar-week' },
+]
 const RANGES = [
   { id: '3m', label: '3M', days: 91 },
   { id: '6m', label: '6M', days: 182 },
   { id: '1y', label: '1Y', days: 365 },
 ] as const
 
-// ── Help panel ───────────────────────────────────────────────────────────────
-const helpOpen   = ref(false)
-const helpButton = ref<HTMLButtonElement | null>(null)
-const helpPanel  = ref<HTMLElement | null>(null)
-const closeHelp  = () => { helpOpen.value = false }
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape' && helpOpen.value) {
-    helpOpen.value = false
-    helpButton.value?.focus()
-  }
-}
-// Focus moves into the panel when it opens, so keyboard and screen-reader users land on it.
-watch(helpOpen, open => { if (open) nextTick(() => helpPanel.value?.querySelector<HTMLElement>('button')?.focus()) })
-onMounted(() => {
-  document.addEventListener('click', closeHelp)
-  document.addEventListener('keydown', onKeydown)
-})
-onBeforeUnmount(() => {
-  document.removeEventListener('click', closeHelp)
-  document.removeEventListener('keydown', onKeydown)
-})
-
 const range     = ref<(typeof RANGES)[number]['id']>('6m')
 const tableView = ref(false)
-const hiddenLines = ref<LineKey[]>([])
-const hiddenZones = ref<number[]>([])
+// What is switched off on the chart is persisted (settings key trend_hidden), so it survives a
+// reload or a restart. Writes are optimistic: the chart reacts at once.
+type RowKey = 'feel' | 'plan'
+const hiddenLines = computed(() => settingsStore.trendHidden.lines as LineKey[])
+const hiddenZones = computed(() => settingsStore.trendHidden.zones)
+const hiddenRows  = computed(() => settingsStore.trendHidden.rows as RowKey[])
+const toggled = <T>(list: T[], item: T): T[] => (list.includes(item) ? list.filter(x => x !== item) : [...list, item])
 
 const collapsed = computed(() => settingsStore.trendCollapsed)
 function toggleCollapsed() { settingsStore.saveTrendCollapsed(!collapsed.value) }
 
 function toggleLine(key: LineKey) {
-  hiddenLines.value = hiddenLines.value.includes(key)
-    ? hiddenLines.value.filter(k => k !== key)
-    : [...hiddenLines.value, key]
+  settingsStore.saveTrendHidden({ ...settingsStore.trendHidden, lines: toggled(hiddenLines.value, key) })
 }
 function toggleZone(zone: number) {
-  hiddenZones.value = hiddenZones.value.includes(zone)
-    ? hiddenZones.value.filter(z => z !== zone)
-    : [...hiddenZones.value, zone]
+  settingsStore.saveTrendHidden({ ...settingsStore.trendHidden, zones: toggled(hiddenZones.value, zone) })
+}
+function toggleRow(row: RowKey) {
+  settingsStore.saveTrendHidden({ ...settingsStore.trendHidden, rows: toggled(hiddenRows.value, row) })
 }
 
 // Only for rides without Garmin zone data: their zone is estimated from average HR against
@@ -338,7 +307,7 @@ const today = computed(() => daily.value[daily.value.length - 1] ?? null)
 const weekAgo = computed(() => daily.value[daily.value.length - 8] ?? null)
 const shortHistory = computed(() => daily.value.length < FITNESS_DAYS)
 const formWord = computed(() =>
-  today.value ? formLabel(today.value.form, today.value.fitness, today.value.ridesPerWeek) : ''
+  today.value ? formLabel(today.value.form, today.value.fitness, today.value.ridesPerWeek, today.value.historyDays) : ''
 )
 
 const rangeDays = computed(() => RANGES.find(r => r.id === range.value)!.days)
@@ -402,6 +371,13 @@ const planByDate = computed(() => {
   return out
 })
 
+/** Feel and Plan only get a legend entry once there is something in the range to show. */
+const rowItems = computed(() => {
+  const from = rangePoints.value[0]?.date ?? isoDate()
+  const has = (byDate: Record<string, unknown>) => Object.keys(byDate).some(d => d >= from)
+  return ROW_ITEMS.filter(r => (r.key === 'feel' ? has(feelByDate.value) : has(planByDate.value)))
+})
+
 const tableRows = computed(() => {
   const byDate = new Map(daily.value.map(p => [p.date, p]))
   const now = isoDate()
@@ -435,86 +411,7 @@ const formatDay = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('e
    and hang over Rides and Training, whose inputs otherwise painted on top of them. */
 .trend-card { flex: none; margin-bottom: 1.75rem; position: relative; z-index: 2; }
 
-.trend-help-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.5rem;
-  height: 1.5rem;
-  margin-left: -0.2rem;
-  padding: 0;
-  font-size: 0.9rem;
-  color: var(--text-muted);
-  background: none;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-}
-.trend-help-btn:hover,
-.trend-help-btn[aria-expanded='true'] { color: var(--primary-color); }
-.trend-help-btn:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
 
-/* A genuinely floating layer, so it gets the overlay shadow (the one shadow token). */
-.trend-help {
-  position: absolute;
-  top: 4.4rem;
-  left: 1.75rem;
-  z-index: 10;
-  width: min(500px, calc(100% - 3.5rem));
-  /* It outgrew short windows: scroll inside rather than run past the bottom of the app. */
-  max-height: calc(100dvh - 14rem);
-  overflow-y: auto;
-  padding: 1rem 1.25rem;
-  background: var(--surface-3);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-overlay);
-  font-size: 0.8rem;
-  line-height: 1.5;
-  color: var(--text-secondary);
-}
-.trend-help-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.6rem;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-.trend-help-close {
-  padding: 0.2rem 0.35rem;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  background: none;
-  border: none;
-  border-radius: var(--radius-xs);
-  cursor: pointer;
-}
-.trend-help-close:hover { color: var(--text-primary); background: var(--raise); }
-.trend-help-close:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
-.trend-help-list { margin: 0; }
-.trend-help-list dt {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin-top: 0.65rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.trend-help-list dt:first-child { margin-top: 0; }
-.trend-help-list dd { margin: 0.15rem 0 0; }
-.trend-help-bands { width: 100%; margin-top: 0.4rem; border-collapse: collapse; font-size: 0.76rem; }
-.trend-help-bands th, .trend-help-bands td { padding: 0.25rem 0.5rem; vertical-align: top; text-align: left; }
-.trend-help-bands th { font-weight: 600; color: var(--text-primary); white-space: nowrap; }
-.trend-help-range { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-muted); }
-.trend-help-foot { margin: 0.75rem 0 0; padding-top: 0.6rem; border-top: 1px solid var(--hairline); font-size: 0.74rem; color: var(--text-muted); }
-
-@media (max-width: 640px) {
-  .trend-help { left: 1rem; width: calc(100% - 2rem); }
-}
 .trend-card.is-collapsed .card-header { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
 .trend-card .card-header { flex-wrap: wrap; row-gap: 0.75rem; }
 
@@ -607,12 +504,13 @@ const formatDay = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('e
 .trend-key { display: inline-block; width: 12px; height: 2px; border-radius: 1px; }
 .trend-swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; }
 .trend-legend-sep { width: 1px; align-self: stretch; background: var(--hairline); }
+.trend-legend-icon { font-size: 0.72rem; color: var(--text-muted); }
+.trend-legend-item.is-off .trend-legend-icon { opacity: 0.3; }
 /* The form band's key: its two halves, like the shading between the lines. */
 .trend-swatch--band {
   background: linear-gradient(135deg, var(--series-fitness) 50%, var(--series-fatigue) 50%);
   opacity: 0.55;
 }
-.trend-help-list dd strong { color: var(--text-primary); font-weight: 600; }
 
 .trend-empty-state { margin: 0; }
 

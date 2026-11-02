@@ -3,6 +3,38 @@
     <div class="card-header">
       <i class="fa-solid fa-bicycle header-icon"></i>
       <h2>Recent Rides</h2>
+      <HelpPopover title="Your rides and ratings">
+        <dl class="help-list">
+          <dt><i class="fa-solid fa-person-biking"></i>Rides</dt>
+          <dd>
+            Your cycling activities from Garmin. <i class="fa-solid fa-rotate"></i> fetches new ones; the app also
+            syncs when it opens and every hour.
+          </dd>
+
+          <dt><i class="fa-solid fa-gauge-high"></i>RPE</dt>
+          <dd>
+            How hard the ride felt, from 1 (very easy) to 10 (maximal). It weighs more than heart rate: a ride that
+            felt hard <em>was</em> hard, whatever the zones say.
+          </dd>
+
+          <dt><i class="fa-regular fa-face-smile"></i>Feeling</dt>
+          <dd>
+            How you felt afterwards, from exhausted to strong. The same five faces as the daily check-in.
+          </dd>
+
+          <dt><i class="fa-solid fa-pen"></i>Rating a ride</dt>
+          <dd>
+            Fill these in on your watch, or click a ride to set them here. They are saved to Garmin first, then
+            here, so both always agree. A new rating makes the coach look at your plan again straight away.
+          </dd>
+
+          <dt><i class="fa-solid fa-brain"></i>Coach score</dt>
+          <dd>
+            How well the ride matched the planned workout, 0 to 100, with the workout type next to it. Hover the
+            rating row for the coach's full explanation and the ride's load.
+          </dd>
+        </dl>
+      </HelpPopover>
       <div class="card-header-actions">
         <span class="last-synced-label">{{ lastSyncedLabel }}</span>
         <button
@@ -36,6 +68,7 @@
 </template>
 
 <script setup lang="ts">
+import HelpPopover from '@/components/ui/HelpPopover.vue'
 import { computed, ref } from 'vue'
 import { useActivitiesStore }    from '@/stores/activities.store'
 import { useRecommendationStore } from '@/stores/recommendation.store'

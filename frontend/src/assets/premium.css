@@ -138,18 +138,6 @@ body {
   color: var(--text-primary);
 }
 
-/* ── Menu bar: a quiet pill ───────────────────────────────────────────────── */
-.menu-bar-standalone {
-  border-radius: var(--radius-pill);
-  border-color: var(--hairline);
-}
-.menu-item {
-  font-size: 0.82rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-.menu-item:hover { color: var(--text-primary); }
-
 /* ── Inputs ───────────────────────────────────────────────────────────────── */
 .input-wrapper input,
 .checkin-note,
@@ -781,3 +769,79 @@ body {
 .act-rpe-badge,
 .act-feeling-badge,
 .act-score-badge { font-size: 0.76rem; }
+
+/* ── Help panel (the "?" next to a card title, components/ui/HelpPopover.vue) ──
+   One design for every card. A genuinely floating layer, so it gets the overlay shadow; fixed and
+   teleported because the Rides and Training cards clip their own overflow. */
+.help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-left: -0.2rem;
+  padding: 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.help-btn:hover,
+.help-btn[aria-expanded='true'] { color: var(--primary-color); }
+.help-btn:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+.help-panel {
+  position: fixed;
+  z-index: 1000;
+  width: min(500px, calc(100vw - 2rem));
+  overflow-y: auto;
+  padding: 1rem 1.25rem;
+  background: var(--surface-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-overlay);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.help-close {
+  padding: 0.2rem 0.35rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+.help-close:hover { color: var(--text-primary); background: var(--raise); }
+.help-close:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+.help-list { margin: 0; }
+.help-list dt {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.65rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.help-list dt:first-child { margin-top: 0; }
+.help-list dt > i { font-size: 0.75rem; color: var(--text-muted); width: 0.9rem; text-align: center; }
+.help-list dd { margin: 0.15rem 0 0; }
+.help-list dd strong { color: var(--text-primary); font-weight: 600; }
+.help-bands { width: 100%; margin-top: 0.4rem; border-collapse: collapse; font-size: 0.76rem; }
+.help-bands th, .help-bands td { padding: 0.25rem 0.5rem; vertical-align: top; text-align: left; }
+.help-bands th { font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+.help-range { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.help-foot { margin: 0.75rem 0 0; padding-top: 0.6rem; border-top: 1px solid var(--hairline); font-size: 0.74rem; color: var(--text-muted); }

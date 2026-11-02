@@ -1,6 +1,7 @@
 import axios from 'axios';
 import {
   getSetting,
+  setSetting,
   upsertRecommendation,
   getStoredRecommendation,
   getStoredActivities,
@@ -215,6 +216,8 @@ const callGeminiWithFallback = async (
     const [model, next] = models;
     try {
       const response = await callGemini(label, model, key, buildBody(model), next ? Date.now() + FALLBACK_AFTER_MS : undefined);
+      // The header shows when the last plan came from a fallback model rather than the chosen one.
+      setSetting('gemini_last_model', model);
       return { response, model };
     } catch (err: any) {
       if (!next) throw err;

@@ -297,6 +297,8 @@ mirrors the same two functions purely to give an actionable message before the r
 | `setup_complete` | `'1'` when user confirmed HR profile |
 | `instant_score_on_new_activity` | `'0'` disables instant regen-on-newly-completed-ride (default on, i.e. unset or `'1'`). Governs the **automatic** paths only — `/api/activities/refresh` and the auto-checks. Never gate explicit athlete input on it; see `triggerAdaptiveRegen()` |
 | `free_training_mode` | `'1'` replaces the 14-day plan with a single dateless suggestion (see "Free training mode") |
+| `gemini_last_model` | The model that actually answered the last generation, written by `callGeminiWithFallback()`. Differs from `gemini_model` after a fallback; the header shows it |
+| `trend_hidden` | JSON `{ lines, zones, rows }`: what is switched off on the Trend chart. Re-validated on read and write (`sanitizeTrendHidden()` in `server.ts`), so an unknown series can never reach the UI |
 | `trend_collapsed` | `'1'` folds the dashboard's Trend card to its header row (see "Trend card") |
 
 ---
@@ -333,7 +335,7 @@ POST   /api/activities/:activityId/feedback ← { rpe?: 1-10, feeling?: 1-5 } �
 POST   /api/sync-workouts                   ← { scheduleDate } → upload to Garmin + schedule Threshold
 
 GET    /api/settings/gemini-key             ← { hasKey, maskedKey, setupComplete,
-                                                preferredLongRideDays, geminiModel, geminiModelFallback,
+                                                preferredLongRideDays, geminiModel, geminiModelFallback, geminiLastModel,
                                                 inactivityPauseDays,
                                                 instantScoreOnNewActivity, freeTrainingMode }
 POST   /api/settings/gemini-key             ← { apiKey } → forces regen on next check
@@ -341,6 +343,7 @@ DELETE /api/settings/gemini-key             ← removes the API key
 POST   /api/settings/gemini-model           ← { model } → normalized + format-validated, 400 on a bad ID
 POST   /api/settings/gemini-model-fallback  ← { enabled: boolean } → automatic model fallback (opt-out)
 POST   /api/settings/trend-collapsed        ← { collapsed: boolean } → Trend card folded or open
+POST   /api/settings/trend-hidden           ← { lines[], zones[], rows[] } → what the Trend chart hides (sanitized)
 POST   /api/settings/preferred-long-ride-days  ← { days: string[] }
 POST   /api/settings/inactivity-pause-days  ← { days: number } (1-365)
 POST   /api/settings/instant-score-on-new-activity  ← { enabled: boolean }
@@ -423,7 +426,7 @@ defines *exactly that set*.
   round trip away and the theme has to be on the first paint or the app visibly flashes between
   palettes. `main.ts` applies the cached value before mount; the real value overwrites it on load. This
   is the one legitimate localStorage use in the app — it is a cache, not state.
-- The picker lives behind the wrench in `MenuBar`, in `AboutDialog` ("Preferences"), alongside the `instant_score_on_new_activity` checkbox (app behaviour, so it moved out of the AI-connection panel; saves on change like the theme), About
+- The picker lives behind the wrench in `AppHeader`, in `AboutDialog` ("Preferences"), alongside the `instant_score_on_new_activity` checkbox (app behaviour, so it moved out of the AI-connection panel; saves on change like the theme), About
   and the on-demand update check.
 
 ## Visual language (`frontend/src/assets/style.css` **and 12 scoped `<style>` blocks**)
@@ -450,7 +453,7 @@ ramp, which rules out green, cyan, orange and red. Blue is free, which is why it
 
 - **Radius is a five-step scale** — `--radius-xs: 4px`, `--radius-sm: 8px` (inputs, notes),
   `--radius-md: 12px` (cards, dialogs, day cells), `--radius-lg: 16px`, `--radius-pill: 999px`
-  (buttons, chips, the menu bar). There were **fourteen** ad-hoc values once. Use a token, never a
+  (buttons, chips). There were **fourteen** ad-hoc values once. Use a token, never a
   literal. `50%` (circles) stays literal on purpose: that is geometry, not style.
 - **Metadata is typography, not tags.** Workout types, RPE, feeling, execution scores and priority
   used to be filled pills: `background: rgba(colour, 0.12)` + `border-color: rgba(colour, 0.3)` +
@@ -504,7 +507,7 @@ controls, no all-caps titles, no serif.
   tracking (-0.015em), kept small (card titles 1.1rem — the athlete rejected both 1.5 and 0.95; ride stats 0.84rem regular weight (bold was tried and dropped) — just under the 0.86rem ride title, which must stay dominant — and week dates 1.05rem — bigger numerals were far too large) and numerals at 400 — ride stats, week dates, HR inputs — set like a
   watch face. `--font-main` (Inter) is the interface. Eyebrow labels are Inter 600, ~0.68rem,
   uppercase, tracked 0.14em, muted. Loaded in `frontend/index.html`.
-- **Soft geometry.** The radius scale was raised (see above). Buttons, chips, the menu bar and the
+- **Soft geometry.** The radius scale was raised (see above). Buttons, chips and the
   check-in note are pills; icon buttons and check-in faces are circles.
 - **Depth is a faint top highlight plus a soft shadow** on cards (`.glass-panel`) — a deliberate
   exception to the "no drop shadows" bullet above. Inner panels are `--surface-2` with no border
@@ -535,6 +538,52 @@ controls, no all-caps titles, no serif.
   `.dashboard-shell`, which sizes it to its content instead of stretching it. Long content (the first-plan
   intro, a full plan) hid that; while the very first plan generated, the short "Updating…" line shrank the
   whole dashboard to ~1030px and centred it.
+
+## App header (`components/layout/AppHeader.vue`)
+
+Replaced a small "Connected · 158 / 180 · wrench" pill (`MenuBar.vue`, gone) that the athlete found
+underwhelming and that said almost nothing about the app's state. It is a card like the ones below it, the
+same width, with the cards' 1.75rem content inset so the wordmark lines up with them.
+
+- **Browser: a card** above the dashboard, with the brand (icon + "Velomate") on the left. **Electron: the same
+  header teleported into the title bar** (`#titlebar-menu-slot` in `TitleBar.vue`), with the title bar's own brand
+  in front and the window controls after it. A version that left Electron with a bare title bar and the header as
+  a second bar underneath was rejected: in Electron the bar must be integrated. To fit the label-over-value items
+  the title bar grew from 38px to **56px**, now one variable, `--titlebar-h` on `body.is-electron`, which every
+  offset that makes room for it uses (body padding, `.app-shell` height, the settings panel and Training Profile
+  modal positions). macOS gets `trafficLightPosition { x: 16, y: 21 }` to centre its buttons in the taller bar. In
+  the title bar the header's empty space stays draggable and only its buttons are `no-drag`.
+- **Startup focus quirk (Electron)**: something outside the app focuses the first header button ~350ms after the
+  window opens (no Velomate code calls `focus()` then). It left a focus ring and an open tooltip on "Garmin" at
+  every launch, so both wait for real keyboard navigation: `keyboardNav` turns on with Tab and off on pointerdown.
+- **Status items read like the Trend card's header stats** (eyebrow label over a value), not as filled chips
+  (visual language: metadata is typography). Each is a button to the screen that fixes it, and each has the
+  app's data tooltip (teleported, `.ride-tooltip` variant) saying *why*:
+  - **Garmin**: connection dot + "Synced 3h ago"; warns (amber triangle, never colour alone) when not connected
+    or when the last sync (`analysis.updatedAt`) is more than `STALE_SYNC_HOURS` (48) old.
+  - **AI coach**: the selected preset's name (Accurate / Super fast / the custom ID), "Updating…" with a spinner
+    while the active mode's store regenerates, and in the tooltip whether the last plan came from a fallback
+    model (`gemini_last_model` ≠ `gemini_model`). The settings are re-read when a generation finishes.
+  - **Heart rate**: "158 / 180", with a warning when the zones look set too low, by the **same two rules as
+    `buildHrCalibrationLines()`** in the backend (peak recorded HR > Max HR + 2; a 60+ min ride in the last 90
+    days averaging above LTHR), so the header and the coach never disagree. Clicking opens the training profile.
+  - **Training · Paused** appears only while training is paused.
+- **Actions** on the right use the same glyphs as the dialogs they open: `fa-user-gear` (Training Profile) and
+  `fa-wrench` (Preferences). A `fa-sliders` button looked unrelated to the dialog and was replaced.
+- Phones: the status row wraps under brand + actions. It needs `flex-basis: 100%`, not `width`: the base
+  rule's `flex: 1` sets a zero basis that wins over a width.
+
+## "?" help panels (`components/ui/HelpPopover.vue`)
+
+The Trend card's explanation panel, made reusable after the athlete asked for the same treatment wherever an
+explanation is needed. Now on **Trend** ("How these numbers work"), **AI Training Plan** ("How your plan works":
+the two weeks, how it reads you, when it changes, the score bands, the fatigue/load labels, the controls), **Free
+Training** (one workout, readiness, syncing and matching, when it changes, scores) and **Recent Rides** (RPE,
+feeling, rating a ride, coach score). Content goes in the default slot as a `dl.help-list` (a `dt` may start with
+an icon); `#foot` is an optional muted footnote. The panel is **teleported and `position: fixed`** under its button,
+clamped to the viewport, because the Rides and Training cards clip their overflow. Styles are global in
+`premium.css` ("Help panel"). When a rule in the app changes (score bands, readiness), update these texts too:
+they state the rules as facts.
 
 ## Trend card (`components/trend/`)
 
@@ -570,6 +619,11 @@ depend on what a model decided to say.
   main axis: it is a difference, so any always-positive version would need an invented offset. "Form" in
   the legend toggles the band; it also disappears when either line is hidden. The tooltip leads with form,
   set like the header stat (eyebrow, figure, word); an accent edge and a bigger figure read as too loud.
+- **Early days**: before `FITNESS_DAYS` (42) of history (`historyDays` on each `DayPoint`) the form word is
+  **"Early days"**, not a band. Fitness climbs from zero at the first stored ride, so a new athlete read
+  "-25 Recovering" after three rides. Short ranges (≤ 60 days of points) label Mondays ("27 Oct") instead of
+  month starts, which left a new athlete's chart with a single "Nov" under it. With no rides at all the card
+  shows one line of text and no controls.
 - **Low-volume words**: at ≤ 2 rides/week (`ridesPerWeek` on each `DayPoint`, trailing 28 days) the outer
   bands are renamed, Overreaching → **Recovering** and Transition → **Rested** (`LOW_VOLUME_LABELS`). One ride
   moves a low-volume athlete's numbers so far that the intervals.icu words overstated a normal rhythm. The
@@ -587,7 +641,12 @@ depend on what a model decided to say.
   coach's note **in full** (the old native `title` on the score cut it off and was hard to read). That
   variant (`.ride-tooltip`) is teleported to `body`, `position: fixed` and flipped above the row when there
   is no room below, because the rides list scrolls and clips anything absolute; it is opaque with the
-  overlay shadow, since ride text read through even at 94%. The ride row lost its own `title` for the same
+  overlay shadow, since ride text read through even at 94%.
+- **Preferences uses the big dialog** (`tp-*`, the same as Training Profile and Connections): it was a
+  360px confirm-style box that looked like a different app next to Training Profile. Sections: Appearance,
+  AI coach, Updates (packaged only), About; settings still save on change, the footer only has Done.
+- **AI Training Plan's header icon is `fa-calendar-week`** (the card is a schedule); the brain stays the
+  AI's mark elsewhere. The Trend chart's Plan row legend uses the same calendar. The ride row lost its own `title` for the same
   reason (the pencil keeps one). The rating row itself is 0.76rem: under the stats (0.84) and title (0.86).
 - **The card is `z-index: 2`**: the tooltip and help panel hang over Rides and Training, whose inputs painted
   on top of them otherwise. The help panel scrolls inside `max-height: calc(100dvh - 14rem)`. Zone minutes in
@@ -599,8 +658,11 @@ depend on what a model decided to say.
   Escape). It explains load, fitness, fatigue, form, the bars and click-to-hide. It does **not** mark
   today's band: the athlete already reads that in the Form figure in the header and asked for it out. The bands come from `FORM_BANDS` in `trainingLoad.ts`, which `formLabel()` uses too, so the help
   text cannot drift from the logic. The note that used to sit under the chart moved in there.
-- **Click-to-hide**: clicking a line, a bar segment or a legend item hides that series (a whole line, or
-  one zone in every week); the legend is the way back and is a keyboard-reachable toggle (`aria-pressed`).
+- **Click-to-hide**: clicking a line, a bar segment, a row label (Feel / Plan) or a legend item hides that
+  series (a whole line, one zone in every week, or a row); the legend is the way back and is a
+  keyboard-reachable toggle (`aria-pressed`). **What is hidden is persisted** (`trend_hidden`, optimistic
+  write through `settingsStore.saveTrendHidden()`), so it survives a reload. Feel and Plan only get a legend
+  entry when the range has something to show.
   The y-axis rescales to what is visible. Only `.hit` (lines) and `.seg` (bars) take pointer events:
   the crosshair dot lands exactly under the pointer and the fitness area wash covers most of the bars, and
   each of them swallowed clicks until made `pointer-events: none`.
@@ -633,7 +695,7 @@ The old vanilla-JS `setView()`/`currentView`/hidden-class toggling and `setRecSt
 ### Views
 - **`SetupView.vue`** — checklist ("Connect Garmin", "Add AI API key") → opens `SettingsPanel` modal; no inline login form
 - **`ProfileSetupView.vue`** — HR profile form (`HrZonesBar` preview), preferred long-ride days, free-text goals, auto-pause threshold. Also usable as a dashboard modal (`modalMode` prop, "edit profile"). Suggests maxHR/LTHR from `analysis.estimatedMaxHr/estimatedLthr` on mount
-- **`DashboardView.vue`** — `MenuBar`, `ActivitiesCard`, `AiPlanCard` **or** `FreeTrainingCard` (by `settings.freeTrainingMode` — only the active mode's store is ever loaded or polled), `SettingsPanel`, teleported `ProfileSetupView` modal. Loads activities from DB, starts auth polling, fetches cached recommendation, silently polls for a fresher plan if one is regenerating in the background
+- **`DashboardView.vue`** — `AppHeader`, `ActivitiesCard`, `AiPlanCard` **or** `FreeTrainingCard` (by `settings.freeTrainingMode` — only the active mode's store is ever loaded or polled), `SettingsPanel`, teleported `ProfileSetupView` modal. Loads activities from DB, starts auth polling, fetches cached recommendation, silently polls for a fresher plan if one is regenerating in the background
 
 ### Key helpers
 - `useTimeAgo()` composable (`composables/useTimeAgo.ts`) — same logic as the old vanilla `timeAgo()` helper, used in `ActivitiesCard.vue`/`LoadAssessment.vue`
@@ -840,7 +902,7 @@ to `/api/recommendation/refresh|skip-today|reschedule` and `/api/sync-workouts` 
 `electron-main.js` (repo root, CommonJS, guarded by `if (process.type !== 'browser') return` since Windows launches it twice):
 - Single-instance lock (`requestSingleInstanceLock`) — second launch just focuses the existing window
 - Default window 1400x1180, clamped to screen.getPrimaryDisplay().workAreaSize so it never opens taller than the display. Height was raised from 900 to 1040 when the daily check-in moved into the training card (at 900 the plan card opened already scrolled), then to 1180 for the premium redesign's roomier spacing and labelled callouts.
-- Frameless window on Windows (custom `TitleBar.vue` + IPC `window:minimize/toggle-maximize/close`), native title bar (`hiddenInset`) on macOS
+- Frameless window on Windows (custom `TitleBar.vue` + IPC `window:minimize/toggle-maximize/close`), native title bar (`hiddenInset`) on macOS. The title bar is 56px (`--titlebar-h`) and hosts the app header (see "App header")
 - Runs the Express backend **in-process**: `require('./backend/dist/server.js')`. Packaged builds pick a free port dynamically (`findFreePort()`) and set `LOG_DIR` to `app.getPath('userData')/logs`; dev mode uses the fixed port 2012
 - Waits for `GET /api/status` to respond (`waitForHttp()`) before loading the window
 - `dialog.showErrorBox()` on startup failure — a packaged app has no console, so a silent failure would otherwise just vanish

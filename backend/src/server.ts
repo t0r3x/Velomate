@@ -705,7 +705,9 @@ app.get('/api/settings/gemini-key', (_req: Request, res: Response) => {
     preferredLongRideDays,
     geminiModel,
     geminiModelFallback:  isModelFallbackEnabled(),
+    geminiLastModel:      getSetting('gemini_last_model') || null,
     trendCollapsed:       getSetting('trend_collapsed') === '1',
+    trendHidden:          readTrendHidden(),
     inactivityPauseDays,
     instantScoreOnNewActivity,
     uiTheme,
@@ -806,6 +808,27 @@ app.post('/api/settings/gemini-model', (req: Request, res: Response) => {
   setSetting('gemini_model', normalized);
   logger.info(`[Settings] Gemini model set to: ${normalized}`);
   res.json({ saved: true, model: normalized });
+});
+
+// What the athlete switched off on the Trend chart. Stored as JSON and re-validated on read, so
+// a value written by an older or newer version can never put an unknown series in the UI.
+const TREND_LINES = ['fitness', 'fatigue', 'form'];
+const TREND_ROWS  = ['feel', 'plan'];
+type TrendHidden = { lines: string[]; zones: number[]; rows: string[] };
+const sanitizeTrendHidden = (raw: any): TrendHidden => ({
+  lines: Array.isArray(raw?.lines) ? raw.lines.filter((l: any) => TREND_LINES.includes(l)) : [],
+  zones: Array.isArray(raw?.zones) ? raw.zones.filter((z: any) => Number.isInteger(z) && z >= 0 && z <= 4) : [],
+  rows:  Array.isArray(raw?.rows)  ? raw.rows.filter((r: any) => TREND_ROWS.includes(r)) : [],
+});
+const readTrendHidden = (): TrendHidden => {
+  try { return sanitizeTrendHidden(JSON.parse(getSetting('trend_hidden') || '{}')); }
+  catch { return sanitizeTrendHidden({}); }
+};
+
+app.post('/api/settings/trend-hidden', (req: Request, res: Response) => {
+  const clean = sanitizeTrendHidden(req.body);
+  setSetting('trend_hidden', JSON.stringify(clean));
+  res.json({ saved: true, trendHidden: clean });
 });
 
 // The dashboard's Trend card, folded to its header row. UI state, but stored here rather

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { UiTheme } from '@/types'
+import type { UiTheme, TrendHidden } from '@/types'
 import {
   getGeminiKeyStatus,
   postGeminiKey,
@@ -8,6 +8,7 @@ import {
   postGeminiModel,
   postGeminiModelFallback,
   postTrendCollapsed,
+  postTrendHidden,
   postPreferredDays,
   postInactivityPauseDays,
   postInstantScoreOnNewActivity,
@@ -51,7 +52,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const preferredLongRideDays = ref<string[]>([])
   const geminiModel         = ref('gemini-3.8-flash')
   const geminiModelFallback = ref(true)
+  const geminiLastModel     = ref<string | null>(null)
   const trendCollapsed      = ref(false)
+  const trendHidden         = ref<TrendHidden>({ lines: [], zones: [], rows: [] })
   const inactivityPauseDays = ref(14)
   const instantScoreOnNewActivity = ref(true)
   const freeTrainingMode          = ref(false)
@@ -68,7 +71,9 @@ export const useSettingsStore = defineStore('settings', () => {
       preferredLongRideDays.value = Array.isArray(data.preferredLongRideDays) ? data.preferredLongRideDays : []
       geminiModel.value           = data.geminiModel || 'gemini-3.8-flash'
       geminiModelFallback.value   = data.geminiModelFallback ?? true
+      geminiLastModel.value       = data.geminiLastModel ?? null
       trendCollapsed.value        = data.trendCollapsed ?? false
+      trendHidden.value           = data.trendHidden ?? { lines: [], zones: [], rows: [] }
       inactivityPauseDays.value   = data.inactivityPauseDays ?? 14
       instantScoreOnNewActivity.value = data.instantScoreOnNewActivity ?? true
       freeTrainingMode.value      = data.freeTrainingMode ?? false
@@ -92,7 +97,9 @@ export const useSettingsStore = defineStore('settings', () => {
       preferredLongRideDays.value = Array.isArray(data.preferredLongRideDays) ? data.preferredLongRideDays : []
       geminiModel.value           = data.geminiModel || 'gemini-3.8-flash'
       geminiModelFallback.value   = data.geminiModelFallback ?? true
+      geminiLastModel.value       = data.geminiLastModel ?? null
       trendCollapsed.value        = data.trendCollapsed ?? false
+      trendHidden.value           = data.trendHidden ?? { lines: [], zones: [], rows: [] }
       inactivityPauseDays.value   = data.inactivityPauseDays ?? 14
       instantScoreOnNewActivity.value = data.instantScoreOnNewActivity ?? true
       freeTrainingMode.value      = data.freeTrainingMode ?? false
@@ -129,6 +136,20 @@ export const useSettingsStore = defineStore('settings', () => {
     } catch (err) {
       console.error('[Settings] saveTrendCollapsed failed:', err)
       trendCollapsed.value = previous
+      return false
+    }
+  }
+
+  /** Applied immediately (the chart reacts at once); reverted if the write fails. */
+  async function saveTrendHidden(next: TrendHidden): Promise<boolean> {
+    const previous = trendHidden.value
+    trendHidden.value = next
+    try {
+      await postTrendHidden(next)
+      return true
+    } catch (err) {
+      console.error('[Settings] saveTrendHidden failed:', err)
+      trendHidden.value = previous
       return false
     }
   }
@@ -227,7 +248,9 @@ export const useSettingsStore = defineStore('settings', () => {
     preferredLongRideDays,
     geminiModel,
     geminiModelFallback,
+    geminiLastModel,
     trendCollapsed,
+    trendHidden,
     inactivityPauseDays,
     instantScoreOnNewActivity,
     freeTrainingMode,
@@ -241,6 +264,7 @@ export const useSettingsStore = defineStore('settings', () => {
     saveInactivityPauseDays,
     saveInstantScoreOnNewActivity,
     saveTrendCollapsed,
+    saveTrendHidden,
     saveFreeTrainingMode,
     saveTheme,
     markSetupComplete

@@ -176,6 +176,12 @@ export interface PausedResponse {
 /** Theme ids must match a `html[data-theme='…']` block in style.css. */
 export type UiTheme = 'slate' | 'light' | 'midnight' | 'mintberry'
 
+export interface TrendHidden {
+  lines: ('fitness' | 'fatigue' | 'form')[]
+  zones: number[]
+  rows: ('feel' | 'plan')[]
+}
+
 export interface GeminiKeyStatus {
   hasKey: boolean
   maskedKey: string
@@ -183,7 +189,11 @@ export interface GeminiKeyStatus {
   preferredLongRideDays: string[]
   geminiModel: string
   geminiModelFallback: boolean
+  /** The model that actually answered the last generation (differs from geminiModel after a fallback). */
+  geminiLastModel: string | null
   trendCollapsed: boolean
+  /** Series and rows switched off on the Trend chart (persisted). */
+  trendHidden: TrendHidden
   inactivityPauseDays: number
   instantScoreOnNewActivity: boolean
   uiTheme: UiTheme

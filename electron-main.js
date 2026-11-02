@@ -102,6 +102,8 @@ function createWindow() {
 
   if (isMac) {
     winOptions.titleBarStyle = 'hiddenInset'
+    // Centred in the 56px title bar (--titlebar-h), which hosts the app header's status row.
+    winOptions.trafficLightPosition = { x: 16, y: 21 }
   } else {
     winOptions.frame = false
     winOptions.icon = path.join(__dirname, 'build', 'icon.ico') // matches electron-builder's win.icon; no .icns yet for mac

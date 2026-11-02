@@ -11,6 +11,7 @@ import type {
   FreeTraining,
   Recommendation,
   GeminiKeyStatus,
+  TrendHidden,
   DashboardResponse,
   ActivitiesRefreshResponse,
   SyncResult,
@@ -151,6 +152,12 @@ export const postGeminiModelFallback = (enabled: boolean) =>
   request<void>('/api/settings/gemini-model-fallback', {
     method: 'POST',
     body: JSON.stringify({ enabled })
+  })
+
+export const postTrendHidden = (hidden: TrendHidden) =>
+  request<void>('/api/settings/trend-hidden', {
+    method: 'POST',
+    body: JSON.stringify(hidden)
   })
 
 export const postTrendCollapsed = (collapsed: boolean) =>

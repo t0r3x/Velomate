@@ -1,8 +1,62 @@
 <template>
   <section class="dashboard-card glass-panel" id="sync-card">
     <div class="card-header">
-      <i class="fa-solid fa-brain header-icon"></i>
+      <!-- The card is a two-week schedule; the brain only said "AI", like half the app does. -->
+      <i class="fa-solid fa-calendar-week header-icon"></i>
       <h2>AI Training Plan</h2>
+      <HelpPopover title="How your plan works">
+        <dl class="help-list">
+          <dt><i class="fa-solid fa-calendar-week"></i>Two weeks</dt>
+          <dd>
+            <strong>This week</strong> has full workouts, ready to sync to Garmin. <strong>Next week</strong> is an
+            outline: each day gets its full workout before you can ride it. The number of rides follows how often
+            you usually ride.
+          </dd>
+          <dt><i class="fa-regular fa-face-smile"></i>How it reads you</dt>
+          <dd>
+            Your check-ins, ride ratings and heart rate zones decide how hard it goes. A check-in of 1 or 2,
+            or a ride that felt very hard (RPE 8 or more, feeling 2 or less), makes it hold back for a few
+            days. Otherwise you get a real training stimulus, and it takes one small step forward when the
+            last comparable session went well. What you tell it outranks anything it infers from heart rate.
+          </dd>
+          <dt><i class="fa-solid fa-arrows-rotate"></i>When it changes</dt>
+          <dd>
+            Every day, and right away after a check-in or a ride rating. A newly synced ride also triggers it,
+            unless you switched that off in Preferences. The <i class="fa-solid fa-right-left"></i> button shows
+            which days changed and why.
+          </dd>
+          <dt><i class="fa-solid fa-brain"></i>Scores</dt>
+          <dd>
+            After you ride a session the coach scores how well it matched, from 0 to 100:
+            <table class="help-bands">
+              <tbody>
+                <tr><th scope="row">90-100</th><td>Textbook: the planned zones and duration.</td></tr>
+                <tr><th scope="row">75-89</th><td>Good, with small deviations.</td></tr>
+                <tr><th scope="row">60-74</th><td>Partial: a clearly shorter or lighter version.</td></tr>
+                <tr><th scope="row">40-59</th><td>Poor: wrong intensity or a big shortfall.</td></tr>
+                <tr><th scope="row">0-39</th><td>A different ride than the one planned.</td></tr>
+              </tbody>
+            </table>
+            Riding <strong>less</strong> than planned makes the coach ease off; riding <strong>harder</strong> at a
+            comfortable RPE tells it the session was too easy. Short sprints are never marked down because
+            your heart rate could not catch up in 30 seconds.
+          </dd>
+          <dt><i class="fa-solid fa-gauge"></i>Fatigue and load</dt>
+          <dd>
+            The labels under this week are the coach's own reading of your state: fatigue low, moderate or high,
+            and whether your load is going up, steady or down. The Trend card above computes its numbers without
+            the coach, so you can compare the two.
+          </dd>
+
+          <dt><i class="fa-solid fa-hand-pointer"></i>Your controls</dt>
+          <dd>
+            Click a day for its workout, and to <strong>skip</strong> it or <strong>move</strong> it to another day.
+            <strong>Sync &amp; Schedule</strong> puts this week's workouts on your Garmin calendar.
+            <i class="fa-solid fa-pause"></i> pauses training for illness, injury or travel; training also pauses
+            by itself after a long stretch without rides.
+          </dd>
+        </dl>
+      </HelpPopover>
       <div v-if="recStore.state === 'loaded'" class="card-header-actions">
         <!-- Only when the latest update actually has something to say (never on a first plan). -->
         <button
@@ -138,6 +192,7 @@
 </template>
 
 <script setup lang="ts">
+import HelpPopover from '@/components/ui/HelpPopover.vue'
 import { computed, ref } from 'vue'
 import { useRecommendationStore } from '@/stores/recommendation.store'
 import { useToast }               from '@/composables/useToast'
