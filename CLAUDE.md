@@ -564,8 +564,8 @@ depend on what a model decided to say.
   surface halo. That replaces a second axis, which is the usual PMC-chart answer and the one to avoid.
 - **The explanation lives behind a "?" next to the title** (`.trend-help`, a floating panel: Escape, its
   close button, the "?" or a click outside closes it; focus moves in on open and back to the "?" on
-  Escape). It explains load, fitness, fatigue, form, the bars and click-to-hide, and marks today's form
-  band. The bands come from `FORM_BANDS` in `trainingLoad.ts`, which `formLabel()` uses too, so the help
+  Escape). It explains load, fitness, fatigue, form, the bars and click-to-hide. It does **not** mark
+  today's band: the athlete already reads that in the Form figure in the header and asked for it out. The bands come from `FORM_BANDS` in `trainingLoad.ts`, which `formLabel()` uses too, so the help
   text cannot drift from the logic. The note that used to sit under the chart moved in there.
 - **Click-to-hide**: clicking a line, a bar segment or a legend item hides that series (a whole line, or
   one zone in every week); the legend is the way back and is a keyboard-reachable toggle (`aria-pressed`).

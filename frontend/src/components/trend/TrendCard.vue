@@ -61,7 +61,7 @@
             it compares form with your fitness, so it means the same at any level:
             <table class="trend-help-bands">
               <tbody>
-                <tr v-for="b in FORM_BANDS" :key="b.label" :class="{ 'is-current': b.label === formWord }">
+                <tr v-for="b in FORM_BANDS" :key="b.label">
                   <th scope="row">{{ b.label }}</th>
                   <td class="trend-help-range">{{ b.range }}</td>
                   <td>{{ b.meaning }}</td>
@@ -411,9 +411,6 @@ const formatDay = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('e
 .trend-help-bands th, .trend-help-bands td { padding: 0.25rem 0.5rem; vertical-align: top; text-align: left; }
 .trend-help-bands th { font-weight: 600; color: var(--text-primary); white-space: nowrap; }
 .trend-help-range { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-muted); }
-/* Today's band: an accent edge, never a tinted fill (the visual-language rule for panels with a meaning). */
-.trend-help-bands tr.is-current th { box-shadow: inset 2px 0 0 var(--primary-color); }
-.trend-help-bands tr.is-current td { color: var(--text-primary); }
 .trend-help-foot { margin: 0.75rem 0 0; padding-top: 0.6rem; border-top: 1px solid var(--hairline); font-size: 0.74rem; color: var(--text-muted); }
 
 @media (max-width: 640px) {
