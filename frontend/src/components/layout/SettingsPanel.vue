@@ -170,10 +170,31 @@
               <a href="https://ai.google.dev/gemini-api/docs/models" target="_blank" rel="noopener" style="color:var(--primary-color)">See all models ↗</a>
             </p>
             <!-- The practical reason to switch: Google's models get busy (503) or hit their
-                 daily limit (429), and then the other one usually still answers. -->
-            <p v-else class="helper-text">
+                 daily limit (429), and then the other one usually still answers. Only worth
+                 saying when the app will not do that by itself. -->
+            <p v-else-if="!modelFallback" class="helper-text">
               You can switch at any time. Try another model if the selected one is busy or not responding.
             </p>
+
+            <!-- Opt-out: on by default. The chain always ends at Super fast and never goes back
+                 up, so the description follows the card that is selected. -->
+            <div class="fallback-row">
+              <span class="fallback-text">
+                <span id="model-fallback-label" class="fallback-title">Automatic fallback</span>
+                <span class="fallback-desc">{{ fallbackDescription }}</span>
+              </span>
+              <button
+                type="button"
+                role="switch"
+                class="switch"
+                :class="{ 'is-on': modelFallback }"
+                :aria-checked="modelFallback"
+                aria-labelledby="model-fallback-label"
+                @click="modelFallback = !modelFallback"
+              >
+                <span class="switch-thumb"></span>
+              </button>
+            </div>
           </div>
 
         </form>
@@ -277,9 +298,21 @@ const apiKey         = ref('')
 const selectedModel  = ref<string>(MODEL_PRESETS[0].id)
 const customModel    = ref('')
 const modelError     = ref('')
+const modelFallback  = ref(true)
 const saveBusy       = ref(false)
 
 const isCustomModel = computed(() => selectedModel.value === CUSTOM_MODEL)
+
+/** Mirrors getModelChain() in the backend: custom → Accurate → Super fast, Accurate → Super fast. */
+const fallbackDescription = computed(() => {
+  if (selectedModel.value === 'gemini-3.5-flash-lite') {
+    return 'Super fast is the last step, so there is nothing to fall back to. This applies when you pick another model.'
+  }
+  if (isCustomModel.value) {
+    return 'If your model is busy, out of quota or takes longer than 90 seconds, Accurate takes over, then Super fast.'
+  }
+  return 'If Accurate is busy, out of quota or takes longer than 90 seconds, Super fast makes your plan instead.'
+})
 
 /** The model ID that will actually be saved, whichever input produced it. */
 const resolvedModel = computed(() =>
@@ -300,6 +333,7 @@ watch(() => props.open, (isOpen) => {
     customModel.value   = stored
   }
   modelError.value     = ''
+  modelFallback.value  = settingsStore.geminiModelFallback
   apiKey.value         = ''
   mfaCode.value        = ''
 })
@@ -363,7 +397,7 @@ async function handleSave() {
   saveBusy.value = true
   try {
     const onSetup = router.currentRoute.value.name === 'setup'
-    const success = await settingsStore.saveAll(apiKey.value, model)
+    const success = await settingsStore.saveAll(apiKey.value, model, modelFallback.value)
     if (!success) {
       show('error', 'Save Failed', 'Could not save settings.')
       return
@@ -508,6 +542,68 @@ function checkRouting() {
 
 @media (max-width: 640px) {
   .model-choice { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Automatic fallback: an inner panel like the cards above it, text left, switch right. */
+.fallback-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface-2);
+  border-radius: var(--radius-md);
+}
+.fallback-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1;
+  min-width: 0;
+}
+.fallback-title {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.fallback-desc {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* On = the accent (it is something you act on), off = a neutral track. White thumb on the
+   accent, as on the primary button. */
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 1.4rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--raise-strong);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.switch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 18%, transparent);
+}
+.switch-thumb {
+  position: absolute;
+  top: 0.2rem;
+  left: 0.2rem;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+.switch.is-on { background: var(--primary-color); }
+.switch.is-on .switch-thumb {
+  transform: translateX(1.1rem);
+  background: #fff;
 }
 
 .settings-error {

@@ -183,7 +183,7 @@ The first plan is never created here — only steps 2-4 ever fire, and they all 
 
 ### `generateRecommendation(previousPlan?, pauseContext?, pinnedTodayType?)`
 - Retries with a shrinking activity window (`ACTIVITY_WINDOWS = [21, 14, 10]` days) if Gemini's response is truncated (`finishReason === 'MAX_TOKENS'`)
-- POSTs to `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` through `callGemini()` (shared by both modes): up to 4 attempts on 429 (honours Retry-After) and on 500/503/504 (3s, 6s, 12s). 503 "model overloaded" is routine for a newly released model and used to fail the generation outright, since only 429 was retried. Other statuses throw immediately — a 400/403/404 fails identically every time. Each attempt has a **7-minute axios timeout** (`GEMINI_TIMEOUT_MS`), not retried. Without one, a request Google held open never settled, the single-flight promise never released, and the UI sat on "being updated" until restart. It is generous on purpose: a real gemini-3.8-flash plan call under load took 322s to answer; gemini-3.5-flash-lite took 2-5s for the same prompt
+- POSTs to `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` through `callGeminiWithFallback()` → `callGemini()` (shared by both modes; the fallback chain is under "AI model selection"): up to 4 attempts on 429 (honours Retry-After) and on 500/503/504 (3s, 6s, 12s). 503 "model overloaded" is routine for a newly released model and used to fail the generation outright, since only 429 was retried. Other statuses throw immediately — a 400/403/404 fails identically every time. Each attempt has a **7-minute axios timeout** (`GEMINI_TIMEOUT_MS`), not retried. Without one, a request Google held open never settled, the single-flight promise never released, and the UI sat on "being updated" until restart. It is generous on purpose: a real gemini-3.8-flash plan call under load took 322s to answer; gemini-3.5-flash-lite took 2-5s for the same prompt
 - `responseMimeType: "application/json"`, joins all parts: `parts.map(p => p.text ?? '').join('')` — avoids truncation
 - `temperature: 0.2`. Deliberately low: the prompt asks for plan stability in prose, and a higher setting sampled against the very thing it was asking for.
 - `thinkingConfig` comes from `thinkingConfigFor(model)`: `{ thinkingLevel: 'low' }` for non-lite Gemini 3+, nothing otherwise. Gemini 3 Flash's default high dynamic thinking cost 20-30s per plan (flash-lite: 2-5s for the same prompt), and thinking tokens count against `maxOutputTokens`. Lite models already default lower, and 2.x/Gemma reject `thinkingLevel`, so they get the API default. `logUsage()` logs duration plus prompt/cached/thoughts/output tokens per call; check it before changing the level.
@@ -261,6 +261,19 @@ Three helpers in `gemini.service.ts` own this:
 - `getGeminiModel()` — the single read path, falling back to `DEFAULT_GEMINI_MODEL` when the stored value
   is missing or no longer valid. Never read `getSetting('gemini_model')` directly.
 
+**Automatic fallback** (`gemini_model_fallback`, a switch under the cards, **on unless explicitly `'0'`**, i.e. opt-out).
+`getModelChain()` turns the selection into the models to try: custom → Accurate → Super fast, Accurate →
+Super fast, Super fast → nothing (the chain never goes back *up*). `callGeminiWithFallback()` wraps
+`callGemini()`: any failure (error status after the normal retries, a timeout, a 429) hands the same request
+to the next model, with `thinkingConfig` rebuilt for it. A model that has a fallback behind it gets
+`FALLBACK_AFTER_MS` (90s) **including retries**: each attempt's timeout is what is left of that, and a
+retry whose wait would cross it is skipped, which is what makes a 429 with a long Retry-After fall back
+at once. The last model in the chain keeps the full `GEMINI_TIMEOUT_MS`. Why 90s: the Oct-Nov 2026 logs
+show 3.8-flash taking 100-350s on most days while flash-lite answered the identical prompt in 2-5s, and
+a free-tier quota is per model, so one model can be exhausted while the next still answers. The chain is
+shortened in place once a model fails, so the MAX_TOKENS window retries in the same generation do not
+wait on it again. The switch's description in `SettingsPanel.vue` mirrors the chain for the selected card.
+
 `POST /api/settings/gemini-model` validates server-side too, and that is **not** duplicate work: the model
 is interpolated into the Gemini request path (`/v1beta/models/{model}:generateContent`), so a value
 containing `/`, `?` or `..` would rewrite the endpoint rather than name a model. `SettingsPanel.vue`
@@ -271,6 +284,7 @@ mirrors the same two functions purely to give an actionable message before the r
 |-----|-------------|
 | `gemini_api_key` | Raw API key |
 | `gemini_model` | e.g. `gemini-3.8-flash` (default). Free-text: the settings form offers two presets plus a "Custom model ID…" field, so a Pro-tier or newly released model can be used without an app update. Always stored normalized — see "AI model selection" |
+| `gemini_model_fallback` | `'0'` disables the automatic model fallback (default on, i.e. unset or `'1'`). See "AI model selection" |
 | `gemini_last_generated` | ISO timestamp; `'0'` = never/force regen |
 | `preferred_long_ride_days` | Comma-separated day names, e.g. `Saturday,Sunday` |
 | `preferred_long_ride_day` | Legacy singular key (read as fallback) |
@@ -316,11 +330,13 @@ POST   /api/activities/:activityId/feedback ← { rpe?: 1-10, feeling?: 1-5 } �
 POST   /api/sync-workouts                   ← { scheduleDate } → upload to Garmin + schedule Threshold
 
 GET    /api/settings/gemini-key             ← { hasKey, maskedKey, setupComplete,
-                                                preferredLongRideDays, geminiModel, inactivityPauseDays,
+                                                preferredLongRideDays, geminiModel, geminiModelFallback,
+                                                inactivityPauseDays,
                                                 instantScoreOnNewActivity, freeTrainingMode }
 POST   /api/settings/gemini-key             ← { apiKey } → forces regen on next check
 DELETE /api/settings/gemini-key             ← removes the API key
 POST   /api/settings/gemini-model           ← { model } → normalized + format-validated, 400 on a bad ID
+POST   /api/settings/gemini-model-fallback  ← { enabled: boolean } → automatic model fallback (opt-out)
 POST   /api/settings/preferred-long-ride-days  ← { days: string[] }
 POST   /api/settings/inactivity-pause-days  ← { days: number } (1-365)
 POST   /api/settings/instant-score-on-new-activity  ← { enabled: boolean }
@@ -795,3 +811,4 @@ Bump `version` in root `package.json` before every publish — it's both the rel
 24. **`CALIBRATION_GUIDELINES` is two-sided, and the READINESS check is what keeps it that way.** It has swung both ways: first a "PROGRESSION GOAL" heading that added load whenever nothing looked wrong, then a rewrite with five ways to hold back, one conditional way forward, and "recovery signals are good" never defined — so the condition for progressing could never be shown to hold (rule 20). The Oct-Nov 2026 server logs show the result: twenty consecutive free-mode LongRides for a rested once-a-week rider. READINESS now lists the NOT READY conditions explicitly (check-in 1-2 in the last 3 days, rpe ≥ 8 / feeling ≤ 2 in the last 3 days, scores < 60 from doing *less*); everything else is READY and gets a real stimulus. A hard effort yesterday is deliberately **not** on that list: a first version included it, and in plan mode the model answered it with a Rest day after every session, cutting the 5-6 rides/week test athletes to 3-4. It is spacing (next session easy), not readiness. NOT READY lowers intensity first, then duration, and only reaches Rest on strong signals. The window **runs forward through the plan**: without that sentence the model rested today after a 2/5 check-in and put Threshold + Tempo on the next two days (READINESS only looked at today). FREQUENCY's "go below / above" now keys on READY / NOT READY instead of an undefined "signals are good". Also load-bearing: the **RIDE FREQUENCY** bullet (at ≤ 2 rides/week each ride arrives rested, and Z2-only is too small a dose — except for a purely aerobic history, which gets at most one Tempo/week), "maintain ≠ easy riding", and scores < 60 split by **direction** (rode less → ease off; rode harder at a fine rpe → pitched too easy). Free mode adds a WHAT-vs-WHEN split: a recent hard effort delays the next session via `coachNote`, it does not downgrade it. Don't add a back-off rule without checking the READY side still exists.
 25. **`buildHrCalibrationLines()` flags zones that are set too low**, from the numbers: peak HR recorded > configured Max HR + 2, or a ride of 60+ min averaging above LTHR. With zones too low every ride looks like a Z4/Z5 effort, a recovery-minded prompt prescribes Z2 forever, and the athlete — riding by feel at rpe 5-7 — "fails" every Z2 ride and gets a low score that justifies the next Z2 ride. `ACTIVITY_DATA_NOTES` tells the model to trust rpe/feeling over zone minutes in that case and to say the profile needs re-checking; the line is empty when nothing is off.
 26. **Prompt text is in `backend/src/prompts/*.md`, loaded by `prompts/loader.ts`.** `{{NAME}}` is the only syntax; `renderPrompt()` throws on a placeholder without a value *and* on a value without a placeholder, so a rename on one side fails at startup instead of silently dropping data from the prompt (the system instructions render at module load). Substitution is single-pass, so athlete-typed goals can never expand a placeholder. Files are normalised on read (BOM, CRLF → LF, one trailing newline) because Git on Windows checks them out as CRLF and the system instructions must be byte-identical everywhere. **tsc does not copy `.md`**: `npm run build` runs `scripts/copy-prompts.js` into `dist/prompts`, which Docker and the Electron package both ship as part of `dist/`. Dev and the test harness (tsx) read `src/prompts` directly. When the extraction was done, the request bodies for four scenarios (plan/free × full/bare) were compared byte for byte against the inline version and were identical — repeat that check after any change to the loader.
+27. **The model fallback must never go back up the chain.** `getModelChain()` is custom → Accurate → Super fast and stops at Super fast; a Super fast selection has no fallback. The 90s budget (`FALLBACK_AFTER_MS`) applies only to a model that has a successor, so turning the switch off restores the old behaviour exactly (one model, 7-minute timeout, 4 attempts). When the fallback fires it is logged as `… failed (status: reason) — falling back to <model>`; the plan itself does not record which model made it.

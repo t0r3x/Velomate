@@ -39,6 +39,7 @@ import {
   classifyCompletedEntries,
   detectAutoSkippedEntries,
   getGeminiModel,
+  isModelFallbackEnabled,
   normalizeModelId,
   isValidModelId,
   generateFreeSuggestion,
@@ -692,6 +693,7 @@ app.get('/api/settings/gemini-key', (_req: Request, res: Response) => {
     setupComplete,
     preferredLongRideDays,
     geminiModel,
+    geminiModelFallback:  isModelFallbackEnabled(),
     inactivityPauseDays,
     instantScoreOnNewActivity,
     uiTheme,
@@ -792,6 +794,17 @@ app.post('/api/settings/gemini-model', (req: Request, res: Response) => {
   setSetting('gemini_model', normalized);
   logger.info(`[Settings] Gemini model set to: ${normalized}`);
   res.json({ saved: true, model: normalized });
+});
+
+// Opt-out: stored as '0' only when switched off, so every existing install starts with it on.
+app.post('/api/settings/gemini-model-fallback', (req: Request, res: Response) => {
+  const { enabled } = req.body;
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: 'enabled must be a boolean.' });
+  }
+  setSetting('gemini_model_fallback', enabled ? '1' : '0');
+  logger.info(`[Settings] Automatic model fallback: ${enabled ? 'enabled' : 'disabled'}`);
+  res.json({ saved: true });
 });
 
 app.post('/api/settings/gemini-key', (req: Request, res: Response) => {

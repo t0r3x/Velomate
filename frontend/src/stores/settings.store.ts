@@ -6,6 +6,7 @@ import {
   postGeminiKey,
   deleteGeminiKey,
   postGeminiModel,
+  postGeminiModelFallback,
   postPreferredDays,
   postInactivityPauseDays,
   postInstantScoreOnNewActivity,
@@ -48,6 +49,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const maskedKey           = ref<string | null>(null)
   const preferredLongRideDays = ref<string[]>([])
   const geminiModel         = ref('gemini-3.8-flash')
+  const geminiModelFallback = ref(true)
   const inactivityPauseDays = ref(14)
   const instantScoreOnNewActivity = ref(true)
   const freeTrainingMode          = ref(false)
@@ -63,6 +65,7 @@ export const useSettingsStore = defineStore('settings', () => {
       maskedKey.value             = data.hasKey ? data.maskedKey : null
       preferredLongRideDays.value = Array.isArray(data.preferredLongRideDays) ? data.preferredLongRideDays : []
       geminiModel.value           = data.geminiModel || 'gemini-3.8-flash'
+      geminiModelFallback.value   = data.geminiModelFallback ?? true
       inactivityPauseDays.value   = data.inactivityPauseDays ?? 14
       instantScoreOnNewActivity.value = data.instantScoreOnNewActivity ?? true
       freeTrainingMode.value      = data.freeTrainingMode ?? false
@@ -85,6 +88,7 @@ export const useSettingsStore = defineStore('settings', () => {
       maskedKey.value             = data.hasKey ? data.maskedKey : null
       preferredLongRideDays.value = Array.isArray(data.preferredLongRideDays) ? data.preferredLongRideDays : []
       geminiModel.value           = data.geminiModel || 'gemini-3.8-flash'
+      geminiModelFallback.value   = data.geminiModelFallback ?? true
       inactivityPauseDays.value   = data.inactivityPauseDays ?? 14
       instantScoreOnNewActivity.value = data.instantScoreOnNewActivity ?? true
       freeTrainingMode.value      = data.freeTrainingMode ?? false
@@ -96,9 +100,10 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  async function saveAll(apiKey: string, model: string): Promise<boolean> {
+  async function saveAll(apiKey: string, model: string, modelFallback: boolean): Promise<boolean> {
     try {
       await postGeminiModel(model)
+      await postGeminiModelFallback(modelFallback)
       if (apiKey.trim()) {
         await postGeminiKey(apiKey.trim())
       }
@@ -203,6 +208,7 @@ export const useSettingsStore = defineStore('settings', () => {
     maskedKey,
     preferredLongRideDays,
     geminiModel,
+    geminiModelFallback,
     inactivityPauseDays,
     instantScoreOnNewActivity,
     freeTrainingMode,

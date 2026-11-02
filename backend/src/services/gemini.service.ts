@@ -75,6 +75,33 @@ export const getGeminiModel = (): string => {
   return stored && isValidModelId(stored) ? stored : DEFAULT_GEMINI_MODEL;
 };
 
+/** The two presets the settings form offers ("Accurate" and "Super fast"). */
+export const ACCURATE_MODEL = DEFAULT_GEMINI_MODEL;
+export const FAST_MODEL     = 'gemini-3.5-flash-lite';
+
+/**
+ * Automatic model fallback, setting 'gemini_model_fallback'. Opt-out: on unless it is '0'.
+ *
+ * Google's models fail in ways that have nothing to do with the request: a new model is
+ * overloaded (503) for days, a free-tier key runs out of its daily quota for ONE model (429)
+ * while the others still answer, and under load a call can sit for five minutes before it
+ * answers at all. The server logs show 3.8-flash taking 100-350s on most days while
+ * flash-lite answered the identical prompt in 2-5s. Without a fallback each of those is a
+ * plan that does not update, or an athlete watching "being updated" for minutes.
+ */
+export const isModelFallbackEnabled = (): boolean => getSetting('gemini_model_fallback') !== '0';
+
+/**
+ * The models to try, in order. Always ends at Super fast, never goes back up: a custom model
+ * falls back to Accurate and then Super fast, Accurate to Super fast, Super fast to nothing.
+ */
+export const getModelChain = (): string[] => {
+  const selected = getGeminiModel();
+  if (!isModelFallbackEnabled() || selected === FAST_MODEL) return [selected];
+  if (selected === ACCURATE_MODEL) return [ACCURATE_MODEL, FAST_MODEL];
+  return [selected, ACCURATE_MODEL, FAST_MODEL];
+};
+
 /**
  * Thinking settings for a model, or undefined to leave the API default alone.
  *
@@ -113,7 +140,7 @@ const GEMINI_TIMEOUT_MS = 420_000;
  * (quota exhaustion sends a long one); a 5xx backs off 3s, 6s, 12s, because an overloaded
  * model needs longer to recover than a rate window does.
  */
-const callGemini = async (label: string, model: string, key: string, body: object): Promise<any> => {
+const callGemini = async (label: string, model: string, key: string, body: object, deadline?: number): Promise<any> => {
   const startedAt = Date.now();
   for (let attempt = 1; ; attempt++) {
     try {
@@ -124,7 +151,8 @@ const callGemini = async (label: string, model: string, key: string, body: objec
       const response = await axios.post(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
         body,
-        { timeout: GEMINI_TIMEOUT_MS }
+        // With a deadline (a fallback model is waiting) an attempt gets only what is left of it.
+        { timeout: deadline ? Math.max(1_000, Math.min(GEMINI_TIMEOUT_MS, deadline - Date.now())) : GEMINI_TIMEOUT_MS }
       );
       logUsage(label, startedAt, response);
       return response;
@@ -139,6 +167,12 @@ const callGemini = async (label: string, model: string, key: string, body: objec
       const waitMs = status === 429 && retryAfterSec > 0
         ? retryAfterSec * 1000
         : (status === 429 ? 2000 : 3000) * 2 ** (attempt - 1);
+      // A retry that cannot finish before the deadline is pointless: the next model is ready
+      // now. This is also what makes a 429 with a long Retry-After fall back immediately.
+      if (deadline && Date.now() + waitMs >= deadline) {
+        logger.warn(`[Gemini] ${label}: ${status} (${reason}) — no time left to retry ${model}`);
+        throw err;
+      }
       logger.warn(`[Gemini] ${label}: ${status} (${reason}) — retry ${attempt}/${MAX_GEMINI_ATTEMPTS - 1} in ${waitMs}ms`);
       await new Promise(resolve => setTimeout(resolve, waitMs));
     }
@@ -153,6 +187,44 @@ const logUsage = (label: string, startedAt: number, response: any): void => {
     `prompt: ${u.promptTokenCount ?? '?'} (cached: ${u.cachedContentTokenCount ?? 0}) | ` +
     `thoughts: ${u.thoughtsTokenCount ?? 0} | output: ${u.candidatesTokenCount ?? '?'} tokens`
   );
+};
+
+/**
+ * How long one model may take, retries included, before the next model in the chain takes
+ * over. Only applies when there IS a next model; the last one keeps the full per-attempt
+ * GEMINI_TIMEOUT_MS. 90s covers a normal 3.8-flash plan (5-80s) and cuts off the multi-minute
+ * waits seen under load, where flash-lite answers the same prompt in seconds.
+ */
+const FALLBACK_AFTER_MS = 90_000;
+
+/**
+ * callGemini() across the model chain: on any failure (error status after retries, timeout,
+ * no answer within FALLBACK_AFTER_MS) the next model gets the same request. The body is built
+ * per model because thinkingConfig depends on it.
+ *
+ * `models` is shortened in place to start at the model that answered, so a later call in the
+ * same generation (the MAX_TOKENS window retries) does not wait on a model that just failed.
+ */
+const callGeminiWithFallback = async (
+  label: string,
+  models: string[],
+  key: string,
+  buildBody: (model: string) => object
+): Promise<{ response: any; model: string }> => {
+  while (models.length > 0) {
+    const [model, next] = models;
+    try {
+      const response = await callGemini(label, model, key, buildBody(model), next ? Date.now() + FALLBACK_AFTER_MS : undefined);
+      return { response, model };
+    } catch (err: any) {
+      if (!next) throw err;
+      const status = err.response?.status;
+      const reason = err.response?.data?.error?.message ?? (err.code === 'ECONNABORTED' ? 'no answer in time' : err.message);
+      logger.warn(`[Gemini] ${label}: ${model} failed (${status ?? 'no response'}: ${reason}) — falling back to ${next}`);
+      models.shift();
+    }
+  }
+  throw new Error('No model to call');
 };
 
 // ── Zone helpers ──────────────────────────────────────────────────────────────
@@ -818,9 +890,10 @@ const _generatePlan = async (previousPlan?: PlanEntry[], pauseContext?: PauseCon
 
   // Retry with progressively smaller activity windows if Gemini truncates the response
   const ACTIVITY_WINDOWS = [21, 14, 10];
+  const models = getModelChain();
 
   for (const activityDays of ACTIVITY_WINDOWS) {
-    const result = await _attemptGeneration(previousPlan, pauseContext, activityDays, pinnedTodayType);
+    const result = await _attemptGeneration(previousPlan, pauseContext, activityDays, models, pinnedTodayType);
     if (result.truncated) {
       logger.warn(`[Gemini] Response truncated (MAX_TOKENS) with ${activityDays}-day window — retrying with fewer activities`);
       continue;
@@ -834,6 +907,7 @@ const _attemptGeneration = async (
   previousPlan: PlanEntry[] | undefined,
   pauseContext: PauseContext | undefined,
   activityDays: number,
+  models: string[],
   pinnedTodayType?: string
 ): Promise<{ truncated: true } | { truncated: false; value: any }> => {
   const key = getGeminiKey()!;
@@ -846,10 +920,9 @@ const _attemptGeneration = async (
   logger.info(prompt);
   logger.info('─'.repeat(72) + '\n');
 
-  const model = getGeminiModel();
-  logger.info(`[Gemini] Model: ${model} | system instruction: ${PLAN_SYSTEM_INSTRUCTION.length} chars (static, not repeated here)`);
+  logger.info(`[Gemini] Model: ${models.join(' → ')} | system instruction: ${PLAN_SYSTEM_INSTRUCTION.length} chars (static, not repeated here)`);
 
-  const response = await callGemini('Plan generation', model, key, {
+  const { response } = await callGeminiWithFallback('Plan generation', models, key, model => ({
     systemInstruction: { parts: [{ text: PLAN_SYSTEM_INSTRUCTION }] },
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
@@ -859,7 +932,7 @@ const _attemptGeneration = async (
       maxOutputTokens: 16384,
       thinkingConfig: thinkingConfigFor(model)
     }
-  });
+  }));
 
   const candidate  = response.data?.candidates?.[0];
   const parts: any[] = candidate?.content?.parts || [];
@@ -1238,9 +1311,10 @@ const _generateFree = async (pauseContext?: PauseContext, athleteRequested = fal
   // Same shrinking-window retry as the plan: a single workout rarely truncates, but the
   // activity JSON is the same size and a small-output model can still run out of room.
   const ACTIVITY_WINDOWS = [21, 14, 10];
+  const models = getModelChain();
 
   for (const activityDays of ACTIVITY_WINDOWS) {
-    const result = await _attemptFreeGeneration(pauseContext, activityDays, athleteRequested);
+    const result = await _attemptFreeGeneration(pauseContext, activityDays, models, athleteRequested);
     if (result.truncated) {
       logger.warn(`[Gemini] Free suggestion truncated (MAX_TOKENS) with ${activityDays}-day window — retrying with fewer activities`);
       continue;
@@ -1253,6 +1327,7 @@ const _generateFree = async (pauseContext?: PauseContext, athleteRequested = fal
 const _attemptFreeGeneration = async (
   pauseContext: PauseContext | undefined,
   activityDays: number,
+  models: string[],
   athleteRequested = false
 ): Promise<{ truncated: true } | { truncated: false; value: FreeSuggestion | null }> => {
   const key     = getGeminiKey()!;
@@ -1266,10 +1341,9 @@ const _attemptFreeGeneration = async (
   logger.info(prompt);
   logger.info('─'.repeat(72) + '\n');
 
-  const model = getGeminiModel();
-  logger.info(`[Gemini] Model: ${model} (free training mode) | system instruction: ${FREE_SYSTEM_INSTRUCTION.length} chars (static, not repeated here)`);
+  logger.info(`[Gemini] Model: ${models.join(' → ')} (free training mode) | system instruction: ${FREE_SYSTEM_INSTRUCTION.length} chars (static, not repeated here)`);
 
-  const response = await callGemini('Free suggestion', model, key, {
+  const { response } = await callGeminiWithFallback('Free suggestion', models, key, model => ({
     systemInstruction: { parts: [{ text: FREE_SYSTEM_INSTRUCTION }] },
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
@@ -1279,7 +1353,7 @@ const _attemptFreeGeneration = async (
       maxOutputTokens: 16384,
       thinkingConfig: thinkingConfigFor(model)
     }
-  });
+  }));
 
   const candidate    = response.data?.candidates?.[0];
   const parts: any[] = candidate?.content?.parts || [];

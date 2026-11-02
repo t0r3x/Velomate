@@ -144,6 +144,12 @@ export const postGeminiModel = (model: string) =>
     body: JSON.stringify({ model })
   })
 
+export const postGeminiModelFallback = (enabled: boolean) =>
+  request<void>('/api/settings/gemini-model-fallback', {
+    method: 'POST',
+    body: JSON.stringify({ enabled })
+  })
+
 export const postPreferredDays = (days: string[]) =>
   request<void>('/api/settings/preferred-long-ride-days', {
     method: 'POST',

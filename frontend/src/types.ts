@@ -182,6 +182,7 @@ export interface GeminiKeyStatus {
   setupComplete: boolean
   preferredLongRideDays: string[]
   geminiModel: string
+  geminiModelFallback: boolean
   inactivityPauseDays: number
   instantScoreOnNewActivity: boolean
   uiTheme: UiTheme
