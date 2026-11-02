@@ -50,7 +50,7 @@ Feedback, bug reports, and contributions are always welcome!
 - **Self-hosted data**: your Garmin/AI credentials and ride history stay in a local SQLite database; nothing is sent anywhere except Garmin and Gemini's own APIs
 
 <p align="center">
-  <img width="1400" height="1180" src="https://github.com/user-attachments/assets/8cab510b-01a3-4055-8163-9dd3646a1584" />
+  <img width="1400" height="1180" src="https://github.com/user-attachments/assets/343d13b9-68b0-4075-a0a0-0d3feac171b2" />
 </p>
 
 ---
