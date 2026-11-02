@@ -5,7 +5,6 @@
     class="activity-item"
     :class="{ 'is-clickable': !editing }"
     :tabindex="editing ? undefined : 0"
-    :title="editing ? undefined : rateTitle"
     @click="onItemClick"
     @keydown.enter.self="onItemClick"
   >
@@ -13,12 +12,18 @@
       <span class="activity-title">{{ activity.name || 'Cycling Activity' }}</span>
       <span class="activity-meta">{{ meta }}</span>
 
-      <div v-if="hasFeedback || editing" class="act-feedback">
+      <!-- Hovering the rating row shows the same tooltip as the Trend chart for that day. -->
+      <div
+        v-if="hasFeedback || editing"
+        class="act-feedback"
+        @mouseenter="showTip"
+        @mouseleave="hideTip"
+      >
         <span v-if="rpe !== null" class="act-rpe-badge" :class="rpeClass">RPE {{ rpe }}</span>
         <span v-if="feeling !== null" class="act-feeling-badge" :class="feelingEntry.cls" v-html="feelingHtml"></span>
         <!-- Score and pencil wrap as one unit, so the pencil never ends up alone on a line. -->
         <span class="act-feedback-tail">
-          <span v-if="planEntry?.executionScore != null" class="act-score-badge" :class="scoreClass" :title="planEntry.executionNote || ''">
+          <span v-if="planEntry?.executionScore != null" class="act-score-badge" :class="scoreClass">
             <i class="fa-solid fa-brain"></i>
             {{ planEntry.executionScore }}
             <span class="act-score-type">{{ scoreTypeLabel }}</span>
@@ -104,14 +109,47 @@
         </button>
       </div>
     </div>
+    <Teleport to="body">
+      <div v-if="tip && !editing" ref="tipEl" class="trend-tooltip ride-tooltip" :style="{ left: `${tip.left}px`, top: `${tip.top}px` }">
+        <div class="tt-date">{{ tipDate }}</div>
+        <div class="tt-foot tt-foot--lead">Load {{ load }} · {{ activity.durationMinutes }} min</div>
+
+        <template v-if="rpe !== null || feeling !== null">
+          <div class="tt-date tt-section">How it felt</div>
+          <div class="tt-row">
+            <i v-if="feeling !== null" class="fa-regular tt-icon" :class="[feelingEntry.icon, `feel-${feeling}`]"></i>
+            <span v-else class="tt-key tt-key--none"></span>
+            <strong>{{ feeling !== null ? `${feeling}/5` : '–' }}</strong>
+            <span>After the ride{{ feeling !== null ? ` · ${feelingEntry.label}` : '' }}</span>
+          </div>
+          <div v-if="rpe !== null" class="tt-row">
+            <span class="tt-key tt-key--none"></span>
+            <strong>RPE {{ rpe }}</strong>
+            <span>{{ RPE_HINTS[rpe] }}</span>
+          </div>
+        </template>
+
+        <template v-if="planEntry?.executionScore != null">
+          <div class="tt-date tt-section">Coach</div>
+          <div class="tt-row">
+            <i class="fa-solid tt-icon" :class="[workoutTypeIcon[planEntry.type] ?? 'fa-circle', `wt-${planEntry.type.toLowerCase()}`]"></i>
+            <strong>{{ planEntry.executionScore }}</strong>
+            <span>{{ scoreTypeLabel }} · ridden</span>
+          </div>
+          <div v-if="planEntry.executionNote" class="tt-note">{{ planEntry.executionNote }}</div>
+        </template>
+      </div>
+    </Teleport>
   </li>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import type { Activity, PlanEntry } from '@/types'
-import { toRpe, toFeeling, ACTIVITY_TYPE_LABELS, workoutTypeLabel } from '@/utils'
+import { toRpe, toFeeling, ACTIVITY_TYPE_LABELS, workoutTypeLabel, workoutTypeIcon } from '@/utils'
+import { rideLoad } from '@/utils/trainingLoad'
 import { useActivitiesStore } from '@/stores/activities.store'
+import { useProfileStore }    from '@/stores/profile.store'
 import { useToast } from '@/composables/useToast'
 
 const props = defineProps<{
@@ -123,6 +161,7 @@ const props = defineProps<{
 const emit = defineEmits<{ rated: [regenerating: boolean] }>()
 
 const activitiesStore = useActivitiesStore()
+const profileStore    = useProfileStore()
 const { show } = useToast()
 
 const meta = computed(() => {
@@ -187,6 +226,41 @@ const scoreTypeLabel = computed(() =>
 const hasFeedback = computed(() =>
   rpe.value !== null || feeling.value !== null || (props.planEntry?.executionScore != null)
 )
+
+// ── Tooltip ──────────────────────────────────────────────────────────────────
+// The Trend chart's tooltip, for this ride: how it felt and what the coach scored, with the
+// coach's note in full (the old native title was hard to read and cut off). Fixed position
+// and teleported, because the rides list scrolls and would clip anything absolute.
+
+const tip   = ref<{ left: number; top: number } | null>(null)
+const tipEl = ref<HTMLElement | null>(null)
+
+function showTip(e: MouseEvent) {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  tip.value = { left: r.left, top: r.bottom + 8 }
+  document.addEventListener('scroll', hideTip, true)
+  // Measure once rendered: flip above the row when there is no room below, keep it on screen.
+  nextTick(() => {
+    const el = tipEl.value
+    if (!el || !tip.value) return
+    const h = el.offsetHeight, w = el.offsetWidth
+    const top  = r.bottom + 8 + h > window.innerHeight - 8 ? Math.max(8, r.top - 8 - h) : r.bottom + 8
+    const left = Math.min(r.left, window.innerWidth - 8 - w)
+    tip.value = { left, top }
+  })
+}
+function hideTip() {
+  tip.value = null
+  document.removeEventListener('scroll', hideTip, true)
+}
+onBeforeUnmount(hideTip)
+
+const tipDate = computed(() =>
+  new Date(props.activity.startTime).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+)
+/** Same load as the Trend chart (zone TRIMP), so the two never disagree. */
+const load = computed(() => Math.round(rideLoad(props.activity,
+  Math.max(profileStore.profile?.maxHr ?? 0, activitiesStore.analysis?.maxRecordedHr ?? 0) || 190)))
 
 // ── Rating editor ────────────────────────────────────────────────────────────
 

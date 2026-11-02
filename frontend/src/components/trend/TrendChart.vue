@@ -522,30 +522,3 @@ const ariaLabel = computed(() => {
   margin: 0; font-size: 0.8rem; color: var(--text-muted); pointer-events: none;
 }
 </style>
-
-<!-- Feeling colours: the same five as the ride rating badges (.act-feeling-badge in style.css),
-     shared by the row icons and the tooltip, which is rendered in this component too. -->
-<style>
-.trend-chart .feel-1 { color: #ef4444; }
-.trend-chart .feel-2 { color: #f97316; }
-.trend-chart .feel-3 { color: var(--text-secondary); }
-.trend-chart .feel-4 { color: #10b981; }
-.trend-chart .feel-5 { color: #818cf8; }
-.trend-tooltip .tt-icon { flex: none; width: 10px; font-size: 0.72rem; text-align: center; }
-.trend-tooltip i.tt-icon[class*='wt-'] { color: var(--wt); }
-.trend-tooltip .tt-note {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  margin: 0.05rem 0 0.25rem;
-  max-width: 240px;
-  font-size: 0.7rem;
-  line-height: 1.35;
-  color: var(--text-muted);
-}
-.trend-tooltip .tt-zones { display: flex; flex-wrap: wrap; gap: 0.15rem 0.6rem; max-width: 240px; line-height: 1.6; }
-.trend-tooltip .tt-zone { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--text-secondary); }
-.trend-tooltip .tt-zone strong { font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
-.trend-tooltip .tt-zone.is-hidden { opacity: 0.45; }
-</style>

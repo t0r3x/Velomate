@@ -673,3 +673,111 @@ body {
   .tp-backdrop.tp-modal-mode { padding: 1rem; }
   .confirm-overlay .glass-panel.confirm-dialog { padding: 1.25rem; }
 }
+
+/* ── Data tooltip ───────────────────────────────────────────────────────────
+   One tooltip design for every data hover: the Trend chart and the rating row of a ride.
+   It lives here rather than in a component because both use it, and the ride list must not
+   depend on the Trend card being mounted for its styles. Feeling colours are the same five as
+   the ride rating badges (.act-feeling-badge in style.css). */
+.trend-tooltip {
+  position: absolute;
+  z-index: 5;
+  min-width: 150px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.75rem;
+  /* See-through, so the chart under it stays readable while hovering. Plain transparency,
+     no backdrop blur: a panel that blurs what is under itself is the glassmorphism the visual
+     language rules out. No drop shadow either: it would muddy exactly what should show through. */
+  background: color-mix(in srgb, var(--surface-3) 72%, transparent);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+}
+.trend-tooltip .tt-date { margin-bottom: 0.3rem; font-size: 0.7rem; color: var(--text-muted); }
+/* Form leads the tooltip in the same type as the Form stat above the chart (eyebrow label,
+   figure, word): it stands out by size and position, not by decoration. */
+.trend-tooltip .tt-form { display: flex; flex-direction: column; gap: 0.1rem; margin: 0.1rem 0 0.5rem; }
+.trend-tooltip .tt-form-label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.trend-tooltip .tt-form-value {
+  font-family: var(--font-numeric);
+  font-size: 1.2rem;
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  font-variant-numeric: proportional-nums;
+  color: var(--text-primary);
+}
+.trend-tooltip .tt-form-word { font-size: 0.7rem; font-weight: 600; color: var(--text-secondary); }
+.trend-tooltip .tt-section { margin-top: 0.45rem; padding-top: 0.4rem; border-top: 1px solid var(--hairline); }
+.trend-tooltip .tt-row { display: flex; align-items: center; gap: 0.45rem; line-height: 1.65; }
+.trend-tooltip .tt-row strong {
+  min-width: 3.4em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.trend-tooltip .tt-row span:last-child { color: var(--text-secondary); }
+.trend-tooltip .tt-row.is-hidden { opacity: 0.45; }
+/* Line keys in tooltips, never boxes. */
+.trend-tooltip .tt-key { flex: none; width: 10px; height: 2px; border-radius: 1px; }
+.trend-tooltip .tt-key--none { background: transparent; }
+.trend-tooltip .tt-foot { margin-top: 0.3rem; font-size: 0.7rem; color: var(--text-muted); }
+.trend-chart .feel-1,
+.trend-tooltip .feel-1 { color: #ef4444; }
+.trend-chart .feel-2,
+.trend-tooltip .feel-2 { color: #f97316; }
+.trend-chart .feel-3,
+.trend-tooltip .feel-3 { color: var(--text-secondary); }
+.trend-chart .feel-4,
+.trend-tooltip .feel-4 { color: #10b981; }
+.trend-chart .feel-5,
+.trend-tooltip .feel-5 { color: #818cf8; }
+.trend-tooltip .tt-icon { flex: none; width: 10px; font-size: 0.72rem; text-align: center; }
+.trend-tooltip i.tt-icon[class*='wt-'] { color: var(--wt); }
+.trend-tooltip .tt-note {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0.05rem 0 0.25rem;
+  max-width: 240px;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+.trend-tooltip .tt-zones { display: flex; flex-wrap: wrap; gap: 0.15rem 0.6rem; max-width: 240px; line-height: 1.6; }
+.trend-tooltip .tt-zone { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--text-secondary); }
+.trend-tooltip .tt-zone strong { font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.trend-tooltip .tt-zone.is-hidden { opacity: 0.45; }
+
+/* The ride variant floats over the rides list, not over a chart: fixed and teleported, and
+   opaque with the overlay shadow, because ride text showing through hurt legibility where chart
+   lines did not (94% was tried; the next ride's title still read through). The coach's note is
+   shown in full here; the chart clamps it to two lines. */
+.trend-tooltip.ride-tooltip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 300px;
+  background: var(--surface-3);
+  box-shadow: var(--shadow-overlay);
+}
+.trend-tooltip.ride-tooltip .tt-note {
+  display: block;
+  -webkit-line-clamp: unset;
+  max-width: none;
+  margin-top: 0.15rem;
+}
+.trend-tooltip .tt-foot--lead { margin-top: 0; }
+
+/* The rating row (RPE, feeling, coach score) one step up from 0.68rem: still under the ride
+   stats (0.84) and the title (0.86), which must lead, but no longer the smallest text on the card. */
+.act-feedback { gap: 0.4rem 0.85rem; }
+.act-rpe-badge,
+.act-feeling-badge,
+.act-score-badge { font-size: 0.76rem; }

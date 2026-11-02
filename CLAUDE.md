@@ -581,6 +581,14 @@ depend on what a model decided to say.
   as the app keeps it: the plan's rolling 14 days of history, or free mode's completed suggestions. Check-ins
   come from `GET /api/checkins?from=` (the strip's `/api/checkin` returns only 10 rows), refetched when
   today's answer changes. Hover works over the rows too (the listener is on the wrapper, not the svg).
+- **One data tooltip for the whole app** (`.trend-tooltip` + `.tt-*`, in `premium.css` under "Data
+  tooltip", not in a component). The ride rows reuse it: hovering a ride's rating row (RPE, feeling, coach
+  score) in `ActivityItem.vue` shows the chart's "How it felt" and "Coach" sections for that ride, with the
+  coach's note **in full** (the old native `title` on the score cut it off and was hard to read). That
+  variant (`.ride-tooltip`) is teleported to `body`, `position: fixed` and flipped above the row when there
+  is no room below, because the rides list scrolls and clips anything absolute; it is opaque with the
+  overlay shadow, since ride text read through even at 94%. The ride row lost its own `title` for the same
+  reason (the pencil keeps one). The rating row itself is 0.76rem: under the stats (0.84) and title (0.86).
 - **The card is `z-index: 2`**: the tooltip and help panel hang over Rides and Training, whose inputs painted
   on top of them otherwise. The help panel scrolls inside `max-height: calc(100dvh - 14rem)`. Zone minutes in
   the tooltip sit on one line and the coach's note is clamped to two, to keep the tooltip from running far
