@@ -452,7 +452,51 @@ const ACTIVITY_DATA_NOTES = `How to read RECENT ACTIVITIES — one line per ride
 Zone figures are minutes spent in each Garmin HR zone (z1=lowest, z5=highest intensity), from Garmin's default 5-zone system based on max HR — boundaries may differ slightly from the athlete's custom LTHR zones. "zones=n/a" means Garmin supplied no zone breakdown for that ride; "unrated" means the athlete answered neither post-ride prompt.
 rpe = athlete-reported perceived exertion after the ride (1=very easy, 5=moderate, 10=maximal effort). Absent = not rated.
 feeling = athlete-reported post-ride feeling (1=exhausted/very tired, 2=tired, 3=normal, 4=good, 5=strong/excellent). Absent = not rated.
-When rpe and feeling are present, weight them heavily — they are direct athlete feedback on recovery state. High rpe (≥8) or low feeling (≤2) after a session signals real fatigue even if HR data looks moderate.`;
+When rpe and feeling are present, weight them heavily — they are direct athlete feedback on recovery state. High rpe (≥8) or low feeling (≤2) after a session signals real fatigue even if HR data looks moderate.
+The reverse matters just as much: HR zones can be set wrong. When rides repeatedly show long Z4/Z5 time (30+ minutes) at rpe ≤ 7 with feeling ≥ 3, the zone boundaries are most likely too low for this athlete. Judge the intensity of those rides by rpe and feeling, do NOT read them as overreaching or as a reason to prescribe easier riding, and say in loadAssessment.insight that the HR profile may need re-checking. An HR CALIBRATION line under HR PROFILE, when present, states this from the numbers.`;
+
+/**
+ * Evidence, computed from the numbers, that the athlete's HR profile is set too low.
+ *
+ * With zones too low every ride reads as a Z4/Z5 effort, and a model told to respect
+ * recovery then prescribes easy riding forever — while the athlete, riding by feel at a
+ * moderate rpe, keeps "failing" every Z2 ride it gives them. That loop is exactly what the
+ * Oct-Nov 2026 server logs show (Max HR 180 configured, 191 recorded; 111 min averaging
+ * 166 bpm against an LTHR of 157, at rpe 7). The prompt carried both numbers but never
+ * connected them, and comparing them is the kind of arithmetic rule 20 in CLAUDE.md says to
+ * do here rather than ask of the model. Empty string when nothing is off.
+ */
+const HR_CALIBRATION_MIN_RIDE_MIN = 60;
+
+const buildHrCalibrationLines = (profile: any, analysis: any): string => {
+  const lines: string[] = [];
+  const maxHr = profile?.maxHr;
+  const lthr  = profile?.lthr;
+  const peak  = analysis?.maxRecordedHr;
+
+  if (maxHr && peak && peak > maxHr + 2) {
+    lines.push(`Peak HR recorded in the last 90 days (${peak} bpm) is above the configured Max HR (${maxHr} bpm). Unless that peak was a sensor spike, the configured zones sit too low.`);
+  }
+
+  if (lthr) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 90);
+    // LTHR is roughly the highest heart rate an athlete can hold for about an hour, so a
+    // ride of an hour or more AVERAGING above it means LTHR is set below the real value.
+    const above = getStoredActivities().filter(a =>
+      a.startTime && new Date(a.startTime) >= cutoff &&
+      (a.durationMinutes ?? 0) >= HR_CALIBRATION_MIN_RIDE_MIN &&
+      (a.averageHr ?? 0) > lthr
+    );
+    if (above.length > 0) {
+      const ex = above[0];
+      lines.push(`${above.length} ride(s) of ${HR_CALIBRATION_MIN_RIDE_MIN}+ min in the last 90 days averaged above LTHR (e.g. ${ex.startTime.slice(0, 10)}: ${ex.durationMinutes} min at ${ex.averageHr} bpm vs LTHR ${lthr}). LTHR is roughly the highest HR sustainable for about an hour, so it is probably set too low and the Z4/Z5 minutes overstate how hard these rides were.`);
+    }
+  }
+
+  // Leading newline per line: the caller appends this straight after the Zones line.
+  return lines.map(l => `\n- HR CALIBRATION: ${l}`).join('');
+};
 
 /**
  * How to weigh a daily check-in.
@@ -475,7 +519,7 @@ Scale: 1=exhausted, 2=tired, 3=normal, 4=good, 5=strong. A free-text note may ex
   : ". At 1 or 2, lower today's intensity or make today a Rest day, regardless of what the load figures suggest."}
   Name the check-in in your reason, so the athlete can see you listened.
 - Two or more consecutive days at 1-2 are genuine accumulated fatigue even when the ride data looks unremarkable. ${freeMode ? 'Hold the next session back further — not merely make it lighter.' : 'Ease off the coming days, not only today.'}
-- A 4 or 5 is permission to go ahead as planned. It is not an instruction to add load.
+- A 4 or 5 confirms the athlete is READY (see the READINESS check in CALIBRATION). On its own it is not a reason to add load, but it removes any reason to hold back.
 - Days without a check-in carry NO information. Never read a missing day as either good or bad.
 - Notes often mention things outside cycling — sleep, work, illness, another sport. Take them at face value: they are usually the reason the numbers look the way they do. Velomate deliberately does not import non-cycling activities, so a note is the only way you will hear about them.`;
 
@@ -509,10 +553,10 @@ Tempo (ideal for moderate fatigue — sweet spot, Z3):
   Cool-down [Cooldown]: 480 sec Z1
   Long Z3 blocks build fatigue resistance and muscular endurance. Perfect when athlete is too tired for Z4 Threshold but too fresh for Z2 only.
 
-LongRide (safe even when moderately fatigued):
+LongRide (aerobic endurance — the right call when the athlete is NOT READY for intensity, or as a genuinely long ride):
   Single steady block [Run]: 1800-14400 sec Z2 — Z2 throughout, no Z3+ blocks. An easy WarmUp/Cooldown may be added; if you add one, give it a real duration, otherwise leave it out.
-  Scale to the athlete's averageRideDurationMinutes — a beginner averaging 40 min rides should get a 50-70 min long ride, not 2+ hours.
-  A pro averaging 90 min rides may go 2.5-4 hours. Shorter when tired, longer when fresh.
+  Scale to the athlete's average ride duration (TRAINING ANALYSIS) — a beginner averaging 40 min rides should get a 50-70 min long ride, not 2+ hours.
+  A pro averaging 90 min rides may go 2.5-4 hours. When the athlete is READY, a LongRide is at least as long as their average ride — one shorter than their normal ride is not a long ride. Go shorter only when they are NOT READY.
 
 Rest: no structure needed — set structure to null.
 
@@ -521,24 +565,40 @@ STRUCTURE SHAPE (all interval types): WarmUp → work/recovery pairs → Cooldow
 /**
  * How to pitch the load: match what this athlete is actually doing and feeling.
  *
- * Deliberately NOT framed as progression. Velomate follows the athlete rather than a
- * training goal — an easier week in response to poor recovery signals is a correct answer,
- * not a failure to progress. The old "PROGRESSION GOAL … then progress from there" heading
- * biased the model toward adding load whenever nothing was visibly wrong, which is the
- * opposite of the product. Shared by both modes, and free mode has no schedule to build
- * progressive overload across in the first place.
+ * Two-sided on purpose, and the history matters. The first version was framed as
+ * "PROGRESSION GOAL … then progress from there", which biased the model toward adding load
+ * whenever nothing was visibly wrong. The rewrite that replaced it swung the other way: five
+ * separate instructions to hold or back off, one conditional permission to progress, and
+ * "recovery signals are good" left undefined — so the model could never establish that the
+ * condition for progressing was met. In production that produced twenty consecutive
+ * free-mode LongRides for a fresh, once-a-week rider (Oct-Nov 2026 server logs).
+ *
+ * The fix is not to make progression the goal again. READINESS is an explicit, evaluable
+ * check (rule 20 in CLAUDE.md): NOT READY means back off exactly as before; READY means give
+ * a real stimulus. Neither is the default. Shared by both modes.
  */
-const CALIBRATION_GUIDELINES = `CALIBRATION: Pitch every session at what this athlete is currently doing and feeling. Progression is not a goal in itself — following their signals is.
-  Training pyramid — use it to judge where a session sits, NOT as a ladder to climb: Rest → LongRide (Z2 base) → Tempo (Z3 fatigue resistance) → Threshold (Z4 aerobic power) → VO2Max (Z5 aerobic ceiling) → Sprint (Z5+ neuromuscular)
+const CALIBRATION_GUIDELINES = `CALIBRATION: Pitch every session at what this athlete is currently doing and feeling. There are two ways to get this wrong, and both are errors: loading an athlete who is not recovered, and holding back one who is. Neither "back off" nor "progress" is the default — the READINESS check decides.
+  Training pyramid — use it to judge where a session sits: Rest → LongRide (Z2 base) → Tempo (Z3 fatigue resistance) → Threshold (Z4 aerobic power) → VO2Max (Z5 aerobic ceiling) → Sprint (Z5+ neuromuscular)
 
-- If the athlete's history already shows regular Sprint/Threshold/VO2Max work: keep working at that level — do NOT reset to base.
-  - Rule: Do NOT prescribe high-intensity sessions (Threshold, VO2Max, Sprint) if the recent history is purely aerobic — meaning no ride shows more than roughly 5 minutes of combined Z4+Z5 time — unless their specific goals require race preparation.
-  - Tempo (Z3) is the step up from a purely aerobic base: introduce it only when recovery signals are good, and never as two hard-ish sessions in a row.
-  - Only stack VO2Max + Threshold + Sprint in the same period when the athlete is demonstrably managing that load (history shows it, rpe/feeling are fine).
-  - If the athlete is already at a consistently high load with no negative signals, the right answer is to hold there. Adding volume or intensity because things are going well is not the goal.
-  - Raise intensity or frequency only when recovery signals are good AND current load sits below what this athlete has already shown they can handle.
-  - When recovery signals say back off, back off — a lighter week than the last one is a correct answer, not a failure. Do not treat reducing load as something to apologise for or recover from quickly.
-If execution scores are consistently below 60, ease the load — the athlete is not absorbing what they are being given.`;
+READINESS — evaluate it from the data you are given, before choosing a session:
+  NOT READY if any of these holds:
+    - a check-in of 1 or 2 today or on either of the two previous days;
+    - a ride in the last 3 days with rpe ≥ 8 or feeling ≤ 2;
+    - recent execution scores below 60 because the athlete did LESS than prescribed (cut short, could not hold the zone).
+  READY otherwise. Unrated rides and days without a check-in are neutral — they never make an athlete not ready.
+  A hard effort yesterday or today does NOT make the athlete not ready. It only means the next session is not another hard one — that is spacing (see each type's recovery window), and an easy ride or LongRide is the normal answer, not a Rest day.
+
+When NOT READY: back off. Lower the intensity first, then the duration; a Rest day only when the signals are strong (a check-in of 1, or several of the conditions above at once). A lighter session or week than the last one is a correct answer, not a failure — do not apologise for it or rush to make it up.
+When READY: make the quality sessions real training stimuli at the level this athlete has shown they can handle, and take one small step forward when the last comparable session went well (rpe ≤ 7 and feeling ≥ 3, or an execution score ≥ 75). One lever at a time: one more interval, longer intervals, or one step up the pyramid — never several at once. Prescribing, again and again, less than what the athlete already rides on their own is under-coaching, not caution.
+READY is about how hard the quality sessions are, not about how many there are. Their number follows ride frequency: at 2 or fewer rides a week, most rides (see RIDE FREQUENCY below); at 3-4, one or two; at 5 or more, two or three — with easy riding between them, and never two quality sessions (Tempo included) on consecutive days.
+
+- If the history already shows regular Sprint/Threshold/VO2Max work — or long Z4/Z5 time the athlete rides by choice — keep working at that level. Do NOT reset to base.
+- Rule: Do NOT prescribe Threshold, VO2Max or Sprint if the recent history is purely aerobic — meaning no ride shows more than roughly 5 minutes of combined Z4+Z5 time — unless their specific goals require race preparation. Tempo (Z3) is the step up from a purely aerobic base.
+- Only stack VO2Max + Threshold + Sprint in the same period when the athlete is demonstrably managing that load (history shows it, rpe/feeling are fine).
+- An athlete already at a consistently high load (5+ rides a week) progresses through the content of their quality sessions, not by adding rides or hours; holding steady there is a valid READY answer.
+- RIDE FREQUENCY changes what each ride is for. At 2 or fewer rides per week (the TRAINING LOAD average), the athlete normally arrives at every ride with several recovery days behind them, so fatigue is rarely what limits the session — and Z2-only riding is too small a dose to hold fitness at that volume, because aerobic base work depends on hours this athlete is not riding. Most of their rides should carry a quality block (Tempo, Threshold or VO2Max, as their history and READINESS allow); a LongRide earns its place when it is genuinely long or when they are NOT READY. A gap between rides that matches their usual frequency is their normal rhythm, not a comeback — do not answer it by rebuilding base. This does not apply to a purely aerobic history (as defined in the Rule above): there, add at most one Tempo session per week and let the rest stay easy.
+- A goal to "maintain" fitness still needs regular quality work: maintaining means holding the current level, not dropping to easy riding. Only an explicit goal of easy or recovery riding means that.
+- Execution scores below 60: if the athlete did LESS than prescribed, ease the load — they are not absorbing it. If they rode HARDER than prescribed while rpe and feeling stayed fine, the session was pitched too easy: move it up rather than prescribing the same thing again.`;
 
 /** The 0-100 execution-quality bands. Identical in both modes so scores stay comparable. */
 const SCORING_RUBRIC = `Score on a 0-100 scale based on zone distribution, duration, rpe, and feeling:
@@ -560,7 +620,8 @@ Worked examples — anchor your scale to these:
   Planned Threshold 3x8 min Z4; rode 41 min, z4=14, rpe=9, feeling=2      -> 66 (roughly two intervals of three, and it cost them)
   Planned VO2Max 4x4 min Z5;    rode 35 min, z1=20 z2=14 z3=1, no Z5      -> 25 (an easy ride, not the prescribed session)
   Planned Sprint 6x30s Z5;      rode 48 min, z1=30 z2=14 z3=2 z4=2 z5=0  -> 88 (HR cannot reach Z5 in 30s — duration and shape match the session)
-Be honest — do not inflate scores. Reference specific data in the note (1 sentence, e.g. "12 min in Z4 vs target 24 min — significant shortfall").`;
+Be honest — do not inflate scores. Reference specific data in the note (1 sentence, e.g. "12 min in Z4 vs target 24 min — significant shortfall").
+Riding HARDER than prescribed is a deviation too, and is scored as one — but the note must say which direction the miss went (e.g. "rode mostly Z3/Z4 on a Z2 day, rpe 5"), because "too hard at a comfortable rpe" and "too short and struggling" call for opposite next sessions. If an HR CALIBRATION line is present, say in the note that the zones may be overstating the intensity.`;
 
 /** Recent rides shaped for the prompt: zone minutes, rpe and feeling where available. */
 const buildRecentActivities = (activityDays: number): any[] => {
@@ -859,7 +920,7 @@ ${prefLine}${goalsBlock}
 
 ${pauseBlock}${buildPreviousAssessmentBlock()}${prevBlock}${pinnedTodayBlock}${plannedBlock}HR PROFILE:
 - Max HR: ${profile?.maxHr ?? 'unknown'} bpm | LTHR: ${profile?.lthr ?? 'unknown'} bpm
-- Zones: ${zoneString}
+- Zones: ${zoneString}${buildHrCalibrationLines(profile, analysis)}
 
 TRAINING ANALYSIS (last 90 days):
 - Total rides: ${analysis?.totalCyclingRides ?? 0} | Peak HR recorded: ${analysis?.maxRecordedHr ?? 0} bpm
@@ -1231,7 +1292,6 @@ const buildFreeHistoryBlock = (
     }
     if (s.status === 'dismissed')  return `- [id ${s.id}] ${suggested}${synced} → NOT RIDDEN (athlete moved on without doing it)`;
     if (s.status === 'superseded') return `- [id ${s.id}] ${suggested}${synced} → REPLACED (athlete asked for a different suggestion)`;
-    if (s.status === 'expired')    return `- [id ${s.id}] ${suggested}${synced} → SUPERSEDED automatically (a newer read of the same data replaced it — the athlete never rejected it, so draw no compliance conclusion from this line)`;
     return `- [id ${s.id}] ${suggested}${synced} → ${s.status.toUpperCase()}`;
   };
 
@@ -1265,6 +1325,11 @@ IMPORTANT — no fixed date: the athlete decides when to ride this session. Do N
 Because you cannot pick the day for them, use coachNote to tell them WHEN this session makes sense
 (how recovered they should be, how long after their last hard effort, what to do instead if they feel worse than expected).
 
+READINESS in free mode separates WHAT from WHEN (see the READINESS check in CALIBRATION). This suggestion is for their NEXT ride, which at their usual frequency may be days away.
+- A recent hard effort ("Days since last hard effort" 0 or 1) is about WHEN: prescribe the session they should do once recovered, and put the wait in coachNote. Do not downgrade the session itself for it.
+- A check-in at 1-2, or rpe ≥ 8 / feeling ≤ 2 on a recent ride, is about the athlete's state: it shapes WHAT you prescribe as well (see DAILY CHECK-INS).
+- A STILL OPEN suggestion is not a default to repeat. Keep it when it is still the best next session; change it when recovery days, a new ride or a check-in have changed the answer.
+
 ${ACTIVITY_DATA_NOTES}
 
 ${buildCheckinNotes(true)}
@@ -1278,8 +1343,9 @@ ${CALIBRATION_GUIDELINES}
 EXECUTION SCORING — for every past suggestion marked "NEEDS SCORING" in PREVIOUS SUGGESTIONS:
 ${SCORING_RUBRIC}
 Use your scoring assessment DIRECTLY when deciding the type and load of the next suggestion.
-A suggestion marked NOT RIDDEN or REPLACED carries no score, and one marked SUPERSEDED automatically says nothing about the athlete at all — but repeated non-compliance with a given
+A suggestion marked NOT RIDDEN or REPLACED carries no score — but repeated non-compliance with a given
 workout type is a signal it does not fit this athlete right now, so prefer something they will actually do.
+Suggestions that were replaced automatically, without the athlete acting on them, are left out of PREVIOUS SUGGESTIONS: they say nothing about the athlete.
 
 OUTPUT: Respond ONLY with this exact JSON schema, emitting the keys in exactly this order:
 {
@@ -1353,7 +1419,7 @@ ${prefLine}${goalsBlock}
 
 ${pauseBlock}${historyBlock}HR PROFILE:
 - Max HR: ${profile?.maxHr ?? 'unknown'} bpm | LTHR: ${profile?.lthr ?? 'unknown'} bpm
-- Zones: ${zoneString}
+- Zones: ${zoneString}${buildHrCalibrationLines(profile, analysis)}
 
 TRAINING ANALYSIS (last 90 days):
 - Total rides: ${analysis?.totalCyclingRides ?? 0} | Peak HR recorded: ${analysis?.maxRecordedHr ?? 0} bpm
@@ -1417,7 +1483,7 @@ const _attemptFreeGeneration = async (
 ): Promise<{ truncated: true } | { truncated: false; value: FreeSuggestion | null }> => {
   const key     = getGeminiKey()!;
   const current = getCurrentFreeSuggestion();
-  const history = getFreeSuggestionHistory(FREE_HISTORY_DEPTH);
+  const history = getFreeSuggestionHistory(FREE_HISTORY_DEPTH, true);
   const prompt  = buildFreePrompt(history, current, pauseContext, activityDays);
 
   logger.info('\n' + '═'.repeat(72));

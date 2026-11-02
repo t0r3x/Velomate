@@ -552,7 +552,8 @@ export const getRecentCheckins = (limit = 10): DailyCheckin[] => {
 //   expired    → replaced by an automatic regeneration (staleness, a new ride, a check-in).
 //                NOT a rejection — the athlete never saw a decision to make. Keeping this
 //                apart from superseded matters because the prompt reads non-compliance as a
-//                signal to stop offering that workout type.
+//                signal to stop offering that workout type. Left out of the prompt
+//                altogether (see getFreeSuggestionHistory's excludeExpired).
 
 export type FreeSuggestionStatus =
   | 'open' | 'synced' | 'completed' | 'dismissed' | 'superseded' | 'expired';
@@ -609,11 +610,18 @@ export const getCurrentFreeSuggestion = (): FreeSuggestion | null => {
   return freeRowToSuggestion(row);
 };
 
-/** Past suggestions (everything that is no longer current), newest first. */
-export const getFreeSuggestionHistory = (limit = 10): FreeSuggestion[] => {
+/**
+ * Past suggestions (everything that is no longer current), newest first.
+ *
+ * `excludeExpired` is for the AI prompt. An expired row is an automatic regeneration that
+ * replaced an untouched suggestion, so it says nothing about the athlete — and because one
+ * expires every day the athlete does not ride, a once-a-week rider's history window filled
+ * up entirely with them, pushing every ridden and scored suggestion out of the prompt.
+ */
+export const getFreeSuggestionHistory = (limit = 10, excludeExpired = false): FreeSuggestion[] => {
   const rows = db.prepare(
     `SELECT * FROM free_suggestion
-       WHERE status NOT IN ('open', 'synced')
+       WHERE status NOT IN ('open', 'synced'${excludeExpired ? ", 'expired'" : ''})
        ORDER BY id DESC LIMIT ?`
   ).all(limit) as any[];
   return rows.map(freeRowToSuggestion).filter((s): s is FreeSuggestion => s !== null);
