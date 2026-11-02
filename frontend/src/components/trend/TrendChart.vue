@@ -61,7 +61,7 @@
 
       <!-- Crosshair snaps to the nearest day. Click-through: its dot sits right under the pointer. -->
       <g v-if="hoverIndex !== null" class="deco crosshair">
-        <line :x1="x(hoverIndex)" :x2="x(hoverIndex)" :y1="PAD_T" :y2="PAD_T + plotH" />
+        <line :x1="x(hoverIndex)" :x2="x(hoverIndex)" :y1="PAD_T" :y2="PLOT_BOTTOM" />
         <circle
           v-for="s in visibleLines" :key="'hv' + s.key"
           :cx="x(hoverIndex)" :cy="y(valueAt(s.key, hoverIndex))" r="4" class="dot" :style="{ fill: s.color }"
@@ -78,19 +78,22 @@
           text-anchor="middle" class="value-label value-label--bar"
         >{{ Math.round(hoverBar.visibleLoad) }}/day · {{ fmtHours(hoverBar.week.totalMinutes) }}</text>
       </g>
+
     </svg>
 
     <div v-if="hoverPoint" class="trend-tooltip" :style="tooltipStyle">
       <div class="tt-date">{{ formatDay(hoverPoint.date) }}</div>
+      <!-- Form leads the tooltip and stands out: it is the "how fresh am I" answer the chart's
+           lines only imply. No line of its own (the athlete tried a form strip and rejected it). -->
+      <div class="tt-form">
+        <span class="tt-form-label">Form</span>
+        <span class="tt-form-value">{{ signed(Math.round(hoverPoint.form)) }}</span>
+        <span class="tt-form-word">{{ formLabel(hoverPoint.form, hoverPoint.fitness) }}</span>
+      </div>
       <div v-for="s in LINES" :key="'tt' + s.key" class="tt-row" :class="{ 'is-hidden': hiddenLines.includes(s.key) }">
         <span class="tt-key" :style="{ background: s.color }"></span>
         <strong>{{ Math.round(hoverPoint[s.key]) }}</strong>
         <span>{{ s.label }}</span>
-      </div>
-      <div class="tt-row">
-        <span class="tt-key tt-key--none"></span>
-        <strong>{{ signed(Math.round(hoverPoint.form)) }}</strong>
-        <span>Form</span>
       </div>
       <div class="tt-foot">{{ hoverPoint.rides ? `Ridden this day: load ${hoverPoint.load}` : 'Rest day' }}</div>
 
@@ -122,6 +125,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { DayPoint, WeekPoint } from '@/utils/trainingLoad'
 import { isoDate } from '@/utils'
+import { formLabel } from '@/utils/trainingLoad'
 
 type LineKey = 'fitness' | 'fatigue'
 
@@ -137,10 +141,12 @@ const LINES: { key: LineKey; label: string; color: string; area: boolean }[] = [
   { key: 'fitness', label: 'Fitness', color: 'var(--series-fitness)', area: true },
   { key: 'fatigue', label: 'Fatigue', color: 'var(--series-fatigue)', area: false },
 ]
-const ZONE_LABELS = ['Z1 Recovery', 'Z2 Aerobic', 'Z3 Tempo', 'Z4 Threshold', 'Z5 Anaerobic']
+const ZONE_LABELS = ['Z1', 'Z2', 'Z3', 'Z4', 'Z5']
 
-const HEIGHT = 202
 const PAD_L = 30, PAD_R = 92, PAD_T = 20, PAD_B = 20
+const plotH       = 162
+const PLOT_BOTTOM = PAD_T + plotH
+const HEIGHT      = PLOT_BOTTOM + PAD_B
 const GAP = 2          // surface gap between stacked segments
 const RADIUS = 4       // rounded data end, square at the baseline
 
@@ -154,7 +160,6 @@ onMounted(() => {
 onBeforeUnmount(() => observer?.disconnect())
 
 const plotW = computed(() => Math.max(10, width.value - PAD_L - PAD_R))
-const plotH = HEIGHT - PAD_T - PAD_B
 const lastIndex = computed(() => props.points.length - 1)
 const fromDate  = computed(() => props.points[0]?.date ?? isoDate())
 const visibleLines = computed(() => LINES.filter(s => !props.hiddenLines.includes(s.key)))
@@ -309,7 +314,7 @@ const fmtHours = (min: number) => `${Math.floor(min / 60)}h${String(Math.round(m
 const ariaLabel = computed(() => {
   const last = props.points[lastIndex.value]
   if (!last) return 'Fitness, fatigue and weekly load: no data'
-  return `Fitness and fatigue over ${props.points.length} days, with weekly load by heart-rate zone behind them. Today: fitness ${Math.round(last.fitness)}, fatigue ${Math.round(last.fatigue)}.`
+  return `Fitness and fatigue over ${props.points.length} days, with weekly load by heart-rate zone behind them. Today: fitness ${Math.round(last.fitness)}, fatigue ${Math.round(last.fatigue)}, form ${Math.round(last.form)}.`
 })
 </script>
 
@@ -342,6 +347,7 @@ const ariaLabel = computed(() => {
 .value-label--bar { fill: var(--text-secondary); font-weight: 500; }
 .deco { pointer-events: none; }
 .crosshair line { stroke: var(--hairline-strong); stroke-width: 1; }
+
 .trend-empty {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   margin: 0; font-size: 0.8rem; color: var(--text-muted); pointer-events: none;

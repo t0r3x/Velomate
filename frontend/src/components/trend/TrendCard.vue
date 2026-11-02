@@ -195,7 +195,7 @@
               <th scope="col">Week of</th>
               <th scope="col">Rides</th>
               <th scope="col">Time</th>
-              <th v-for="z in ZONE_LABELS" :key="z" scope="col">{{ z.split(' ')[0] }} min</th>
+              <th v-for="z in ZONE_LABELS" :key="z" scope="col">{{ z }} min</th>
               <th scope="col">Load / day</th>
               <th scope="col">Fitness</th>
               <th scope="col">Fatigue</th>
@@ -241,7 +241,7 @@ const LINE_SERIES: { key: LineKey; label: string; color: string }[] = [
   { key: 'fitness', label: 'Fitness', color: 'var(--series-fitness)' },
   { key: 'fatigue', label: 'Fatigue', color: 'var(--series-fatigue)' },
 ]
-const ZONE_LABELS = ['Z1 Recovery', 'Z2 Aerobic', 'Z3 Tempo', 'Z4 Threshold', 'Z5 Anaerobic']
+const ZONE_LABELS = ['Z1', 'Z2', 'Z3', 'Z4', 'Z5']
 const RANGES = [
   { id: '3m', label: '3M', days: 91 },
   { id: '6m', label: '6M', days: 182 },
@@ -545,6 +545,26 @@ const formatDay = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('e
   pointer-events: none;
 }
 .trend-tooltip .tt-date { margin-bottom: 0.3rem; font-size: 0.7rem; color: var(--text-muted); }
+/* Form leads the tooltip in the same type as the Form stat above the chart (eyebrow label,
+   figure, word): it stands out by size and position, not by decoration. */
+.trend-tooltip .tt-form { display: flex; flex-direction: column; gap: 0.1rem; margin: 0.1rem 0 0.5rem; }
+.trend-tooltip .tt-form-label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.trend-tooltip .tt-form-value {
+  font-family: var(--font-numeric);
+  font-size: 1.2rem;
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  font-variant-numeric: proportional-nums;
+  color: var(--text-primary);
+}
+.trend-tooltip .tt-form-word { font-size: 0.7rem; font-weight: 600; color: var(--text-secondary); }
 .trend-tooltip .tt-section { margin-top: 0.45rem; padding-top: 0.4rem; border-top: 1px solid var(--hairline); }
 .trend-tooltip .tt-row { display: flex; align-items: center; gap: 0.45rem; line-height: 1.65; }
 .trend-tooltip .tt-row strong {

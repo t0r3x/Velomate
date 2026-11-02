@@ -562,6 +562,12 @@ depend on what a model decided to say.
   each element also shows its own value beside it (line values next to the crosshair dots, on the side
   away from the tooltip; "51/day · 2h02" on the cap of the hovered week's bar), in text tokens with a
   surface halo. That replaces a second axis, which is the usual PMC-chart answer and the one to avoid.
+- **Form has no line.** A form strip under the chart (same time axis, own zero line) was built and the
+  athlete rejected it. Form instead **leads the tooltip** as its own block, set exactly like the Form stat
+  above the chart (eyebrow label, figure, band word) and above the fitness and fatigue rows. An accent
+  edge and a bigger figure were tried first and read as too loud. It is also in the header
+  stat and the table. Don't add it back as a series.
+  Zones are labelled just "Z1".."Z5" everywhere on the card (the athlete asked for the names to go).
 - **The explanation lives behind a "?" next to the title** (`.trend-help`, a floating panel: Escape, its
   close button, the "?" or a click outside closes it; focus moves in on open and back to the "?" on
   Escape). It explains load, fitness, fatigue, form, the bars and click-to-hide. It does **not** mark
