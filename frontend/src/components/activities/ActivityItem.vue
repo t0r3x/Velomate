@@ -16,8 +16,9 @@
       <div
         v-if="hasFeedback || editing"
         class="act-feedback"
-        @mouseenter="showTip($event, 'rating')"
-        @mouseleave="hideTip"
+        @pointerenter="onTipEnter($event, 'rating')"
+        @pointerleave="onTipLeave"
+        @click="onTipTap($event, 'rating')"
       >
         <span v-if="rpe !== null" class="act-rpe-badge" :class="rpeClass">RPE {{ rpe }}</span>
         <span v-if="feeling !== null" class="act-feeling-badge" :class="feelingEntry.cls" v-html="feelingHtml"></span>
@@ -44,7 +45,12 @@
 
     <!-- Hovering the numbers shows the ride's details: speed, max HR, time per zone, and whether
          it is one of the rides the header's heart rate warning is about. -->
-    <div class="activity-stats-summary" @mouseenter="showTip($event, 'stats')" @mouseleave="hideTip">
+    <div
+      class="activity-stats-summary"
+      @pointerenter="onTipEnter($event, 'stats')"
+      @pointerleave="onTipLeave"
+      @click="onTipTap($event, 'stats')"
+    >
       <div class="act-stat act-stat--dist">
         <span class="act-stat-val">{{ activity.distanceKm }} km</span>
         <span class="act-stat-label">Dist</span>
@@ -199,6 +205,7 @@ import type { Activity, PlanEntry } from '@/types'
 import { toRpe, toFeeling, ACTIVITY_TYPE_LABELS, workoutTypeLabel, workoutTypeIcon } from '@/utils'
 import { rideLoad, zoneMinutes } from '@/utils/trainingLoad'
 import { averagedAboveLthr, peakAboveMax } from '@/utils/hrCalibration'
+import { lastPointerType } from '@/utils/pointer'
 import { useActivitiesStore } from '@/stores/activities.store'
 import { useProfileStore }    from '@/stores/profile.store'
 import { useToast } from '@/composables/useToast'
@@ -287,7 +294,7 @@ type TipKind = 'rating' | 'stats'
 const tip   = ref<{ left: number; top: number; kind: TipKind } | null>(null)
 const tipEl = ref<HTMLElement | null>(null)
 
-function showTip(e: MouseEvent, kind: TipKind) {
+function showTip(e: Event, kind: TipKind) {
   const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
   tip.value = { left: r.left, top: r.bottom + 8, kind }
   document.addEventListener('scroll', hideTip, true)
@@ -304,6 +311,37 @@ function showTip(e: MouseEvent, kind: TipKind) {
 function hideTip() {
   tip.value = null
   document.removeEventListener('scroll', hideTip, true)
+  document.removeEventListener('pointerdown', onOutsidePointer, true)
+}
+
+// A mouse hovers; a finger taps. Hover runs on pointer events filtered to the mouse, because a tap
+// also fires compatibility mouseenter/click: the tooltip opened, the click bubbled to the ride,
+// the rating editor opened over it and the tooltip was gone. On touch, a tap on the rating row or
+// the numbers toggles the tooltip instead of opening the editor (the pencil and the ride title
+// still open it), and a tap anywhere else closes it.
+function onTipEnter(e: PointerEvent, kind: TipKind) {
+  if (e.pointerType === 'mouse') showTip(e, kind)
+}
+function onTipLeave(e: PointerEvent) {
+  if (e.pointerType === 'mouse') hideTip()
+}
+let tipTrigger: HTMLElement | null = null
+
+function onTipTap(e: MouseEvent, kind: TipKind) {
+  if (lastPointerType() === 'mouse' || editing.value) return
+  if ((e.target as HTMLElement).closest('button')) return
+  e.stopPropagation()
+  if (tip.value?.kind === kind) return hideTip()
+  tipTrigger = e.currentTarget as HTMLElement
+  showTip(e, kind)
+  document.addEventListener('pointerdown', onOutsidePointer, true)
+}
+function onOutsidePointer(e: PointerEvent) {
+  const t = e.target as Node
+  if (tipEl.value?.contains(t)) return
+  // A tap on the trigger that opened it handles itself: it toggles the tooltip closed.
+  if (tipTrigger?.contains(t)) return
+  hideTip()
 }
 onBeforeUnmount(hideTip)
 

@@ -573,8 +573,10 @@ same width, with the cards' 1.75rem content inset so the wordmark lines up with 
   - **Training · Paused** appears only while training is paused.
 - **Actions** on the right use the same glyphs as the dialogs they open: `fa-user-gear` (Training Profile) and
   `fa-wrench` (Preferences). A `fa-sliders` button looked unrelated to the dialog and was replaced.
-- Phones: the status row wraps under brand + actions. It needs `flex-basis: 100%`, not `width`: the base
-  rule's `flex: 1` sets a zero basis that wins over a width.
+- Narrow screens (≤ 820px): the status row moves under brand + actions and **never wraps** (between 641 and
+  ~760px the last item used to drop onto a row of its own). It needs `flex-basis: 100%`, not `width`: the base
+  rule's `flex: 1` sets a zero basis that wins over a width. At ≤ 480px Garmin's value is only the age ("3h ago",
+  `compact`), since "Synced just now" made it the widest item. Fits on one row down to 340px wide.
 
 ## "?" help panels (`components/ui/HelpPopover.vue`)
 
@@ -648,6 +650,10 @@ depend on what a model decided to say.
   Hovering a ride's **numbers** (distance, time, avg HR) shows a second variant: speed, duration and load, avg/max HR
   and the profile zone it averaged in, power when the ride has it, Garmin's minutes per zone, and the ride's own share
   of the heart rate warning.
+  **On touch there is no hover**, so a tap on the rating row or the numbers toggles the tooltip instead of opening
+  the rating editor (the pencil and the title still open it), and a tap elsewhere closes it. Hover runs on
+  `pointerenter` filtered to the mouse, and taps are told apart by `lastPointerType()` (`utils/pointer.ts`):
+  a tap also fires compatibility mouse and click events, which used to open the tooltip and the editor over it.
 - **Preferences uses the big dialog** (`tp-*`, the same as Training Profile and Connections): it was a
   360px confirm-style box that looked like a different app next to Training Profile. Sections: Appearance,
   AI coach, Updates (packaged only), About; settings still save on change, the footer only has Done.
@@ -961,3 +967,6 @@ Bump `version` in root `package.json` before every publish — it's both the rel
 26. **Prompt text is in `backend/src/prompts/*.md`, loaded by `prompts/loader.ts`.** `{{NAME}}` is the only syntax; `renderPrompt()` throws on a placeholder without a value *and* on a value without a placeholder, so a rename on one side fails at startup instead of silently dropping data from the prompt (the system instructions render at module load). Substitution is single-pass, so athlete-typed goals can never expand a placeholder. Files are normalised on read (BOM, CRLF → LF, one trailing newline) because Git on Windows checks them out as CRLF and the system instructions must be byte-identical everywhere. **tsc does not copy `.md`**: `npm run build` runs `scripts/copy-prompts.js` into `dist/prompts`, which Docker and the Electron package both ship as part of `dist/`. Dev and the test harness (tsx) read `src/prompts` directly. When the extraction was done, the request bodies for four scenarios (plan/free × full/bare) were compared byte for byte against the inline version and were identical — repeat that check after any change to the loader.
 27. **The model fallback must never go back up the chain.** `getModelChain()` is custom → Accurate → Super fast and stops at Super fast; a Super fast selection has no fallback. The 90s budget (`FALLBACK_AFTER_MS`) applies only to a model that has a successor, so turning the switch off restores the old behaviour exactly (one model, 7-minute timeout, 4 attempts). When the fallback fires it is logged as `… failed (status: reason) — falling back to <model>`; the plan itself does not record which model made it.
 28. **The Trend card is deliberately not the coach.** `utils/trainingLoad.ts` is computed client-side from the rides and never reaches a prompt; do not "reuse" its fitness/form numbers in the AI prompt without deciding that on purpose, because the point is an independent view the athlete can check the coach against. Its load is zone TRIMP from Garmin's zone split, so it is unaffected by the Velomate HR profile; changing that to profile zones would bring gotcha 25's miscalibration straight into the chart.
+29. **`npx vue-tsc --noEmit` in `frontend/` checks nothing**: the root `tsconfig.json` has `"files": []` and only
+    references `tsconfig.app.json` / `tsconfig.node.json`, so it passes on any code. So does the `vue-tsc` step of
+    `npm run build`. Typecheck with `npx vue-tsc --noEmit -p tsconfig.app.json` (and `-p tsconfig.node.json`).

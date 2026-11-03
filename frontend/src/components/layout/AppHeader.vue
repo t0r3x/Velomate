@@ -95,13 +95,26 @@ const isElectronMode = isElectron()
 const keyboardNav = ref(false)
 const onKey = (e: KeyboardEvent) => { if (e.key === 'Tab') keyboardNav.value = true }
 const onPointer = () => { keyboardNav.value = false }
+/**
+ * On a phone the three items share one row, and "Synced just now" made Garmin the widest of them:
+ * there the value is just the age ("3h ago"). The label and the green dot already say Garmin is
+ * connected, and the tooltip still says when it last synced.
+ */
+const COMPACT_QUERY = '(max-width: 480px)'
+const compactMq = window.matchMedia(COMPACT_QUERY)
+const compact = ref(compactMq.matches)
+const onCompact = (e: MediaQueryListEvent) => { compact.value = e.matches }
+const capitalize = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
+
 onMounted(() => {
   document.addEventListener('keydown', onKey)
   document.addEventListener('pointerdown', onPointer)
+  compactMq.addEventListener('change', onCompact)
 })
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKey)
   document.removeEventListener('pointerdown', onPointer)
+  compactMq.removeEventListener('change', onCompact)
 })
 
 const authStore     = useAuthStore()
@@ -194,7 +207,8 @@ const items = computed<Item[]>(() => {
       label: 'Garmin',
       value: !authStore.loaded ? 'Checking…'
         : !authStore.isLoggedIn ? 'Not connected'
-        : syncedAt.value ? `Synced ${timeAgo(syncedAt.value)}` : 'Connected',
+        : syncedAt.value ? (compact.value ? capitalize(timeAgo(syncedAt.value)) : `Synced ${timeAgo(syncedAt.value)}`)
+        : 'Connected',
       warn: authStore.loaded && (!authStore.isLoggedIn || syncStale.value),
       action: () => emit('open-settings'),
     },
@@ -390,12 +404,21 @@ const tip = computed(() => {
 .app-header--titlebar .ah-action { -webkit-app-region: no-drag; }
 .app-header--titlebar .ah-action { width: 2.1rem; height: 2.1rem; }
 
-@media (max-width: 640px) {
-  .app-header { width: calc(100% - 1.7rem); margin-top: 1rem; padding: 0.75rem 1rem; gap: 0.75rem; flex-wrap: wrap; }
+/* Below ~820px brand, items and actions no longer fit one row, and the last item wrapped on its
+   own. The items get their own row instead, and that row never wraps: three items always fit it. */
+@media (max-width: 820px) {
+  .app-header { flex-wrap: wrap; row-gap: 0.6rem; }
   .ah-brand { border-right: none; padding-right: 0; }
-  /* flex-basis, not width: the base rule's flex: 1 sets a 0 basis that would win over width. */
-  .ah-status { order: 3; flex-basis: 100%; }
-  .ah-item { padding: 0.3rem 0.6rem; }
+  /* flex-basis, not width: the base rule's flex: 1 sets a 0 basis that would win over width.
+     The negative margin lines the first item's text up with the wordmark above it. */
+  .ah-status { order: 3; flex-basis: 100%; flex-wrap: nowrap; margin-left: -0.85rem; }
+}
+
+@media (max-width: 640px) {
+  .app-header { width: calc(100% - 1.7rem); margin-top: 1rem; padding: 0.75rem 1rem; gap: 0.75rem; }
+  .ah-status { gap: 0.4rem; margin-left: -0.5rem; }
+  .ah-item { padding: 0.3rem 0.5rem; }
+  .ah-item + .ah-item::before { left: calc(-0.2rem - 0.5px); }
 }
 </style>
 
