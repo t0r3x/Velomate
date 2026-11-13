@@ -237,7 +237,7 @@ const loginBusy = ref(false)
 // the dropdown went stale every time Google shipped a model, so anything not listed here
 // (Pro tiers, brand-new releases) goes in through "Custom model ID…" instead.
 const MODEL_PRESETS = [
-  { id: 'gemini-3.8-flash' },
+  { id: 'gemini-4-hydrogen' },
   { id: 'gemini-3.5-flash-lite' },
 ] as const
 
@@ -246,8 +246,9 @@ const CUSTOM_MODEL = '__custom__'
 
 /**
  * The three cards. Figures are measured on this app's own plan prompt, not vendor claims:
- * flash took 20-80s per plan (minutes when Google was busy), flash-lite 2-5s — and in real
- * calls lite followed the coaching rules less strictly (the backend's sanitizeStructure
+ * 3.8 flash (Accurate until Nov 2026, now Gemini 4 Hydrogen, not yet measured) took 20-80s
+ * per plan (minutes when Google was busy), flash-lite 2-5s — and in real calls lite
+ * followed the coaching rules less strictly (the backend's sanitizeStructure
  * corrects the workouts either way). Say what the athlete gets, so the choice is a choice.
  */
 const MODEL_CHOICES: {
@@ -255,7 +256,7 @@ const MODEL_CHOICES: {
   description: string
 }[] = [
   {
-    value: 'gemini-3.8-flash', id: 'gemini-3.8-flash', title: 'Accurate', tag: 'Recommended', icon: 'fa-bullseye',
+    value: 'gemini-4-hydrogen', id: 'gemini-4-hydrogen', title: 'Accurate', tag: 'Recommended', icon: 'fa-bullseye',
     description: 'Weighs your rides, check-ins and recovery most carefully. Worth the wait for a plan you follow every day.',
   },
   {

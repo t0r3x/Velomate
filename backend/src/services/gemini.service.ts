@@ -51,8 +51,11 @@ export const maskKey = (key: string): string =>
 // validated, not just non-empty — a value containing '/', '?' or '..' would rewrite the
 // endpoint rather than name a model.
 
-/** Fallback model — what the app uses when nothing has been chosen yet. */
-export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+/**
+ * Fallback model — what the app uses when nothing has been chosen yet. Gemini 4 Hydrogen
+ * (Nov 2026) is Google's successor to 3.8 Flash: the Flash tier of Gemini 4 under another name.
+ */
+export const DEFAULT_GEMINI_MODEL = 'gemini-4-hydrogen';
 
 /**
  * Tidy a user-entered model ID: trim, drop the 'models/' prefix Google's own docs and
@@ -86,7 +89,7 @@ export const FAST_MODEL     = 'gemini-3.5-flash-lite';
  * Google's models fail in ways that have nothing to do with the request: a new model is
  * overloaded (503) for days, a free-tier key runs out of its daily quota for ONE model (429)
  * while the others still answer, and under load a call can sit for five minutes before it
- * answers at all. The server logs show 3.8-flash taking 100-350s on most days while
+ * answers at all. The server logs show 3.8-flash (then Accurate) taking 100-350s on most days while
  * flash-lite answered the identical prompt in 2-5s. Without a fallback each of those is a
  * plan that does not update, or an athlete watching "being updated" for minutes.
  */
@@ -110,7 +113,8 @@ export const getModelChain = (): string[] => {
  * that was 20-30s of hidden reasoning per plan (flash-lite answered the same prompt in
  * 2-5s). Thinking tokens also count against maxOutputTokens, so a long think could
  * trigger a MAX_TOKENS retry and double the wait. 'low' is accepted by every Gemini 3
- * tier, Pro included. Lite models already default to minimal thinking — forcing 'low'
+ * tier, Pro included, and by Gemini 4 Hydrogen, whose default is 'high' (it has no
+ * 'minimal'; 'low' is its least). Lite models already default to minimal thinking — forcing 'low'
  * would make them slower — and older families (2.x: thinkingBudget, Gemma: none) reject
  * thinkingLevel outright, so both are left untouched. The model is free text, hence a
  * pattern rather than a list.

@@ -129,7 +129,7 @@ const { timeAgo }   = useTimeAgo()
 const STALE_SYNC_HOURS = 48
 
 const MODEL_LABELS: Record<string, string> = {
-  'gemini-3.8-flash': 'Accurate',
+  'gemini-4-hydrogen': 'Accurate',
   'gemini-3.5-flash-lite': 'Super fast',
 }
 const modelLabel = (id: string | null | undefined) => (id ? MODEL_LABELS[id] ?? id : '')

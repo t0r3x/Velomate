@@ -50,7 +50,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const setupComplete       = ref(false)
   const maskedKey           = ref<string | null>(null)
   const preferredLongRideDays = ref<string[]>([])
-  const geminiModel         = ref('gemini-3.8-flash')
+  const geminiModel         = ref('gemini-4-hydrogen')
   const geminiModelFallback = ref(true)
   const geminiLastModel     = ref<string | null>(null)
   const trendCollapsed      = ref(false)
@@ -69,7 +69,7 @@ export const useSettingsStore = defineStore('settings', () => {
       setupComplete.value         = data.setupComplete
       maskedKey.value             = data.hasKey ? data.maskedKey : null
       preferredLongRideDays.value = Array.isArray(data.preferredLongRideDays) ? data.preferredLongRideDays : []
-      geminiModel.value           = data.geminiModel || 'gemini-3.8-flash'
+      geminiModel.value           = data.geminiModel || 'gemini-4-hydrogen'
       geminiModelFallback.value   = data.geminiModelFallback ?? true
       geminiLastModel.value       = data.geminiLastModel ?? null
       trendCollapsed.value        = data.trendCollapsed ?? false
@@ -95,7 +95,7 @@ export const useSettingsStore = defineStore('settings', () => {
       setupComplete.value         = data.setupComplete
       maskedKey.value             = data.hasKey ? data.maskedKey : null
       preferredLongRideDays.value = Array.isArray(data.preferredLongRideDays) ? data.preferredLongRideDays : []
-      geminiModel.value           = data.geminiModel || 'gemini-3.8-flash'
+      geminiModel.value           = data.geminiModel || 'gemini-4-hydrogen'
       geminiModelFallback.value   = data.geminiModelFallback ?? true
       geminiLastModel.value       = data.geminiLastModel ?? null
       trendCollapsed.value        = data.trendCollapsed ?? false

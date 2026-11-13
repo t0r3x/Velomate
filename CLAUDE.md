@@ -187,7 +187,7 @@ The first plan is never created here — only steps 2-4 ever fire, and they all 
 - POSTs to `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` through `callGeminiWithFallback()` → `callGemini()` (shared by both modes; the fallback chain is under "AI model selection"): up to 4 attempts on 429 (honours Retry-After) and on 500/503/504 (3s, 6s, 12s). 503 "model overloaded" is routine for a newly released model and used to fail the generation outright, since only 429 was retried. Other statuses throw immediately — a 400/403/404 fails identically every time. Each attempt has a **7-minute axios timeout** (`GEMINI_TIMEOUT_MS`), not retried. Without one, a request Google held open never settled, the single-flight promise never released, and the UI sat on "being updated" until restart. It is generous on purpose: a real gemini-3.8-flash plan call under load took 322s to answer; gemini-3.5-flash-lite took 2-5s for the same prompt
 - `responseMimeType: "application/json"`, joins all parts: `parts.map(p => p.text ?? '').join('')` — avoids truncation
 - `temperature: 0.2`. Deliberately low: the prompt asks for plan stability in prose, and a higher setting sampled against the very thing it was asking for.
-- `thinkingConfig` comes from `thinkingConfigFor(model)`: `{ thinkingLevel: 'low' }` for non-lite Gemini 3+, nothing otherwise. Gemini 3 Flash's default high dynamic thinking cost 20-30s per plan (flash-lite: 2-5s for the same prompt), and thinking tokens count against `maxOutputTokens`. Lite models already default lower, and 2.x/Gemma reject `thinkingLevel`, so they get the API default. `logUsage()` logs duration plus prompt/cached/thoughts/output tokens per call; check it before changing the level.
+- `thinkingConfig` comes from `thinkingConfigFor(model)`: `{ thinkingLevel: 'low' }` for non-lite Gemini 3+ (Gemini 4 Hydrogen included: its default is `high`, it refuses `minimal`, and it ignores `temperature`), nothing otherwise. Gemini 3 Flash's default high dynamic thinking cost 20-30s per plan (flash-lite: 2-5s for the same prompt), and thinking tokens count against `maxOutputTokens`. Lite models already default lower, and 2.x/Gemma reject `thinkingLevel`, so they get the API default. `logUsage()` logs duration plus prompt/cached/thoughts/output tokens per call; check it before changing the level.
 - **Single-flight**: `generateRecommendation()` is a thin wrapper around `_generatePlan()` guarded by a module-level `planGenerationInFlight` promise — a second concurrent caller joins the run already in progress instead of starting its own. Six paths can trigger a generation and most fire without awaiting (an ordinary app launch triggers two), so without this, two Gemini calls would race to write `recommendation.id=1`. `generateFreeSuggestion()` has the same guard (`freeGenerationInFlight`); `isGenerationInFlight()` exposes both to the API.
 - Only `weeklyPlan[0..6]` get a `structure` (`STRUCTURED_WINDOW_DAYS`); days 7-13 are a typed outline with `structure: null`. Only the first week is ever synced to Garmin (`syncAndScheduleWorkouts` covers today..today+6) and the plan regenerates daily, so a second-week day always gets its structure before it can be ridden. Generating them up front was roughly half the output tokens, thrown away — and the main cause of the `MAX_TOKENS` truncation the `ACTIVITY_WINDOWS` ladder exists to retry around. Don't "restore" it.
 - Validates: `weeklyPlan` is exactly 14 entries (`PLAN_WINDOW_DAYS`) and **every** day has a valid type (spelling variants like "VO2 Max" are normalised by `normalizeWorkoutType()`; anything else fails the generation and keeps the previous plan). `today.type` is only a cross-check — `weeklyPlan[0]` is authoritative. Dates are **set from the calendar** (`weeklyPlan[i]` = today + i), never trusted from the model. A pinned (rescheduled) today is **enforced** in code if the model ignores it, with its structure dropped so sync uses the built-in one for the pinned type. Priority outside high/medium/low becomes medium.
@@ -244,7 +244,7 @@ Rides are rendered by `formatActivityLines()` as one line per ride (`date | dura
 
 The model is **user-supplied free text**, not a fixed dropdown — that list went stale every time Google
 shipped a model. `SettingsPanel.vue` presents it as **three cards** (`MODEL_CHOICES`, a `role="radiogroup"`),
-because the athlete should choose a trade-off consciously, not pick an ID: **Accurate** (`gemini-3.8-flash`,
+because the athlete should choose a trade-off consciously, not pick an ID: **Accurate** (`gemini-4-hydrogen`, Google's successor to 3.8 Flash since Nov 2026,
 recommended — reasons most carefully, slower), **Super fast** (`gemini-3.5-flash-lite` — a plan in seconds,
 follows the rules more loosely; sanitizeStructure still checks every workout) and **Custom**, whose ID field
 sits inside its own card and is disabled until that card is chosen. Cards are divs with `role="radio"`, not
@@ -270,7 +270,7 @@ to the next model, with `thinkingConfig` rebuilt for it. A model that has a fall
 `FALLBACK_AFTER_MS` (90s) **including retries**: each attempt's timeout is what is left of that, and a
 retry whose wait would cross it is skipped, which is what makes a 429 with a long Retry-After fall back
 at once. The last model in the chain keeps the full `GEMINI_TIMEOUT_MS`. Why 90s: the Oct-Nov 2026 logs
-show 3.8-flash taking 100-350s on most days while flash-lite answered the identical prompt in 2-5s, and
+show 3.8-flash (Accurate until Hydrogen) taking 100-350s on most days while flash-lite answered the identical prompt in 2-5s, and
 a free-tier quota is per model, so one model can be exhausted while the next still answers. The chain is
 shortened in place once a model fails, so the MAX_TOKENS window retries in the same generation do not
 wait on it again. The switch's description in `SettingsPanel.vue` mirrors the chain for the selected card.
@@ -284,7 +284,7 @@ mirrors the same two functions purely to give an actionable message before the r
 | Key | Description |
 |-----|-------------|
 | `gemini_api_key` | Raw API key |
-| `gemini_model` | e.g. `gemini-3.8-flash` (default). Free-text: the settings form offers two presets plus a "Custom model ID…" field, so a Pro-tier or newly released model can be used without an app update. Always stored normalized — see "AI model selection" |
+| `gemini_model` | e.g. `gemini-4-hydrogen` (default; `gemini-3.8-flash` before Nov 2026, which now reopens as Custom). Free-text: the settings form offers two presets plus a "Custom model ID…" field, so a Pro-tier or newly released model can be used without an app update. Always stored normalized — see "AI model selection" |
 | `gemini_model_fallback` | `'0'` disables the automatic model fallback (default on, i.e. unset or `'1'`). See "AI model selection" |
 | `gemini_last_generated` | ISO timestamp; `'0'` = never/force regen |
 | `preferred_long_ride_days` | Comma-separated day names, e.g. `Saturday,Sunday` |
