@@ -17,7 +17,7 @@ import {
   PlanChange,
   FreeSuggestion
 } from './database.service';
-import { localDate, toRpe, toFeeling, USER_TZ, APP_NAME } from '../utils';
+import { localDate, localDateTime, normalizeStartTime, toRpe, toFeeling, USER_TZ, APP_NAME } from '../utils';
 import { sanitizeStructure, normalizeWorkoutType } from './workout.service';
 import { getFtp, getBest20MinPower, hasRecentPowerRides, intensityFactor, FTP_FROM_20MIN } from './power.service';
 import logger from '../logger';
@@ -520,12 +520,13 @@ const isAppActivity = (name: string): boolean =>
  *
  * Including today (<=) means a same-day sync immediately marks the workout as done.
  */
-export const classifyCompletedEntries = (
-  plan: PlanEntry[]
-): Array<{ date: string; status: 'completed' }> => {
-  const activities = getStoredActivities();
-
-  // Best activity per date: prefer Velomate-named, then longest
+/**
+ * The ride that answers each date: a Velomate-named activity wins, else the longest ride.
+ * Shared by completion matching and the compliance block, so the ride the AI is shown for
+ * scoring is always the ride that completed the entry (they used different rules once, and a
+ * long commute got scored against the Threshold session ridden the same day).
+ */
+const bestRidePerDate = (activities: any[]): Map<string, any> => {
   const actMap = new Map<string, any>();
   activities
     .filter(a => a.startTime)
@@ -543,6 +544,13 @@ export const classifyCompletedEntries = (
         actMap.set(date, a);
       }
     });
+  return actMap;
+};
+
+export const classifyCompletedEntries = (
+  plan: PlanEntry[]
+): Array<{ date: string; status: 'completed' }> => {
+  const actMap = bestRidePerDate(getStoredActivities());
 
   const today = localDate();
 
@@ -848,16 +856,7 @@ const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, ac
   // Previous plan compliance block
   let prevBlock = '';
   if (previousPlan && previousPlan.length > 0) {
-    const actMap = new Map<string, any>();
-    allActivities
-      .filter(a => a.startTime)
-      .forEach(a => {
-        const date = a.startTime.slice(0, 10);
-        const existing = actMap.get(date);
-        if (!existing || a.durationMinutes > existing.durationMinutes) {
-          actMap.set(date, a);
-        }
-      });
+    const actMap = bestRidePerDate(allActivities);
 
     // Only include non-'planned' entries — future planned entries (tomorrow onwards)
     // are being regenerated and add no compliance signal.
@@ -967,12 +966,42 @@ let planGenerationInFlight: Promise<any> | null = null;
 
 /** True while a plan or free suggestion is being generated — lets the API tell the UI the truth. */
 export const isGenerationInFlight = (): boolean =>
-  planGenerationInFlight !== null || freeGenerationInFlight !== null;
+  planGenerationInFlight !== null || freeGenerationInFlight !== null ||
+  planFollowUpPromise !== null || freeFollowUpPromise !== null;
 
-export const generateRecommendation = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, pinnedTodayType?: string): Promise<any> => {
+/**
+ * A caller that just changed something (a check-in, a rating, a skip, a move, a resume) cannot
+ * simply join a run that is already going: that run's prompt was built before the change, so
+ * its answer ignores it. Such callers pass `afterChange`, and get ONE follow-up run that starts
+ * when the current one ends, built from the plan as it is then. Several changes during one
+ * run share that single follow-up. Automatic triggers keep joining, so an ordinary launch does
+ * not cost an extra call.
+ */
+export interface GenerateOptions { afterChange?: boolean }
+
+let planFollowUp: { pauseContext?: PauseContext; pinnedTodayType?: string } | null = null;
+let planFollowUpPromise: Promise<any> | null = null;
+
+export const generateRecommendation = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, pinnedTodayType?: string, opts: GenerateOptions = {}): Promise<any> => {
   if (planGenerationInFlight) {
-    logger.info('[Gemini] Plan generation already in flight — joining it instead of starting a second');
-    return planGenerationInFlight;
+    if (!opts.afterChange) {
+      logger.info('[Gemini] Plan generation already in flight — joining it instead of starting a second');
+      return planGenerationInFlight;
+    }
+    planFollowUp = {
+      pauseContext:    pauseContext    ?? planFollowUp?.pauseContext,
+      pinnedTodayType: pinnedTodayType ?? planFollowUp?.pinnedTodayType,
+    };
+    if (!planFollowUpPromise) {
+      logger.info('[Gemini] Plan generation in flight but the plan just changed — queuing one follow-up run');
+      planFollowUpPromise = planGenerationInFlight.catch(() => undefined).then(() => {
+        const args = planFollowUp ?? {};
+        planFollowUp = null;
+        planFollowUpPromise = null;
+        return generateRecommendation(getStoredRecommendation()?.weeklyPlan, args.pauseContext, args.pinnedTodayType);
+      });
+    }
+    return planFollowUpPromise;
   }
   planGenerationInFlight = _generatePlan(previousPlan, pauseContext, pinnedTodayType)
     .finally(() => { planGenerationInFlight = null; });
@@ -1042,12 +1071,14 @@ const _attemptGeneration = async (
   logger.info(rawText ?? '(empty)');
   logger.info('─'.repeat(72) + '\n');
 
-  if (!rawText) throw new Error('Empty response from Gemini API');
-
-  // Response was cut short — signal to the caller to retry with less context
+  // Response was cut short — signal to the caller to retry with less context. Checked before
+  // the empty-text check: when thinking uses up the token budget the answer can be cut off
+  // before a single character, and that is exactly the case a smaller window fixes.
   if (finishReason === 'MAX_TOKENS') {
     return { truncated: true };
   }
+
+  if (!rawText) throw new Error('Empty response from Gemini API');
 
   let parsed: any;
   try {
@@ -1107,6 +1138,10 @@ const _attemptGeneration = async (
   const statusSource = livePlan ?? previousPlan ?? [];
   const prevEntryMap = new Map<string, PlanEntry>();
   statusSource.forEach(e => prevEntryMap.set(e.date, e));
+  // What the prompt showed. A day whose type differs between this and the live plan was moved
+  // by the athlete while the model was answering; the model never saw that move.
+  const promptEntryMap = new Map<string, PlanEntry>();
+  (previousPlan ?? []).forEach(e => promptEntryMap.set(e.date, e));
 
   // Merge into the new plan window:
   //  - Preserve non-planned statuses (completed/skipped/auto-skipped)
@@ -1114,22 +1149,29 @@ const _attemptGeneration = async (
   //  - Apply new AI-generated scores for entries that just became completed (today's dates in new plan)
   const weeklyPlan: PlanEntry[] = parsed.weeklyPlan.map((e: any, i: number) => {
     const date          = planDates[i];
-    const type          = dayTypes[i];
     const prev          = prevEntryMap.get(date);
     const status        = (prev && prev.status !== 'planned') ? prev.status : 'planned';
     const alreadyScored = prev?.executionScore != null;
+    // The type stays what it was when the day is already done or skipped (the history must keep
+    // what was planned, not whatever the model wrote over it), and when the athlete moved it
+    // during this call (otherwise a reschedule committed mid-flight is silently undone).
+    const seen          = promptEntryMap.get(date);
+    const movedMidCall  = !!(prev && seen && prev.status === 'planned' && prev.type !== seen.type);
+    const keepPrevType  = !!prev && (status !== 'planned' || movedMidCall);
+    const type          = keepPrevType ? prev!.type : dayTypes[i];
 
     // A structure only where something will actually be ridden from it: a planned, non-Rest
     // day inside the structured window. sanitizeStructure removes dead blocks, fixes bad
     // zones/types/durations and recomputes totalMinutes (the model rounds inconsistently).
-    const structure = (type !== 'Rest' && i < STRUCTURED_WINDOW_DAYS && status === 'planned')
+    // The model's structure only fits the model's type; a kept type gets the built-in one at sync.
+    const structure = (type !== 'Rest' && i < STRUCTURED_WINDOW_DAYS && status === 'planned' && type === dayTypes[i])
       ? sanitizeStructure(e.structure, type)
       : null;
 
     return {
       date,
       type,
-      reason:         typeof e.reason === 'string' ? e.reason : '',
+      reason:         keepPrevType ? (prev!.reason ?? '') : (typeof e.reason === 'string' ? e.reason : ''),
       status,
       executionScore: alreadyScored
                         ? prev!.executionScore!
@@ -1258,13 +1300,18 @@ export const isFreeTrainingMode = (): boolean => getSetting('free_training_mode'
  * ride on Wednesday, and that is still the session they were given.
  * Prefers a Velomate-named activity on that date, else the longest ride of that day.
  */
-export const findRideForFreeSuggestion = (syncedForDate: string): any | null => {
+export const findRideForFreeSuggestion = (syncedForDate: string, syncedAt?: string | null): any | null => {
   const today = localDate();
+  // A ride that started before the sync cannot be the answer to it: the usual day is "ride in
+  // the morning, which completes suggestion N; sync N+1 at noon", and that morning ride used to
+  // complete N+1 on the next sync. startTime is local time, so syncedAt (UTC) is converted.
+  const syncedAtLocal = syncedAt ? localDateTime(new Date(syncedAt)) : null;
   const candidates = getStoredActivities()
     .filter(a => a.startTime)
     .filter(a => {
       const d = a.startTime.slice(0, 10);
-      return d >= syncedForDate && d <= today;
+      return d >= syncedForDate && d <= today &&
+        (!syncedAtLocal || normalizeStartTime(a.startTime) >= syncedAtLocal);
     })
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
@@ -1384,10 +1431,30 @@ let freeGenerationInFlight: Promise<FreeSuggestion | null> | null = null;
  *   false for an automatic regeneration. Decides how the outgoing suggestion is recorded,
  *   and therefore whether the AI reads it as a rejection.
  */
-export const generateFreeSuggestion = (pauseContext?: PauseContext, athleteRequested = false): Promise<FreeSuggestion | null> => {
+let freeFollowUp: { pauseContext?: PauseContext; athleteRequested: boolean } | null = null;
+let freeFollowUpPromise: Promise<FreeSuggestion | null> | null = null;
+
+/** Same single-flight + follow-up rule as generateRecommendation(); see GenerateOptions. */
+export const generateFreeSuggestion = (pauseContext?: PauseContext, athleteRequested = false, opts: GenerateOptions = {}): Promise<FreeSuggestion | null> => {
   if (freeGenerationInFlight) {
-    logger.info('[Gemini] Free suggestion generation already in flight — joining it instead of starting a second');
-    return freeGenerationInFlight;
+    if (!opts.afterChange) {
+      logger.info('[Gemini] Free suggestion generation already in flight — joining it instead of starting a second');
+      return freeGenerationInFlight;
+    }
+    freeFollowUp = {
+      pauseContext:     pauseContext ?? freeFollowUp?.pauseContext,
+      athleteRequested: athleteRequested || !!freeFollowUp?.athleteRequested,
+    };
+    if (!freeFollowUpPromise) {
+      logger.info('[Gemini] Free suggestion generation in flight but something just changed — queuing one follow-up run');
+      freeFollowUpPromise = freeGenerationInFlight.catch(() => undefined).then(() => {
+        const args = freeFollowUp ?? { athleteRequested: false };
+        freeFollowUp = null;
+        freeFollowUpPromise = null;
+        return generateFreeSuggestion(args.pauseContext, args.athleteRequested);
+      });
+    }
+    return freeFollowUpPromise;
   }
   freeGenerationInFlight = _generateFree(pauseContext, athleteRequested)
     .finally(() => { freeGenerationInFlight = null; });

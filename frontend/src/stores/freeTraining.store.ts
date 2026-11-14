@@ -9,7 +9,7 @@ import {
   postResumeTraining
 } from '@/api/client'
 import { useAuthStore } from '@/stores/auth.store'
-import { REFRESH_POLL_ATTEMPTS } from '@/utils'
+import { REFRESH_POLL_ATTEMPTS, POLL_HARD_CAP } from '@/utils'
 import type { FreeSuggestion, FreeState, RefreshOutcome, RefreshStep, SyncResult } from '@/types'
 
 /**
@@ -59,7 +59,14 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
     try {
       const data = await getFreeTraining()
       if ('notConfigured' in data) { state.value = 'not-configured'; return }
-      if ('noSuggestion' in data)  { state.value = 'no-suggestion';  return }
+      // A replacement being generated (just after a dismiss) is not the first-suggestion intro.
+      if ('noSuggestion' in data) {
+        // A replacement being generated (just after a dismiss): keep what is on screen, or
+        // show loading, but never the first-suggestion intro.
+        if (data.regenerating) { if (!hadSuggestion) state.value = 'loading'; return }
+        state.value = 'no-suggestion'
+        return
+      }
       if ('paused' in data) {
         pausedSince.value = data.pausedSince
         pauseReason.value = data.pauseReason ?? null
@@ -191,17 +198,31 @@ export const useFreeTrainingStore = defineStore('freeTraining', () => {
     const previousType = suggestion.value?.workoutType
     if (showIndicator) isRegenerating.value = true
     try {
-      for (let i = 0; i < maxAttempts; i++) {
+      // maxAttempts counts only polls with nothing in flight; see POLL_HARD_CAP.
+      let idle = 0
+      for (let i = 0; i < POLL_HARD_CAP && idle < maxAttempts; i++) {
         await new Promise<void>(r => setTimeout(r, 4000))
         try {
           const data = await getFreeTraining()
-          if ('notConfigured' in data || 'noSuggestion' in data || 'paused' in data) return 'failed'
+          if ('notConfigured' in data || 'paused' in data) return 'failed'
+          // Right after a dismiss there is briefly no current suggestion: the old one is
+          // dismissed and the replacement not yet written. That is waiting, not failure.
+          const busy = (data as { regenerating?: boolean }).regenerating === true
+          if ('noSuggestion' in data) {
+            if (busy) continue
+            // Nothing coming: show the honest empty state, not the dismissed suggestion.
+            await fetchCached()
+            return 'failed'
+          }
           if (data.suggestion?.generatedAt !== knownGeneratedAt) {
             applyPayload(data)
             return data.suggestion?.workoutType === previousType ? 'unchanged' : 'changed'
           }
-          if (detectFailure && data.regenerating === false) return 'failed'
-        } catch { /* ignore poll errors */ }
+          if (!busy) {
+            if (detectFailure) return 'failed'
+            idle++
+          }
+        } catch { idle++ /* poll errors count as idle, or a dead backend would be polled for 10 min */ }
       }
       return 'timeout'
     } finally {

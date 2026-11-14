@@ -73,6 +73,7 @@ import { useSettingsStore }       from '@/stores/settings.store'
 import { useRecommendationStore } from '@/stores/recommendation.store'
 import { useFreeTrainingStore }   from '@/stores/freeTraining.store'
 import { useTimeAgo }             from '@/composables/useTimeAgo'
+import { useClock }               from '@/composables/useClock'
 import StatusDot   from '@/components/ui/StatusDot.vue'
 import { isElectron } from '@/utils/electron'
 import type { Activity } from '@/types'
@@ -140,8 +141,9 @@ const dotState = computed<'pulsing' | 'connected' | 'disconnected'>(() => {
   return authStore.isLoggedIn ? 'connected' : 'disconnected'
 })
 const syncedAt = computed(() => activities.analysis?.updatedAt ?? null)
+const { now } = useClock()
 const syncStale = computed(() =>
-  !!syncedAt.value && Date.now() - new Date(syncedAt.value).getTime() > STALE_SYNC_HOURS * 3_600_000
+  !!syncedAt.value && now.value - new Date(syncedAt.value).getTime() > STALE_SYNC_HOURS * 3_600_000
 )
 
 // ── AI ───────────────────────────────────────────────────────────────────────
@@ -190,9 +192,21 @@ const hrWarnings = computed<TipLine[]>(() => {
   return out
 })
 
+// ── Power ────────────────────────────────────────────────────────────────────
+const hasPower = computed(() => !!profileStore.profile?.ftp || !!profileStore.profile?.best20Power)
+/**
+ * Same rule as the coach's FTP CALIBRATION line (buildPowerProfileLines() in the backend):
+ * 95% of the best 20 minutes more than 3% above the FTP. A best effort is a lower bound, so
+ * this only ever says the FTP is too LOW, never too high.
+ */
+const ftpTooLow = computed(() => {
+  const p = profileStore.profile
+  return !!(p?.ftp && p.estimatedFtp && p.estimatedFtp > p.ftp * 1.03)
+})
+
 // ── Items ────────────────────────────────────────────────────────────────────
 interface Item {
-  key: 'garmin' | 'ai' | 'hr' | 'training'
+  key: 'garmin' | 'ai' | 'hr' | 'power' | 'training'
   label: string
   value: string
   icon?: string
@@ -230,6 +244,19 @@ const items = computed<Item[]>(() => {
       action: () => emit('open-profile'),
     },
   ]
+  // Only for an athlete with a power meter (an FTP, or power on a recent ride): without one
+  // the header stays exactly as it was. Left out on phones, where the row has no room for a
+  // fourth item and the FTP is the least urgent of them.
+  if (hasPower.value && !compact.value) {
+    list.push({
+      key: 'power',
+      label: 'Power',
+      value: profileStore.profile?.ftp ? `${profileStore.profile.ftp} W` : 'No FTP',
+      icon: 'fa-bolt',
+      warn: ftpTooLow.value,
+      action: () => emit('open-profile'),
+    })
+  }
   if (paused.value) {
     list.push({ key: 'training', label: 'Training', value: 'Paused', icon: 'fa-pause', warn: true, action: () => emit('open-profile') })
   }
@@ -274,6 +301,23 @@ const tip = computed(() => {
         lines: [
           { text: p ? `Max HR ${p.maxHr} bpm · LTHR ${p.lthr} bpm. Your zones are set from these.` : 'Not set yet.', warn: false },
           ...hrWarnings.value,
+        ],
+        hint: 'Click to review your training profile.',
+      }
+    }
+    case 'power': {
+      const p = profileStore.profile
+      const best = p?.best20Power
+        ? `Best 20 minutes in the last 90 days: ${p.best20Power} W${p.best20Date ? ` (${new Date(p.best20Date + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })})` : ''}.`
+        : null
+      return {
+        title: 'Power',
+        lines: [
+          { text: p?.ftp
+              ? `FTP ${p.ftp} W, ${p.ftpSource === 'manual' ? 'set by you' : 'from Garmin and kept up to date from it'}. Rides with power show how hard they were against it.`
+              : 'No FTP yet. Rides with power still show their watts; with an FTP they also show how hard each ride was.', warn: false },
+          ...(best ? [{ text: best, warn: false }] : []),
+          ...(ftpTooLow.value ? [{ text: `95% of that is ${p!.estimatedFtp} W, above your FTP, so your FTP is probably set too low.`, warn: true }] : []),
         ],
         hint: 'Click to review your training profile.',
       }

@@ -89,11 +89,26 @@ const refreshAccessToken = async (refreshToken: string): Promise<any | null> => 
   return null;
 };
 
-export const trySessionAuth = async (): Promise<boolean> => {
+/**
+ * One check at a time. On launch the status poll and the startup auto-check arrive together;
+ * with a cold cache and an expiring token both sent the same refresh token, and when Garmin
+ * rotates it the loser failed, wrote its stale token over the fresh one, and reported the
+ * athlete logged out for the cache's two minutes.
+ */
+let authInFlight: Promise<boolean> | null = null;
+
+export const trySessionAuth = (): Promise<boolean> => {
   // Return cached result while still fresh — avoids live Garmin call every 30 s
   if (authCache && Date.now() < authCache.expiresAt) {
-    return authCache.valid;
+    return Promise.resolve(authCache.valid);
   }
+  if (!authInFlight) {
+    authInFlight = checkSession().finally(() => { authInFlight = null; });
+  }
+  return authInFlight;
+};
+
+const checkSession = async (): Promise<boolean> => {
 
   const client = getGarminClient();
   try {

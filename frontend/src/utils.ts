@@ -15,6 +15,14 @@ export const isoDate = (d = new Date()): string =>
 export const REFRESH_POLL_ATTEMPTS = 45
 
 /**
+ * Upper bound for any poll while the backend reports a generation in flight: 10 minutes.
+ * `maxAttempts` only counts polls on which nothing is running, so a slow model (Accurate took
+ * 100-350s in the Oct-Nov 2026 logs, plus a 90s fallback budget) is waited out instead of
+ * dropped after 80s with the new plan landing unseen.
+ */
+export const POLL_HARD_CAP = 150
+
+/**
  * Build a real 7-day display window starting `startOffset` days from today, filling
  * any day the backend hasn't planned yet with a placeholder entry — never fabricate
  * a real AI-planned rest day for a date the backend simply hasn't covered.

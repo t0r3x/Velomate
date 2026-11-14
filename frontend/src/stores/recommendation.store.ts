@@ -10,7 +10,7 @@ import {
   postResumeTraining
 } from '@/api/client'
 import { useAuthStore } from '@/stores/auth.store'
-import { isoDate, REFRESH_POLL_ATTEMPTS } from '@/utils'
+import { isoDate, REFRESH_POLL_ATTEMPTS, POLL_HARD_CAP } from '@/utils'
 import type { Recommendation, RecState, RefreshOutcome, RefreshStep, SyncResult } from '@/types'
 
 export const useRecommendationStore = defineStore('recommendation', () => {
@@ -144,7 +144,9 @@ export const useRecommendationStore = defineStore('recommendation', () => {
   ): Promise<RefreshOutcome> {
     if (showIndicator) isRegenerating.value = true
     try {
-      for (let i = 0; i < maxAttempts; i++) {
+      // maxAttempts counts only polls with nothing in flight; see POLL_HARD_CAP.
+      let idle = 0
+      for (let i = 0; i < POLL_HARD_CAP && idle < maxAttempts; i++) {
         await new Promise<void>(r => setTimeout(r, 4000))
         try {
           const data = await getRecommendation()
@@ -155,8 +157,11 @@ export const useRecommendationStore = defineStore('recommendation', () => {
             state.value = 'loaded'
             return rec.changedEntries?.length ? 'changed' : 'unchanged'
           }
-          if (detectFailure && rec.regenerating === false) return 'failed'
-        } catch { /* ignore poll errors */ }
+          if (rec.regenerating !== true) {
+            if (detectFailure) return 'failed'
+            idle++
+          }
+        } catch { idle++ /* poll errors count as idle, or a dead backend would be polled for 10 min */ }
       }
       return 'timeout'
     } finally {

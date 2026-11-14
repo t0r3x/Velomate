@@ -11,7 +11,10 @@ import {
 } from '@flow-js/garmin-connect';
 import { getGarminClient, trySessionAuth } from './garmin.service';
 import { loadProfile } from './profile.service';
-import { getStoredProfile, PlanEntry, WorkoutStep, WorkoutStructure } from './database.service';
+import {
+  getStoredProfile, getFreeSuggestionHistory, getCurrentFreeSuggestion,
+  PlanEntry, WorkoutStep, WorkoutStructure,
+} from './database.service';
 import { localDate, APP_NAME } from '../utils';
 import logger from '../logger';
 
@@ -338,29 +341,31 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
 
   logger.info(`[Sync] Syncing ${entriesToSync.length} workout(s) from this week: ${entriesToSync.map(e => `${e.date}:${e.type}`).join(', ')}`);
 
-  // ── Remove existing Velomate workouts before re-uploading ────────────────────
+  // ── Find the previously synced plan workouts (removed once the new week is up) ─
   // Prevents duplicates in the Garmin library and calendar when syncing multiple times.
   // deleteWorkout removes the workout from the library AND all scheduled calendar entries.
+  // Two rules, both from real bugs:
+  //  - Free-mode workouts are kept. They share the "Velomate - <date>: <type>" naming, so they
+  //    are recognised by rebuilding their names from the stored suggestions; deleting them
+  //    wiped the free-mode history the athlete was promised survives a mode switch.
+  //  - Nothing is deleted until the new week is uploaded. Deleting first meant a single failed
+  //    upload (a 429 on the third workout) left the watch with half a week.
   const APP_PREFIX = `${APP_NAME} - `;
+  const freeWorkoutNames = new Set(
+    getFreeSuggestionHistory(1000)
+      .concat(getCurrentFreeSuggestion() ?? [])
+      .filter(sug => sug.syncedForDate)
+      .map(sug => workoutLabels(sug.workoutType, sug.syncedForDate!).name)
+  );
+  let toDelete: any[] = [];
   try {
     const existingWorkouts = await client.getWorkouts(0, 100) as any[];
-    const toDelete = existingWorkouts.filter(
-      (w: any) => typeof w.workoutName === 'string' && w.workoutName.startsWith(APP_PREFIX)
+    toDelete = existingWorkouts.filter(
+      (w: any) => typeof w.workoutName === 'string' && w.workoutName.startsWith(APP_PREFIX) && !freeWorkoutNames.has(w.workoutName)
     );
-    if (toDelete.length > 0) {
-      logger.info(`[Sync] Removing ${toDelete.length} existing Velomate workout(s) before re-upload…`);
-      await Promise.all(
-        toDelete.map((w: any) => {
-          logger.info(`[Sync]   Deleting: ${w.workoutName} (id ${w.workoutId})`);
-          return client.deleteWorkout({ workoutId: String(w.workoutId) });
-        })
-      );
-    } else {
-      logger.info('[Sync] No existing Velomate workouts found — clean upload');
-    }
   } catch (err: any) {
     // Non-fatal: log and continue. Upload will still succeed; worst case is a duplicate.
-    logger.warn(`[Sync] Could not clean up existing workouts (continuing anyway): ${err.message}`);
+    logger.warn(`[Sync] Could not list existing workouts (continuing anyway): ${err.message}`);
   }
 
   // ── Build and upload each planned entry ──────────────────────────────────────
@@ -405,6 +410,12 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
     try {
       uploaded = await client.createWorkout(def);
     } catch (err: any) {
+      // The previous week is still on Garmin (nothing deleted yet). Remove the part of the new
+      // one that made it up, so the athlete has the old week, not a mix.
+      await Promise.all(results.map(r =>
+        client.deleteWorkout({ workoutId: String(r.workoutId) })
+          .catch((e: any) => logger.warn(`[Sync] Rollback: could not remove ${r.name}: ${e.message}`))
+      ));
       throw new Error(`Failed to upload ${type} workout: ${err.message}`);
     }
     try {
@@ -431,6 +442,17 @@ export const syncAndScheduleWorkouts = async (planEntries?: PlanEntry[], schedul
       scheduledDate: entryDate,
       scheduleError: ''
     });
+  }
+
+  if (toDelete.length > 0) {
+    logger.info(`[Sync] Removing ${toDelete.length} previously synced plan workout(s)…`);
+    await Promise.all(toDelete.map((w: any) => {
+      logger.info(`[Sync]   Deleting: ${w.workoutName} (id ${w.workoutId})`);
+      return client.deleteWorkout({ workoutId: String(w.workoutId) })
+        .catch((err: any) => logger.warn(`[Sync] Could not remove ${w.workoutName} (may show twice): ${err.message}`));
+    }));
+  } else {
+    logger.info('[Sync] No previously synced plan workouts to remove');
   }
 
   devDumpWorkouts(devDump, dateStr);

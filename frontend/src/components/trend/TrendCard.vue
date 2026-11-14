@@ -235,6 +235,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useClock } from '@/composables/useClock'
 import { useActivitiesStore } from '@/stores/activities.store'
 import { useProfileStore }    from '@/stores/profile.store'
 import { useSettingsStore }   from '@/stores/settings.store'
@@ -307,7 +308,8 @@ const maxHr = computed(() =>
 // Only for rides with power but no heart rate at all (see zoneMinutes()).
 const ftp = computed(() => profileStore.profile?.ftp ?? null)
 
-const daily = computed(() => buildDailySeries(activitiesStore.activities, maxHr.value, ftp.value))
+const { today: clockToday } = useClock()
+const daily = computed(() => buildDailySeries(activitiesStore.activities, maxHr.value, ftp.value, clockToday.value))
 const today = computed(() => daily.value[daily.value.length - 1] ?? null)
 const weekAgo = computed(() => daily.value[daily.value.length - 8] ?? null)
 const shortHistory = computed(() => daily.value.length < FITNESS_DAYS)
@@ -319,7 +321,7 @@ const rangeDays = computed(() => RANGES.find(r => r.id === range.value)!.days)
 const rangePoints = computed(() => daily.value.slice(-rangeDays.value))
 const rangeWeeks = computed(() => {
   const from = rangePoints.value[0]?.date ?? isoDate()
-  return buildWeeklyZones(activitiesStore.activities, maxHr.value, from, ftp.value)
+  return buildWeeklyZones(activitiesStore.activities, maxHr.value, from, ftp.value, clockToday.value)
 })
 
 // ── Feel row: check-ins plus the post-ride rating ────────────────────────────

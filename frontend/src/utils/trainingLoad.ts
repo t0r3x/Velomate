@@ -145,7 +145,9 @@ export function buildWeeklyZones(activities: Activity[], maxHr: number, from: st
   }
   for (const a of activities) {
     const d = rideDate(a)
-    if (!d || d < from || d > today) continue
+    // From the Monday of the first week, not from `from`: that week's bar is divided by 7, so
+    // leaving out its days before the range start made the first bar of every range too low.
+    if (!d || d < mondayOf(from) || d > today) continue
     const week = weeks.get(mondayOf(d))
     if (!week) continue
     zoneMinutes(a, maxHr, ftp).forEach((m, i) => { week.zoneMinutes[i] += m })

@@ -28,6 +28,7 @@ import {
   updatePlanEntryStatus,
   swapPlanEntryDates,
   getCurrentFreeSuggestion,
+  getFreeSuggestionById,
   getFreeSuggestionHistory,
   markFreeSuggestionSynced,
   markFreeSuggestionCompleted,
@@ -53,7 +54,7 @@ import {
   isSaneFtp, FTP_MIN, FTP_MAX,
 } from './services/power.service';
 import { UserHRProfile } from './types';
-import { localDate, APP_NAME, fromRpe, fromFeeling } from './utils';
+import { localDate, localDateTime, normalizeStartTime, APP_NAME, fromRpe, fromFeeling } from './utils';
 import logger from './logger';
 
 dotenv.config();
@@ -323,7 +324,7 @@ const settleFreeSuggestion = (): number | null => {
   const current = getCurrentFreeSuggestion();
   if (!current || current.status !== 'synced' || !current.syncedForDate) return null;
 
-  const ride = findRideForFreeSuggestion(current.syncedForDate);
+  const ride = findRideForFreeSuggestion(current.syncedForDate, current.syncedAt);
   if (!ride) return null;
 
   const rideDate = ride.startTime.slice(0, 10);
@@ -451,8 +452,9 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
       // syncActivitiesFromGarmin() already settled the synced suggestion against the new
       // rides. If one just completed, regenerate so the AI scores it and hands out the
       // next session immediately instead of at the next 23h refresh.
-      const current = getCurrentFreeSuggestion();
-      const justCompleted = !current || current.id !== preSyncFreeId;
+      // Only a row that actually became 'completed' was ridden. A different current id can
+      // also mean a check-in regeneration replaced it during the sync.
+      const justCompleted = preSyncFreeId !== null && getFreeSuggestionById(preSyncFreeId)?.status === 'completed';
       if (preSyncFreeId !== null && justCompleted && instantScoringEnabled) {
         logger.info(`[Free] Suggestion #${preSyncFreeId} completed during sync — triggering AI re-evaluation`);
         generateFreeSuggestion().catch((err: any) =>
@@ -530,6 +532,9 @@ const triggerAdaptiveRegen = (context: string): AdaptiveRegenResult => {
   if (getSetting('training_paused') === '1') return none;
 
   const freeMode = isFreeTrainingMode();
+  // Never the first plan or suggestion: that stays the athlete's explicit "Generate" click,
+  // and a ride rated in Recent Rides before it would otherwise create one silently.
+  if (freeMode ? !getCurrentFreeSuggestion() : !getStoredRecommendation()) return none;
   let replacedSyncedWorkout: AdaptiveRegenResult['replacedSyncedWorkout'] = null;
 
   if (freeMode) {
@@ -540,9 +545,11 @@ const triggerAdaptiveRegen = (context: string): AdaptiveRegenResult => {
     }
   }
 
+  // afterChange: the athlete just told us something new, so a run that is already going (its
+  // prompt built before this) must be followed by one that sees it.
   const regen = freeMode
-    ? generateFreeSuggestion()
-    : generateRecommendation(getStoredRecommendation()?.weeklyPlan);
+    ? generateFreeSuggestion(undefined, false, { afterChange: true })
+    : generateRecommendation(getStoredRecommendation()?.weeklyPlan, undefined, undefined, { afterChange: true });
   regen
     .then(() => setSetting('gemini_last_generated', new Date().toISOString()))
     .catch((err: any) => logger.warn(`[${context}] Regen failed: ${err.message}`));
@@ -746,6 +753,9 @@ app.post('/api/settings/free-training-mode', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'enabled must be a boolean.' });
   }
   setSetting('free_training_mode', enabled ? '1' : '0');
+  // Free mode stamps the inactivity clock from the latest ride, however old. Without this, an
+  // athlete switching after a break would be auto-paused within the hour.
+  if (enabled) startInactivityClockToday();
   // Whichever mode we land in, its current output is now the stale one — clear the
   // freshness stamp so the next auto-check regenerates instead of waiting out 23h.
   setSetting('gemini_last_generated', '0');
@@ -932,10 +942,14 @@ app.post('/api/training/resume', async (req: Request, res: Response) => {
   // Count rides during the pause period to pass context to AI
   let activitiesCount = 0;
   if (pausedSince) {
+    // startTime is Garmin's local time ("YYYY-MM-DD HH:MM:SS"); pausedSince is a UTC ISO
+    // stamp. Compare both as local time, or rides on the pause day itself are missed.
+    const pausedSinceLocal = localDateTime(new Date(pausedSince));
     const allActs = getStoredActivities();
     activitiesCount = allActs.filter(a =>
-      a.startTime && a.startTime >= pausedSince
+      a.startTime && normalizeStartTime(a.startTime) >= pausedSinceLocal
     ).length;
+    rememberPauseWindow(localDate(new Date(pausedSince)), localDate());
   }
 
   // Clear pause flags first so AI generation can proceed
@@ -1074,7 +1088,7 @@ app.post('/api/recommendation/skip-today', async (req: Request, res: Response) =
 
     // Non-blocking: the skip is already committed — return it right away and let the AI's
     // re-plan of the rest of the week arrive in the background.
-    generateRecommendation(updated?.weeklyPlan)
+    generateRecommendation(updated?.weeklyPlan, undefined, undefined, { afterChange: true })
       .then(() => setSetting('gemini_last_generated', new Date().toISOString()))
       .catch((err: any) => logger.warn(`[Plan] Skip-today regen failed (skip already committed): ${err.message}`));
     res.json({ ...updated, regenerating: true });
@@ -1120,7 +1134,7 @@ app.post('/api/recommendation/reschedule', async (req: Request, res: Response) =
     // Non-blocking: the swap is already committed — return it immediately, so the UI
     // reflects the move without waiting on the Gemini round trip. AI re-evaluation of the
     // week arrives in the background.
-    generateRecommendation(updated?.weeklyPlan, undefined, pinnedTodayType)
+    generateRecommendation(updated?.weeklyPlan, undefined, pinnedTodayType, { afterChange: true })
       .then(() => setSetting('gemini_last_generated', new Date().toISOString()))
       .catch((err: any) => logger.warn(`[Plan] Reschedule regen failed (swap already committed): ${err.message}`));
     res.json({ ...updated, regenerating: true });
@@ -1148,7 +1162,9 @@ const FREE_UI_HISTORY_DEPTH = 30;
 
 const freeTrainingPayload = () => {
   const suggestion = getCurrentFreeSuggestion();
-  if (!suggestion) return { noSuggestion: true };
+  // Between a dismiss and its replacement there is briefly no current suggestion. Saying
+  // whether one is being generated lets the UI keep waiting instead of reading it as failure.
+  if (!suggestion) return { noSuggestion: true, regenerating: isGenerationInFlight() };
   const ageMs = Date.now() - new Date(suggestion.generatedAt).getTime();
   return {
     suggestion,
@@ -1190,7 +1206,7 @@ app.post('/api/free-training/refresh', async (_req: Request, res: Response) => {
     if (current) {
       // Non-blocking: there's already a suggestion to show — return it immediately
       // (marked regenerating) and let the frontend poll for the replacement.
-      generateFreeSuggestion(undefined, true)
+      generateFreeSuggestion(undefined, true, { afterChange: true })
         .then(() => setSetting('gemini_last_generated', new Date().toISOString()))
         .catch((err: any) => logger.warn(`[Free] Refresh regen failed: ${err.message}`));
       res.json({ ...freeTrainingPayload(), regenerating: true });
@@ -1198,6 +1214,7 @@ app.post('/api/free-training/refresh', async (_req: Request, res: Response) => {
     }
 
     // First-ever suggestion: nothing to show yet, so this one has to block.
+    startInactivityClockToday();
     await generateFreeSuggestion(undefined, true);
     setSetting('gemini_last_generated', new Date().toISOString());
     res.json(freeTrainingPayload());
@@ -1236,7 +1253,7 @@ app.post('/api/free-training/dismiss', async (_req: Request, res: Response) => {
       // something on screen while the AI picks a replacement in the background. Built from
       // `current` (already in hand) rather than re-querying — the instant it's marked
       // dismissed, getCurrentFreeSuggestion()/freeTrainingPayload() would report none at all.
-      generateFreeSuggestion()
+      generateFreeSuggestion(undefined, false, { afterChange: true })
         .then(() => setSetting('gemini_last_generated', new Date().toISOString()))
         .catch((err: any) => logger.warn(`[Free] Dismiss regen failed (dismissal already committed): ${err.message}`));
       res.json({ suggestion: current, history: getFreeSuggestionHistory(FREE_UI_HISTORY_DEPTH), stale: true, regenerating: true });
@@ -1505,6 +1522,31 @@ const logAutoCheckState = () => {
  * the athlete's most recent ride instead of a completed plan entry.
  * Returns true when it paused, meaning the caller should stop.
  */
+/**
+ * Finished pauses, as local date ranges. The auto-skip check runs after a resume, when
+ * paused_since has already been cleared, and the plan keeps 14 days of history, so without
+ * these every planned day inside a declared pause became 'auto-skipped' the hour after resuming.
+ */
+const PAUSE_WINDOWS_KEPT = 5;
+const getPauseWindows = (): Array<{ from: string; to: string }> => {
+  try {
+    const v = JSON.parse(getSetting('pause_windows') || '[]');
+    return Array.isArray(v) ? v.filter(w => typeof w?.from === 'string' && typeof w?.to === 'string') : [];
+  } catch { return []; }
+};
+const rememberPauseWindow = (from: string, to: string): void => {
+  setSetting('pause_windows', JSON.stringify([...getPauseWindows(), { from, to }].slice(-PAUSE_WINDOWS_KEPT)));
+};
+/** The resume day itself is not inside the pause: it can be planned and missed as usual. */
+const isInPastPause = (date: string): boolean =>
+  getPauseWindows().some(w => date >= w.from && date < w.to);
+
+/** Restart the inactivity clock today, never moving it backwards. */
+const startInactivityClockToday = (): void => {
+  const today = localDate();
+  if ((getSetting('last_plan_activity_date') ?? '') < today) setSetting('last_plan_activity_date', today);
+};
+
 const maybeAutoPause = (): boolean => {
   const inactivityThreshold = parseInt(getSetting('inactivity_pause_days') || '14', 10) || 14;
   const lastActivity = getSetting('last_plan_activity_date');
@@ -1533,7 +1575,9 @@ const runFreeAutoCheck = async () => {
   await syncActivitiesFromGarmin();   // settles a synced suggestion against new rides
 
   const current = getCurrentFreeSuggestion();
-  const justCompleted = preSyncId !== null && (!current || current.id !== preSyncId);
+  // Only a row that actually became 'completed' was ridden; a check-in regeneration that ran
+  // during the sync also changes the current id (see /api/activities/refresh).
+  const justCompleted = preSyncId !== null && getFreeSuggestionById(preSyncId)?.status === 'completed';
   const instantScoringEnabled = getSetting('instant_score_on_new_activity') !== '0';
 
   if (justCompleted && instantScoringEnabled) {
@@ -1543,12 +1587,14 @@ const runFreeAutoCheck = async () => {
     return;
   }
 
-  if (maybeAutoPause()) return;
-
   if (!current && !justCompleted) {
     logger.info('[Free] Auto-check: no suggestion yet — waiting for the athlete to ask for their first one');
     return;
   }
+
+  // After the "nothing yet" check: pausing an athlete who has no suggestion pauses nothing,
+  // and greeted a returning rider with "paused" before they had asked for anything.
+  if (maybeAutoPause()) return;
 
   // A synced suggestion is already sitting on the athlete's watch, waiting to be ridden —
   // and in free mode "whenever suits you" may well be several days out. Replacing it on
@@ -1607,9 +1653,11 @@ const runGeminiAutoCheck = async () => {
     const stored = getStoredRecommendation();
     if (stored?.weeklyPlan) {
       // Don't auto-skip dates that fall within a completed pause period
+      // paused_since is cleared on resume, so finished pauses come from the remembered windows.
       const pausedSince = getSetting('paused_since') || '';
       const autoSkips = detectAutoSkippedEntries(stored.weeklyPlan)
-        .filter(date => !pausedSince || date < pausedSince.slice(0, 10));
+        .filter(date => !pausedSince || date < localDate(new Date(pausedSince)))
+        .filter(date => !isInPastPause(date));
 
       const instantScoringEnabled = getSetting('instant_score_on_new_activity') !== '0';
       const newlyCompleted = prePlannedDates.size > 0
@@ -1632,8 +1680,6 @@ const runGeminiAutoCheck = async () => {
       }
     }
 
-    if (maybeAutoPause()) return;
-
     // Standard daily freshness check — only regenerate if a plan already exists.
     // The very first plan must be initiated by the user via the "Generate my first plan" button.
     const current = getStoredRecommendation();
@@ -1641,6 +1687,9 @@ const runGeminiAutoCheck = async () => {
       logger.info('[Gemini] Auto-check: no plan in DB — waiting for user to generate first plan');
       return;
     }
+
+    // After the "no plan" check, for the same reason as in runFreeAutoCheck().
+    if (maybeAutoPause()) return;
 
     const lastGenStr = getSetting('gemini_last_generated');
     const ageMs      = Date.now() - (lastGenStr && lastGenStr !== '0' ? new Date(lastGenStr).getTime() : 0);

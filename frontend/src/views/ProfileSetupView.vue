@@ -91,11 +91,11 @@
             <div class="hr-stats-row">
               <div class="hr-stat-box">
                 <span class="stat-label">FTP (W)</span>
-                <input type="number" class="stat-value-input" :min="FTP_MIN" :max="FTP_MAX" placeholder="Not set" v-model.number="ftp" @input="ftpTouched = true">
+                <input type="number" class="stat-value-input" :min="FTP_MIN" :max="FTP_MAX" placeholder="Optional" v-model.number="ftp" @input="ftpTouched = true">
               </div>
             </div>
             <p class="helper-text tp-hint">
-              Optional. FTP is roughly the power you can hold for an hour. Only rides with a power meter use it: the
+              FTP is roughly the power you can hold for an hour. Only rides with a power meter use it: the
               coach reads power next to heart rate to check what you actually rode.
               {{ ftpFollowsGarmin ? 'Taken from Garmin, and kept up to date from it until you change it.' : '' }}
               Workouts on Garmin keep heart rate targets, so they work on every bike.
@@ -348,6 +348,13 @@ async function handleConfirm() {
     show('error', 'Check your FTP', `FTP must be between ${FTP_MIN} and ${FTP_MAX} W, or left empty.`)
     return
   }
+  // Checked here because the input is not inside a <form>, so its min/max are never enforced,
+  // and the backend's 400 used to disappear behind a "Training Profile Updated" toast.
+  const pauseDays = Number(inactivityPauseDays.value)
+  if (!Number.isInteger(pauseDays) || pauseDays < 1 || pauseDays > 365) {
+    show('error', 'Check auto-pause', 'Auto-pause must be a whole number of days between 1 and 365.')
+    return
+  }
   saving.value = true
   try {
     const profile = {
@@ -358,15 +365,26 @@ async function handleConfirm() {
     // Captured before saving — switching mode swaps out the whole training card, so it is
     // worth calling out in the toast rather than letting the dashboard silently change shape.
     const modeChanged = freeTrainingMode.value !== settingsStore.freeTrainingMode
-    const [ok] = await Promise.all([
+    const [ok, daysOk, pauseOk, modeOk, goalsOk] = await Promise.all([
       profileStore.save(profile),
       settingsStore.savePreferredDays(selectedDays.value),
-      settingsStore.saveInactivityPauseDays(inactivityPauseDays.value),
+      settingsStore.saveInactivityPauseDays(pauseDays),
       modeChanged ? settingsStore.saveFreeTrainingMode(freeTrainingMode.value) : Promise.resolve(true),
-      postTrainingGoals(goals.value).catch(() => {})
+      postTrainingGoals(goals.value).then(() => true).catch(() => false)
     ])
     if (!ok) {
       show('error', 'Save Failed', 'Could not save profile. Please try again.')
+      return
+    }
+    // Each part saves on its own; say which ones did not, instead of reporting success.
+    const failed = [
+      !daysOk  && 'long ride days',
+      !pauseOk && 'auto-pause',
+      !modeOk  && 'training mode',
+      !goalsOk && 'goals',
+    ].filter(Boolean)
+    if (failed.length) {
+      show('error', 'Partly saved', `Your zones were saved, but ${failed.join(', ')} could not be. Please try again.`)
       return
     }
     if (props.modalMode) {

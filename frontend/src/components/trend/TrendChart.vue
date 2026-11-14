@@ -188,6 +188,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { DayPoint, WeekPoint } from '@/utils/trainingLoad'
 import { formLabel } from '@/utils/trainingLoad'
 import { isoDate, workoutTypeIcon, workoutTypeLabel } from '@/utils'
+import { useClock } from '@/composables/useClock'
 
 type LineKey = 'fitness' | 'fatigue'
 type SeriesKey = LineKey | 'form'
@@ -267,9 +268,10 @@ const x = (i: number) => PAD_L + (props.points.length <= 1 ? 0 : (i / (props.poi
  * Average daily load per zone for each week. The current week is divided by the days it
  * has had so far, not by 7, or every Monday would show an almost empty bar.
  */
-const today = isoDate()
+// Reactive, or a window left open from Monday keeps dividing the current week by one day.
+const { today } = useClock()
 const weekLoads = computed(() => props.weeks.map(week => {
-  const elapsed = Math.min(7, Math.max(1, dayIndexFrom(week.weekStart, today) + 1))
+  const elapsed = Math.min(7, Math.max(1, dayIndexFrom(week.weekStart, today.value) + 1))
   const perZone = week.zoneMinutes.map((m, z) => (m * (z + 1)) / elapsed)
   return { week, perZone, loadPerDay: perZone.reduce((a, b) => a + b, 0) }
 }))

@@ -37,6 +37,14 @@ export const USER_TZ: string =
 export const localDate = (d: Date = new Date()): string =>
   d.toLocaleDateString('sv-SE', { timeZone: USER_TZ });
 
+/** "YYYY-MM-DD HH:MM:SS" in the resolved timezone: the shape of Garmin's startTimeLocal. */
+export const localDateTime = (d: Date = new Date()): string =>
+  d.toLocaleString('sv-SE', { timeZone: USER_TZ, hour12: false }).replace('T', ' ').slice(0, 19);
+
+/** A ride's startTime in the same "YYYY-MM-DD HH:MM:SS" shape, whether stored with a space or a 'T'. */
+export const normalizeStartTime = (startTime: string): string =>
+  startTime.replace('T', ' ').slice(0, 19);
+
 // ── Garmin feedback conversions ───────────────────────────────────────────────
 
 /**

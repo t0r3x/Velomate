@@ -32,7 +32,9 @@ export const fetchCyclingActivities = async (days: number = 90) => {
 
   const cyclingActivities = activities.filter(act => {
     const typeKey = (act.activityType?.typeKey || '').toLowerCase();
-    const isCycling = typeKey.includes('cycl') || typeKey.includes('bik');
+    // virtual_ride is Garmin's key for Zwift and other virtual rides; it matches neither word,
+    // so an indoor winter vanished: no completions, zero load, and an auto-pause.
+    const isCycling = typeKey.includes('cycl') || typeKey.includes('bik') || typeKey === 'virtual_ride';
     const isRecent = act.startTimeLocal
       ? new Date(act.startTimeLocal) >= cutoff
       : true;

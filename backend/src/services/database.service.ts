@@ -626,6 +626,9 @@ const freeRowToSuggestion = (row: any): FreeSuggestion | null => {
   }
 };
 
+export const getFreeSuggestionById = (id: number): FreeSuggestion | null =>
+  freeRowToSuggestion(db.prepare('SELECT * FROM free_suggestion WHERE id = ?').get(id) as any);
+
 /** The suggestion the athlete is currently looking at: newest row still open or synced. */
 export const getCurrentFreeSuggestion = (): FreeSuggestion | null => {
   const row = db.prepare(

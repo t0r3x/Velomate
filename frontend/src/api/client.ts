@@ -236,7 +236,7 @@ export const postResumeTraining = () =>
 // ── Free training ─────────────────────────────────────────────────────────────
 
 export const getFreeTraining = () =>
-  request<FreeTraining | { notConfigured: true } | { noSuggestion: true } | PausedResponse>('/api/free-training')
+  request<FreeTraining | { notConfigured: true } | { noSuggestion: true; regenerating?: boolean } | PausedResponse>('/api/free-training')
 
 export const postFreeTrainingRefresh = () =>
   request<FreeTraining>('/api/free-training/refresh', { method: 'POST' })

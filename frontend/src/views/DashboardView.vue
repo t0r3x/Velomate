@@ -81,9 +81,19 @@ async function loadActiveMode() {
 // it doesn't sit on its initial 'loading' state until the next reload.
 watch(() => settingsStore.freeTrainingMode, () => { loadActiveMode() })
 
+// The backend syncs Garmin and may regenerate every hour on its own; a window left open for
+// days never saw any of it (no new rides, no new plan, a "Synced 3d ago" that was not true).
+// A quiet reload from the database every 10 minutes; fetchCached never blanks the card.
+const BACKGROUND_RELOAD_MS = 10 * 60_000
+let reloadTimer: ReturnType<typeof setInterval> | null = null
+
 onMounted(async () => {
   const ridesLoaded = activitiesStore.loadFromDb()
   authStore.startPolling()
+  reloadTimer = setInterval(() => {
+    activitiesStore.loadFromDb()
+    loadActiveMode()
+  }, BACKGROUND_RELOAD_MS)
 
   // The router guard already initialised the settings store, so freeTrainingMode is
   // known here — only the active mode's store is ever loaded or polled.
@@ -119,5 +129,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   authStore.stopPolling()
+  if (reloadTimer) clearInterval(reloadTimer)
 })
 </script>

@@ -35,7 +35,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useClock } from '@/composables/useClock'
 import type { PlanEntry } from '@/types'
 import { isoDate, buildWeekWindow, describeCoverageGaps } from '@/utils'
 import WeekDayCell       from './WeekDayCell.vue'
@@ -53,14 +54,18 @@ const emit  = defineEmits<{
   skip:       [date: string]
 }>()
 
-const todayStr = isoDate()
+// Reactive: the window stays open across midnight (see useClock).
+const { today: todayStr } = useClock()
 
 // Show the actual rolling 7-day window the backend generates (today+offset .. today+offset+6),
 // filling any missing day with a placeholder — never fabricate a real AI-planned rest day for
 // a date the backend hasn't covered. This must NOT be a fixed Mon–Sun calendar week — anchoring
 // to today means the next 7 days are always shown in full detail regardless of what weekday it
 // is (a fixed calendar week would show fewer of the imminent days once today is past Monday).
-const displayPlan = computed((): PlanEntry[] => buildWeekWindow(props.plan, props.startOffset ?? 0))
+const displayPlan = computed((): PlanEntry[] => {
+  void todayStr.value   // buildWeekWindow reads the date itself; this makes it roll at midnight
+  return buildWeekWindow(props.plan, props.startOffset ?? 0)
+})
 
 // Days shown in the grid that the backend hasn't actually planned yet — surfaced
 // explicitly so a coverage gap never looks like a real AI-planned rest day.
@@ -78,6 +83,12 @@ const weekLabel = computed(() => {
 // ── Detail panel ──────────────────────────────────────────────────────────────
 
 const selectedDate = ref<string | null>(isoDate())
+// At midnight the selection moves with today, unless the athlete picked a day still on screen.
+watch(todayStr, (now, before) => {
+  if (selectedDate.value === before || !displayPlan.value.some(e => e.date === selectedDate.value)) {
+    selectedDate.value = now
+  }
+})
 
 const selectedEntry = computed(() =>
   selectedDate.value
