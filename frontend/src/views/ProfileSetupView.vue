@@ -83,7 +83,7 @@
                 <i class="fa-solid fa-wand-magic-sparkles"></i>
                 <span v-html="sug.html"></span>
               </div>
-              <button type="button" class="btn btn-secondary btn-sm" @click="ftp = sug.value">
+              <button type="button" class="btn btn-secondary btn-sm" @click="ftp = sug.value; ftpTouched = true">
                 <span>{{ sug.button }}</span>
               </button>
             </div>
@@ -224,6 +224,9 @@ const inactivityPauseDays = ref(settingsStore.inactivityPauseDays)
 const freeTrainingMode    = ref(settingsStore.freeTrainingMode)
 // '' when the field is emptied (v-model.number leaves a blank input as a string)
 const ftp                 = ref<number | '' | null>(profileStore.profile?.ftp ?? null)
+// Set by typing or by a suggestion button. Until then the field mirrors the stored FTP, and
+// saving leaves the FTP alone: sending the value back unchanged would turn an FTP that follows
+// Garmin into a manual one whenever Garmin updated it after this form was filled.
 const ftpTouched          = ref(false)
 
 const FTP_MIN = 50
@@ -249,7 +252,12 @@ const ftpSuggestions = computed(() => {
     out.push({ key: 'garmin', value: p.garminFtp, button: "Use Garmin's",
       html: `Garmin reports an FTP of <strong>${p.garminFtp}</strong> W` })
   }
-  if (p?.estimatedFtp && p.best20Power && p.estimatedFtp !== ftpValue.value && p.estimatedFtp !== p.garminFtp) {
+  // A 20-minute best is a lower bound: easy rides say nothing about what the athlete can hold.
+  // So it is only offered when there is no FTP, or when it shows the FTP is too LOW (same 3%
+  // margin as the coach's FTP CALIBRATION line), never to lower one.
+  const current = ftpValue.value
+  if (p?.estimatedFtp && p.best20Power && p.estimatedFtp !== p.garminFtp &&
+      (current == null || p.estimatedFtp > current * 1.03)) {
     out.push({ key: 'estimate', value: p.estimatedFtp, button: 'Use estimate',
       html: `Your best 20 minutes in the last 90 days was <strong>${p.best20Power}</strong> W, which puts FTP around <strong>${p.estimatedFtp}</strong> W. Only accurate after an all-out 20-minute effort.` })
   }
@@ -342,7 +350,11 @@ async function handleConfirm() {
   }
   saving.value = true
   try {
-    const profile = { maxHr: maxHr.value, lthr: lthr.value, zones: zones.value, hasCustomOverrides: true, ftp: ftpValue.value }
+    const profile = {
+      maxHr: maxHr.value, lthr: lthr.value, zones: zones.value, hasCustomOverrides: true,
+      // Absent = leave the stored FTP alone (see ftpTouched); null clears it.
+      ...(ftpTouched.value ? { ftp: ftpValue.value } : {}),
+    }
     // Captured before saving — switching mode swaps out the whole training card, so it is
     // worth calling out in the toast rather than letting the dashboard silently change shape.
     const modeChanged = freeTrainingMode.value !== settingsStore.freeTrainingMode

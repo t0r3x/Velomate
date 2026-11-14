@@ -609,7 +609,8 @@ depend on what a model decided to say.
 - **Load per ride = Edwards zone TRIMP**: minutes in zone N count N times. It uses Garmin's own
   `timeInZones` split (based on Garmin's max HR), so a Velomate HR profile set too low does not inflate it
   (gotcha 25). A ride without zone data is placed whole in the zone its average HR falls in (50/60/70/80/90 %
-  of the higher of profile max HR and peak recorded HR).
+  of the higher of profile max HR and peak recorded HR); a ride with no heart rate at all, by its power IF
+  when it has power and there is an FTP, else Z2 (see "Power meter").
 - **Fitness / Fatigue** are exponentially weighted daily load over 42 / 7 days, from the first stored ride,
   rest days included (the decay is half the picture). **Form = yesterday's fitness − yesterday's fatigue**:
   how fresh you start today. Its word (Transition / Fresh / Neutral / Building / Overreaching) uses
@@ -785,15 +786,23 @@ power meter too, and Velomate cannot know which bike gets ridden on a given day.
   compliance block and free mode's suggestion history, now with power) says "no heart rate data".
   `buildTrainingLoadBlock()` counts a ride without HR zones as a hard effort when its IF ≥ `HARD_RIDE_IF`
   (0.85, 20+ min) and adds a line naming the rides the zone totals cannot see; both appear only when such
-  rides exist. The Trend card still puts a ride without any HR in Z2 (no power there, see below), and the
-  ride tooltip hides its "Time in zone", which would be that assumption shown as data.
+  rides exist. The Trend card places a ride without any HR (no split, no average) in **one zone by its IF**
+  (`zoneFromIntensity()` in `trainingLoad.ts`: < 0.55 Z1, < 0.75 Z2, < 0.85 Z3, < 0.95 Z4, else Z5, the same
+  whole-ride bands the coach gets), exactly like the existing average-HR fallback places a ride without a
+  split; without power or FTP it stays Z2. A ride **with** heart rate is never re-scored by power. The ride
+  tooltip hides "Time in zone" for such a ride, since it is an estimate, not a measured split.
 - **Deliberately not done**: power targets on Garmin workouts (a watt-only workout is useless on a bike
-  without a meter; HR targets work on all of them) and power-based load in the Trend card (counting
-  power rides as TSS and the others as TRIMP would make the fitness line jump with the choice of bike, and
-  gotcha 28 keeps the chart on Garmin's HR zone split). Revisit both only with a reason that survives
+  without a meter; HR targets work on all of them) and power-based load in the Trend card for rides that
+  have heart rate (counting power rides as TSS and the others as TRIMP would make the fitness line jump with
+  the choice of bike, and gotcha 28 keeps the chart on Garmin's HR zone split; the no-HR fallback above is
+  the only place power reaches the chart). Revisit both only with a reason that survives
   "the athlete rides more than one bike".
 - **UI**: a Power section in Training Profile (FTP field, Garmin / estimate suggestions), NP + IF and best
-  20 min in the ride stats tooltip, a Power entry in the Recent Rides help panel.
+  20 min in the ride stats tooltip, a Power entry in the Recent Rides help panel. Two form rules that fix
+  real bugs: the form only sends `ftp` once the athlete typed or picked a suggestion (`ftpTouched`), or a
+  save made after Garmin updated the FTP would pin the stale value as `'manual'` for good; and the
+  20-minute estimate is only offered when there is no FTP or it is > 3% **above** it, because a best
+  effort is a lower bound (easy rides would otherwise talk the athlete into a lower FTP).
 
 ## Workout sync to Garmin
 

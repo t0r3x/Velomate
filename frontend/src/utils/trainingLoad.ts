@@ -40,8 +40,22 @@ export interface WeekPoint {
   rides: number
 }
 
-/** The ride's minutes per zone: Garmin's split when present, else all of it in one estimated zone. */
-export function zoneMinutes(a: Activity, maxHr: number): number[] {
+/**
+ * Zone for a whole ride without heart rate, from its intensity factor (NP / FTP). The cut-offs
+ * are the whole-ride IF bands the coach is given (ACTIVITY_DATA_NOTES), so the chart and the
+ * coach read such a ride the same way.
+ */
+export function zoneFromIntensity(normPower: number | null | undefined, ftp: number | null | undefined): number | null {
+  if (!normPower || !ftp) return null
+  const iF = normPower / ftp
+  return iF < 0.55 ? 0 : iF < 0.75 ? 1 : iF < 0.85 ? 2 : iF < 0.95 ? 3 : 4
+}
+
+/**
+ * The ride's minutes per zone: Garmin's split when present, else all of it in one estimated zone.
+ * `ftp` is only used for a ride with no heart rate at all (strap forgotten) but with power.
+ */
+export function zoneMinutes(a: Activity, maxHr: number, ftp?: number | null): number[] {
   const z = a.timeInZones
   // An all-zero split (a ride without a heart rate strap) is no data, not a ride with no load.
   if (Array.isArray(z) && z.length >= 5 && z.slice(0, 5).some(s => (s ?? 0) > 0)) {
@@ -50,19 +64,26 @@ export function zoneMinutes(a: Activity, maxHr: number): number[] {
 
   // No zone data: Garmin's default zones are 50/60/70/80/90 % of max HR, so place the whole
   // ride in the zone its average HR falls in. Rough, but better than dropping the ride.
-  // Without any heart rate it lands in Z2. Power is deliberately not used here (gotcha 28,
-  // and the "Power meter" section in CLAUDE.md): the chart stays one measure on every bike.
+  // Without any heart rate, power places it the same way (one zone for the whole ride, by IF),
+  // so a hard ride with a forgotten strap does not count as an easy one. Only then: a ride
+  // with heart rate is never re-scored by power, or the chart would change with the bike
+  // (see "Power meter" in CLAUDE.md). With neither, it lands in Z2.
   const minutes = a.durationMinutes ?? 0
   const out = [0, 0, 0, 0, 0]
   if (!minutes) return out
-  const ratio = maxHr > 0 && a.averageHr ? a.averageHr / maxHr : 0.65
-  const zone = ratio < 0.6 ? 0 : ratio < 0.7 ? 1 : ratio < 0.8 ? 2 : ratio < 0.9 ? 3 : 4
+  let zone: number
+  if (maxHr > 0 && a.averageHr) {
+    const ratio = a.averageHr / maxHr
+    zone = ratio < 0.6 ? 0 : ratio < 0.7 ? 1 : ratio < 0.8 ? 2 : ratio < 0.9 ? 3 : 4
+  } else {
+    zone = (a.averagePower > 0 ? zoneFromIntensity(a.normPower, ftp) : null) ?? 1
+  }
   out[zone] = minutes
   return out
 }
 
-export function rideLoad(a: Activity, maxHr: number): number {
-  return zoneMinutes(a, maxHr).reduce((sum, m, i) => sum + m * (i + 1), 0)
+export function rideLoad(a: Activity, maxHr: number, ftp?: number | null): number {
+  return zoneMinutes(a, maxHr, ftp).reduce((sum, m, i) => sum + m * (i + 1), 0)
 }
 
 const addDays = (date: string, n: number): string => {
@@ -84,7 +105,7 @@ const rideDate = (a: Activity): string => (a.startTime ?? '').slice(0, 10)
  * One point per calendar day from the first stored ride to today, rest days included —
  * fitness and fatigue decay on days without a ride, and that decay is half the picture.
  */
-export function buildDailySeries(activities: Activity[], maxHr: number, today = isoDate()): DayPoint[] {
+export function buildDailySeries(activities: Activity[], maxHr: number, ftp?: number | null, today = isoDate()): DayPoint[] {
   const rides = activities.filter(a => rideDate(a))
   if (rides.length === 0) return []
 
@@ -92,7 +113,7 @@ export function buildDailySeries(activities: Activity[], maxHr: number, today = 
   for (const a of rides) {
     const d = rideDate(a)
     const cur = loadByDate.get(d) ?? { load: 0, rides: 0 }
-    cur.load += rideLoad(a, maxHr)
+    cur.load += rideLoad(a, maxHr, ftp)
     cur.rides += 1
     loadByDate.set(d, cur)
   }
@@ -117,7 +138,7 @@ export function buildDailySeries(activities: Activity[], maxHr: number, today = 
 }
 
 /** Minutes per zone per Monday-starting week, for every week from `from` to today (empty weeks included). */
-export function buildWeeklyZones(activities: Activity[], maxHr: number, from: string, today = isoDate()): WeekPoint[] {
+export function buildWeeklyZones(activities: Activity[], maxHr: number, from: string, ftp?: number | null, today = isoDate()): WeekPoint[] {
   const weeks = new Map<string, WeekPoint>()
   for (let w = mondayOf(from); w <= today; w = addDays(w, 7)) {
     weeks.set(w, { weekStart: w, zoneMinutes: [0, 0, 0, 0, 0], totalMinutes: 0, rides: 0 })
@@ -127,7 +148,7 @@ export function buildWeeklyZones(activities: Activity[], maxHr: number, from: st
     if (!d || d < from || d > today) continue
     const week = weeks.get(mondayOf(d))
     if (!week) continue
-    zoneMinutes(a, maxHr).forEach((m, i) => { week.zoneMinutes[i] += m })
+    zoneMinutes(a, maxHr, ftp).forEach((m, i) => { week.zoneMinutes[i] += m })
     week.totalMinutes += a.durationMinutes ?? 0
     week.rides += 1
   }

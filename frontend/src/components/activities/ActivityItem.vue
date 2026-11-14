@@ -362,9 +362,9 @@ const tipDate = computed(() =>
 const loadMaxHr = computed(() =>
   Math.max(profileStore.profile?.maxHr ?? 0, activitiesStore.analysis?.maxRecordedHr ?? 0) || 190)
 /** Same load as the Trend chart (zone TRIMP), so the two never disagree. */
-const load = computed(() => Math.round(rideLoad(props.activity, loadMaxHr.value)))
+const load = computed(() => Math.round(rideLoad(props.activity, loadMaxHr.value, profileStore.profile?.ftp)))
 /** Minutes per zone: Garmin's own split, as in the Trend chart. */
-const zoneMins = computed(() => zoneMinutes(props.activity, loadMaxHr.value).map(m => Math.round(m)))
+const zoneMins = computed(() => zoneMinutes(props.activity, loadMaxHr.value, profileStore.profile?.ftp).map(m => Math.round(m)))
 
 const speed = computed(() => {
   const { distanceKm, durationMinutes } = props.activity

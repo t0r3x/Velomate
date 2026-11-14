@@ -10,7 +10,9 @@
             Every ride gets a score from your heart rate: each minute in zone 1 counts 1 point, in zone 2
             counts 2, up to 5 points per minute in zone 5. An easy hour is about 120, an hour with real
             intervals 200 or more. It uses Garmin's own zone split, so the HR zones set in Velomate do
-            not change it.
+            not change it. A ride without heart rate (strap forgotten) gets one zone from its power when
+            it has power and you have an FTP: an easy ride zone 2, a hard one zone 4 or 5. Without power it
+            counts as zone 2.
           </dd>
 
           <dt><span class="trend-key" style="background: var(--series-fitness)"></span>Fitness</dt>
@@ -302,7 +304,10 @@ const maxHr = computed(() =>
   Math.max(profileStore.profile?.maxHr ?? 0, activitiesStore.analysis?.maxRecordedHr ?? 0) || 190
 )
 
-const daily = computed(() => buildDailySeries(activitiesStore.activities, maxHr.value))
+// Only for rides with power but no heart rate at all (see zoneMinutes()).
+const ftp = computed(() => profileStore.profile?.ftp ?? null)
+
+const daily = computed(() => buildDailySeries(activitiesStore.activities, maxHr.value, ftp.value))
 const today = computed(() => daily.value[daily.value.length - 1] ?? null)
 const weekAgo = computed(() => daily.value[daily.value.length - 8] ?? null)
 const shortHistory = computed(() => daily.value.length < FITNESS_DAYS)
@@ -314,7 +319,7 @@ const rangeDays = computed(() => RANGES.find(r => r.id === range.value)!.days)
 const rangePoints = computed(() => daily.value.slice(-rangeDays.value))
 const rangeWeeks = computed(() => {
   const from = rangePoints.value[0]?.date ?? isoDate()
-  return buildWeeklyZones(activitiesStore.activities, maxHr.value, from)
+  return buildWeeklyZones(activitiesStore.activities, maxHr.value, from, ftp.value)
 })
 
 // ── Feel row: check-ins plus the post-ride rating ────────────────────────────
