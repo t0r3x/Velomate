@@ -4,6 +4,10 @@ import { updateActivityFeedback } from './database.service';
 import { toRpe, toFeeling } from '../utils';
 import logger from '../logger';
 
+/** A rounded positive number, or null for anything absent, zero or not numeric. */
+const positiveInt = (v: unknown): number | null =>
+  typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.round(v) : null;
+
 export const fetchCyclingActivities = async (days: number = 90) => {
   const isAuthenticated = await trySessionAuth();
   if (!isAuthenticated) {
@@ -61,10 +65,12 @@ export const fetchCyclingActivities = async (days: number = 90) => {
           ]
         : null);
 
-    const timeInZones: number[] | null =
-      Array.isArray(rawZones) && rawZones.length >= 5
-        ? (rawZones as number[]).slice(0, 5).map(Number)
-        : null;
+    // An all-zero split is what a ride without a heart rate strap can come back with. Store it
+    // as no data: as data it would count as a ride with zero load.
+    const zoneSecs = Array.isArray(rawZones) && rawZones.length >= 5
+      ? (rawZones as number[]).slice(0, 5).map(Number)
+      : null;
+    const timeInZones: number[] | null = zoneSecs && zoneSecs.some(s => s > 0) ? zoneSecs : null;
 
     if (timeInZones) zonesFoundCount++;
 
@@ -94,6 +100,10 @@ export const fetchCyclingActivities = async (days: number = 90) => {
       maxHr:               act.maxHR || 0,
       averagePower:        (act.avgPower as number) || 0,
       maxPower:            (act.maxPower as number) || 0,
+      // Only present on rides recorded with a power meter. Field names follow Garmin's activity
+      // list summary; maxAvgPower_1200 is the same 20-minute best under its generic name.
+      normPower:           positiveInt((act as any).normPower ?? (act as any).normalizedPower),
+      max20MinPower:       positiveInt((act as any).max20MinPower ?? (act as any).maxAvgPower_1200),
       timeInZones,          // null when Garmin doesn't include zone data in the summary
       perceivedExertion,    // null when athlete hasn't rated effort on device
       feelingAfterExercise, // null when athlete hasn't answered "how do you feel"
@@ -102,6 +112,19 @@ export const fetchCyclingActivities = async (days: number = 90) => {
 
   logger.info(`[Activities] Zone data found for ${zonesFoundCount}/${mapped.length} cycling activities`);
   logger.info(`[Activities] RPE data found for ${rpeFoundCount}/${mapped.length} cycling activities`);
+
+  // Power: count, and the power-related keys Garmin actually sent on the newest power ride.
+  // The NP / 20-minute field names above are Garmin's documented ones, but not yet confirmed
+  // against this account; this line is how to confirm them from the log.
+  const powerRides = mapped.filter(m => m.averagePower > 0);
+  logger.info(`[Activities] Power data found for ${powerRides.length}/${mapped.length} cycling activities (NP on ${powerRides.filter(m => m.normPower).length}, 20-min best on ${powerRides.filter(m => m.max20MinPower).length})`);
+  const firstPowerRaw = cyclingActivities.find(a => ((a as any).avgPower ?? 0) > 0) as any;
+  if (firstPowerRaw) {
+    const powerKeys = Object.keys(firstPowerRaw)
+      .filter(k => /power|ftp|tss|trainingStress|intensityFactor/i.test(k) && firstPowerRaw[k] != null)
+      .map(k => `${k}=${typeof firstPowerRaw[k] === 'object' ? JSON.stringify(firstPowerRaw[k]) : firstPowerRaw[k]}`);
+    logger.info(`[Activities] Power fields on ${firstPowerRaw.startTimeLocal}: ${powerKeys.join(', ')}`);
+  }
   return mapped;
 };
 

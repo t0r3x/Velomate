@@ -123,7 +123,7 @@ export const getProfile = () =>
   request<UserHRProfile>('/api/profile')
 
 export const postProfile = (profile: Partial<UserHRProfile>) =>
-  request<{ success: boolean }>('/api/profile', {
+  request<{ success: boolean; profile?: UserHRProfile }>('/api/profile', {
     method: 'POST',
     body: JSON.stringify(profile)
   })

@@ -168,6 +168,16 @@ if (!hasColumn('recommendation', 'changedEntries')) {
   db.exec('ALTER TABLE recommendation ADD COLUMN changedEntries TEXT');
 }
 
+// Power-meter figures beyond average/max. Additive: stored rides keep their RPE/feeling, and
+// the next sync (365 days) fills these in. NULL = Garmin sent nothing, i.e. no power meter on
+// that bike — never 0, which would read as "rode at zero watts".
+if (!hasColumn('activities', 'normPower')) {
+  db.exec('ALTER TABLE activities ADD COLUMN normPower INTEGER DEFAULT NULL');
+}
+if (!hasColumn('activities', 'max20MinPower')) {
+  db.exec('ALTER TABLE activities ADD COLUMN max20MinPower INTEGER DEFAULT NULL');
+}
+
 // ── Activities ────────────────────────────────────────────────────────────────
 // UPSERT: on conflict, update all fields EXCEPT perceivedExertion/feelingAfterExercise —
 // those are fetched via the detail endpoint separately and must not be overwritten by the
@@ -175,10 +185,10 @@ if (!hasColumn('recommendation', 'changedEntries')) {
 const stmtUpsertActivity = db.prepare(`
   INSERT INTO activities
     (activityId, name, type, startTime, distanceKm, durationMinutes,
-     averageHr, maxHr, averagePower, maxPower,
+     averageHr, maxHr, averagePower, maxPower, normPower, max20MinPower,
      z1Sec, z2Sec, z3Sec, z4Sec, z5Sec,
      perceivedExertion, feelingAfterExercise, fetchedAt)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
   ON CONFLICT(activityId) DO UPDATE SET
     name                = excluded.name,
     type                = excluded.type,
@@ -189,6 +199,8 @@ const stmtUpsertActivity = db.prepare(`
     maxHr               = excluded.maxHr,
     averagePower        = excluded.averagePower,
     maxPower            = excluded.maxPower,
+    normPower           = excluded.normPower,
+    max20MinPower       = excluded.max20MinPower,
     z1Sec               = excluded.z1Sec,
     z2Sec               = excluded.z2Sec,
     z3Sec               = excluded.z3Sec,
@@ -217,6 +229,8 @@ const upsertManyActivities = db.transaction((activities: any[]) => {
       a.maxHr,
       a.averagePower || 0,
       a.maxPower || 0,
+      a.normPower || null,
+      a.max20MinPower || null,
       z?.[0] ?? null,
       z?.[1] ?? null,
       z?.[2] ?? null,
@@ -350,6 +364,10 @@ export const getSetting = (key: string): string | null => {
 
 export const setSetting = (key: string, value: string): void => {
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value);
+};
+
+export const deleteSetting = (key: string): void => {
+  db.prepare('DELETE FROM settings WHERE key = ?').run(key);
 };
 
 // ── Recommendation ────────────────────────────────────────────────────────────

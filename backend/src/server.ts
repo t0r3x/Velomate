@@ -48,6 +48,10 @@ import {
   findRideForFreeSuggestion,
   isGenerationInFlight
 } from './services/gemini.service';
+import {
+  getPowerProfile, getFtp, setFtpFromAthlete, applyGarminFtp, findFtpInPayload,
+  isSaneFtp, FTP_MIN, FTP_MAX,
+} from './services/power.service';
 import { UserHRProfile } from './types';
 import { localDate, APP_NAME, fromRpe, fromFeeling } from './utils';
 import logger from './logger';
@@ -94,26 +98,38 @@ const garminApi = async (apiPath: string) => {
 // Garmin's own detected LTHR (userprofile-service) — real per-account data, when available,
 // instead of Velomate's ×0.88-of-maxHR guess. Confirmed via /api/debug/garmin-hr-data that
 // Garmin does populate this (thresholdHeartRateAutoDetected: true) for at least some accounts.
-const fetchGarminLthr = async (): Promise<number | null> => {
-  if (!getBearerToken()) return null;
+// Also returns Garmin's FTP, read from the same payload when it is there. Accounts that keep it
+// elsewhere get it from the biometric service. Neither location is confirmed against a real
+// power-meter account yet, so both are searched by field name (findFtpInPayload).
+const fetchGarminThresholds = async (): Promise<{ lthr: number | null; ftp: number | null }> => {
+  if (!getBearerToken()) return { lthr: null, ftp: null };
+  let lthr: number | null = null;
+  let ftp: number | null = null;
   try {
     const settings = await garminApi('/userprofile-service/userprofile/user-settings/');
-    const lthr = settings?.userData?.lactateThresholdHeartRate;
-    return typeof lthr === 'number' && lthr > 100 && lthr < 250 ? lthr : null;
-  } catch {
-    return null; // non-fatal — caller falls back to the estimate
+    const raw = settings?.userData?.lactateThresholdHeartRate;
+    lthr = typeof raw === 'number' && raw > 100 && raw < 250 ? raw : null;
+    ftp  = findFtpInPayload(settings?.userData);
+  } catch { /* non-fatal — caller falls back to the estimate */ }
+  if (ftp == null) {
+    try {
+      ftp = findFtpInPayload(await garminApi('/biometric-service/biometric/latestFunctionalThresholdPower/CYCLING'));
+    } catch { /* no FTP on this account — power keeps working without it */ }
   }
+  return { lthr, ftp };
 };
 
-// Returns the active HR profile: DB → config.json fallback → defaults
-const getActiveProfile = async (): Promise<UserHRProfile> => {
+// Returns the active HR profile: DB → config.json fallback → defaults, with the power
+// fields (FTP etc., see power.service.ts) attached. Those are stored separately and are
+// ignored by upsertProfileDB(), so passing the result back into it is safe.
+const getActiveProfile = async (): Promise<UserHRProfile & ReturnType<typeof getPowerProfile>> => {
   const dbProfile = getStoredProfile();
-  if (dbProfile) return dbProfile;
+  if (dbProfile) return { ...dbProfile, ...getPowerProfile() };
 
   // Fallback: load from config.json and migrate to DB
   const fileProfile = loadProfile();
   upsertProfileDB(fileProfile);
-  return fileProfile;
+  return { ...fileProfile, ...getPowerProfile() };
 };
 
 // ── On-startup migration: move config.json profile to DB if DB is empty ───────
@@ -260,10 +276,15 @@ app.get('/api/profile', async (req: Request, res: Response) => {
 });
 
 app.post('/api/profile', async (req: Request, res: Response) => {
-  const { maxHr, lthr, zones } = req.body;
+  const { maxHr, lthr, zones, ftp } = req.body;
   if (!maxHr || !lthr || !zones) {
     return res.status(400).json({ error: 'maxHr, lthr, and zones are required.' });
   }
+  // FTP is optional and only touched when the field is sent: null clears it, a number sets it.
+  if (ftp !== undefined && ftp !== null && !isSaneFtp(ftp)) {
+    return res.status(400).json({ error: `FTP must be between ${FTP_MIN} and ${FTP_MAX} W.` });
+  }
+  if (ftp !== undefined) setFtpFromAthlete(ftp);
 
   const profile: UserHRProfile = {
     maxHr, lthr, zones,
@@ -273,8 +294,8 @@ app.post('/api/profile', async (req: Request, res: Response) => {
 
   upsertProfileDB(profile);
   saveProfile(profile); // keep config.json in sync for backward compat
-  logger.info(`[Profile] Saved — maxHR: ${maxHr} bpm, LTHR: ${lthr} bpm, zones: Z1≤${zones.z1?.max} Z2≤${zones.z2?.max} Z3≤${zones.z3?.max} Z4≤${zones.z4?.max} Z5≤${maxHr}`);
-  res.json({ success: true, profile });
+  logger.info(`[Profile] Saved — maxHR: ${maxHr} bpm, LTHR: ${lthr} bpm, zones: Z1≤${zones.z1?.max} Z2≤${zones.z2?.max} Z3≤${zones.z3?.max} Z4≤${zones.z4?.max} Z5≤${maxHr}${ftp !== undefined ? `, FTP: ${getFtp().ftp ?? 'not set'} (${getFtp().source ?? '-'})` : ''}`);
+  res.json({ success: true, profile: { ...profile, ...getPowerProfile() } });
 });
 
 // ── Activities ────────────────────────────────────────────────────────────────
@@ -358,10 +379,11 @@ const syncActivitiesFromGarmin = async (): Promise<boolean> => {
     const recentForAnalysis = allStored.filter(a =>
       a.startTime ? new Date(a.startTime) >= cutoff : true
     );
-    const realLthr = await fetchGarminLthr();
+    const { lthr: realLthr, ftp: garminFtp } = await fetchGarminThresholds();
+    applyGarminFtp(garminFtp);
     const analysis = assessProgression(recentForAnalysis, realLthr);
     upsertAnalysis(analysis);
-    logger.info(`[Sync] Analysis: ${analysis.totalCyclingRides} rides (90d), peak HR ${analysis.maxRecordedHr} bpm, est. LTHR ${analysis.estimatedLthr} bpm${realLthr ? ' (from Garmin)' : ' (estimated)'}, avg ${analysis.averageRideDurationMinutes} min`);
+    logger.info(`[Sync] Analysis: ${analysis.totalCyclingRides} rides (90d), peak HR ${analysis.maxRecordedHr} bpm, est. LTHR ${analysis.estimatedLthr} bpm${realLthr ? ' (from Garmin)' : ' (estimated)'}, avg ${analysis.averageRideDurationMinutes} min, FTP ${getFtp().ftp ?? 'not set'}${garminFtp ? ` (Garmin: ${garminFtp} W)` : ''}`);
 
     if (isFreeTrainingMode()) {
       // Free mode has no dated plan to classify against, so the inactivity clock can't be
@@ -1390,6 +1412,59 @@ app.get('/api/debug/garmin-hr-data', async (_req: Request, res: Response) => {
       userDataFull:           userData,
       zoneRelatedInUserData:  scanForZoneKeys(userData),
       zoneRelatedInActivity:  scanForZoneKeys(activityDetail),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Debug — raw Garmin power/FTP data (confirm field names after a power-meter ride) ──
+// The NP / 20-minute / FTP field names Velomate reads are Garmin's documented ones, not yet
+// confirmed against this account. This dumps every power-related key from the newest ride
+// with power (list summary and detail), the user settings and the biometric FTP endpoint,
+// next to what Velomate actually parsed from them.
+app.get('/api/debug/garmin-power-data', async (_req: Request, res: Response) => {
+  try {
+    const isAuthenticated = await trySessionAuth();
+    if (!isAuthenticated) return res.status(401).json({ error: 'Not authenticated.' });
+
+    const client = getGarminClient();
+    const isPowerKey = (k: string) => /power|ftp|tss|trainingStress|intensityFactor|watt/i.test(k);
+    const scan = (obj: any, path = '', depth = 0): Record<string, any> => {
+      const hits: Record<string, any> = {};
+      if (!obj || typeof obj !== 'object' || depth > 5) return hits;
+      for (const [k, v] of Object.entries(obj)) {
+        const fullPath = path ? `${path}.${k}` : k;
+        if (isPowerKey(k) && (v == null || typeof v !== 'object')) hits[fullPath] = v;
+        if (v && typeof v === 'object') Object.assign(hits, scan(v, fullPath, depth + 1));
+      }
+      return hits;
+    };
+    const safe = async (fn: () => Promise<any>) => {
+      try { return { data: await fn(), error: null }; } catch (e: any) { return { data: null, error: e.message }; }
+    };
+
+    const acts = await client.getActivities(0, 50);
+    const ride = acts.find((a: any) => {
+      const t = (a.activityType?.typeKey || '').toLowerCase();
+      return (t.includes('cycl') || t.includes('bik')) && (a.avgPower ?? 0) > 0;
+    }) as any;
+
+    const settings  = await safe(() => garminApi('/userprofile-service/userprofile/user-settings/'));
+    const biometric = await safe(() => garminApi('/biometric-service/biometric/latestFunctionalThresholdPower/CYCLING'));
+    const detail    = ride ? await safe(() => client.getActivity({ activityId: ride.activityId })) : null;
+
+    res.json({
+      rideWithPower:       ride ? { activityId: ride.activityId, name: ride.activityName, date: ride.startTimeLocal } : null,
+      powerInListSummary:  ride ? scan(ride) : null,
+      powerInDetail:       detail ? (detail.error ?? scan(detail.data)) : null,
+      powerInUserSettings: settings.error ?? scan(settings.data?.userData),
+      biometricFtp:        biometric.error ?? biometric.data,
+      parsed: {
+        ftpFromUserSettings: findFtpInPayload(settings.data?.userData),
+        ftpFromBiometric:    findFtpInPayload(biometric.data),
+        ...getPowerProfile(),
+      },
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

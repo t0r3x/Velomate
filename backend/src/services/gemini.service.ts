@@ -19,6 +19,7 @@ import {
 } from './database.service';
 import { localDate, toRpe, toFeeling, USER_TZ, APP_NAME } from '../utils';
 import { sanitizeStructure, normalizeWorkoutType } from './workout.service';
+import { getFtp, getBest20MinPower, hasRecentPowerRides, intensityFactor, FTP_FROM_20MIN } from './power.service';
 import logger from '../logger';
 import { loadPrompt, renderPrompt } from '../prompts/loader';
 
@@ -237,8 +238,10 @@ const callGeminiWithFallback = async (
 // ── Zone helpers ──────────────────────────────────────────────────────────────
 
 /** Guard against short/malformed zone arrays from a stored activity row. */
+// An all-zero split is what a ride without a heart rate monitor can come back with: no data,
+// not five minutes of nothing. Treating it as data would make that ride count as zero load.
 const parseZones = (raw: any): number[] | null =>
-  Array.isArray(raw) && raw.length >= 5 ? raw : null;
+  Array.isArray(raw) && raw.length >= 5 && raw.slice(0, 5).some((s: any) => Number(s) > 0) ? raw : null;
 
 /** Format zone seconds array as a readable string for the prompt, e.g. "z1=8m z2=32m z3=6m z4=14m z5=3m" */
 const fmtZones = (zones: number[]): string =>
@@ -251,6 +254,47 @@ const fmtZones = (zones: number[]): string =>
  * objects. Keep the column order in sync with ACTIVITY_DATA_NOTES, which tells the model how
  * to read it.
  */
+/** Power figures of a stored ride, in the prompt's shape, or null when it has none. */
+const ridePower = (a: any, ftp: number | null) =>
+  (a.averagePower ?? 0) > 0
+    ? {
+        avg:    a.averagePower,
+        np:     a.normPower ?? null,
+        if:     intensityFactor(a.normPower, ftp),
+        // Left out of rides too short to contain a real 20-minute effort.
+        best20: (a.durationMinutes ?? 0) >= 20 ? (a.max20MinPower ?? null) : null,
+        max:    a.maxPower || null,
+      }
+    : null;
+
+/**
+ * One completed ride as evidence for its execution score, shared by the plan's compliance
+ * block and free mode's suggestion history. Heart rate and power each appear only when the
+ * ride has them, so a ride without a strap never reads as "avg 0 bpm".
+ */
+const describeRideForScoring = (act: any): string => {
+  const parts = [`${act.durationMinutes} min`];
+  parts.push((act.averageHr ?? 0) > 0 ? `avg ${act.averageHr} bpm` : 'no heart rate data');
+  const zones = parseZones(act.timeInZones);
+  if (zones) parts.push(`zones: ${fmtZones(zones)}`);
+  const power = ridePower(act, getFtp().ftp);
+  if (power) parts.push(`power: ${formatPower(power)}`);
+  if (act.perceivedExertion != null)    parts.push(`rpe=${toRpe(act.perceivedExertion)}`);
+  if (act.feelingAfterExercise != null) parts.push(`feeling=${toFeeling(act.feelingAfterExercise)}`);
+  return parts.join(', ');
+};
+
+const formatPower = (p: any): string => {
+  if (!p) return 'power=n/a';
+  return [
+    `avg=${p.avg}W`,
+    p.np     ? `np=${p.np}W`         : null,
+    p.if     ? `if=${p.if.toFixed(2)}` : null,
+    p.best20 ? `best20=${p.best20}W` : null,
+    p.max    ? `max=${p.max}W`       : null,
+  ].filter(Boolean).join(' ');
+};
+
 const formatActivityLines = (acts: any[]): string => {
   if (acts.length === 0) return '(no rides recorded in this window)';
   return acts.map(a => {
@@ -261,7 +305,7 @@ const formatActivityLines = (acts: any[]): string => {
       a.rpe     != null ? `rpe=${a.rpe}`         : null,
       a.feeling != null ? `feeling=${a.feeling}` : null
     ].filter(Boolean).join(' ') || 'unrated';
-    return `${a.date} | ${a.durationMin}min | ${a.avgHr}bpm | ${a.distKm}km | ${zones} | ${feedback}`;
+    return `${a.date} | ${a.durationMin}min | ${a.avgHr > 0 ? `${a.avgHr}bpm` : 'hr=n/a'} | ${a.distKm}km | ${zones} | ${formatPower(a.power)} | ${feedback}`;
   }).join('\n');
 };
 
@@ -273,6 +317,10 @@ const formatActivityLines = (acts: any[]): string => {
  * effort was. Both are things language models get wrong silently, and the answers drive every
  * decision downstream. Computing them here costs ~50 tokens and makes them exact.
  */
+/** Whole-ride intensity factor that counts as a hard effort when a ride has no HR zones.
+ *  Roughly where a Threshold session lands with its warm-up and recoveries included. */
+const HARD_RIDE_IF = 0.85;
+
 const buildTrainingLoadBlock = (): string => {
   const today = localDate();
   const dayOffset = (n: number): string => {
@@ -315,10 +363,20 @@ const buildTrainingLoadBlock = (): string => {
 
   // "Hard" = at least 10 minutes above threshold, which is what actually needs recovering
   // from — a ride that merely touched Z4 for a minute on a climb does not count.
+  // A ride without heart rate zones but with power counts by intensity factor instead: without
+  // that, a hard ride with a forgotten strap reads as no hard effort at all and the model
+  // stacks another quality session on top of it.
+  const { ftp } = getFtp();
+  const hardByPower = (a: any): boolean => {
+    const iF = intensityFactor(a.normPower, ftp);
+    return iF != null && iF >= HARD_RIDE_IF && (a.durationMinutes ?? 0) >= 20;
+  };
   const lastHard = acts.find(a => {
     const z = parseZones(a.timeInZones);
-    return z && (z[3] + z[4]) / 60 >= 10;
+    return z ? (z[3] + z[4]) / 60 >= 10 : hardByPower(a);
   });
+  // Rides the zone figures cannot see, but power can.
+  const powerOnly = acts.filter(a => !parseZones(a.timeInZones) && (a.averagePower ?? 0) > 0);
   const daysSinceHard = lastHard
     ? Math.round((new Date(today + 'T12:00:00').getTime() - new Date(dateOf(lastHard) + 'T12:00:00').getTime()) / 86_400_000)
     : null;
@@ -353,10 +411,11 @@ const buildTrainingLoadBlock = (): string => {
 - Last 7 days: ${weeks[0].rides} ride(s), ${fmt(weeks[0].minutes)} total, ${weeks[0].z3plus} min in Z3+
 - Preceding 7-day blocks (most recent first): ${weeks.slice(1).map(w => `${fmt(w.minutes)} (${w.rides} rides)`).join(', ')}
 - ${blocksCovered}-week average: ${fmt(avgPerWeek)} and ${avgRidesPerWeek} rides per week${blocksCovered < weeks.length ? ` (only ${historyDays} days of ride history are stored — do not read this as a long-term baseline)` : ''}
-- Days since last hard effort (>=10 min in Z4/Z5): ${daysSinceHard ?? 'no such effort in stored history'}
+- Days since last hard effort (>=10 min in Z4/Z5${powerOnly.length > 0 && ftp ? `, or if >= ${HARD_RIDE_IF} on a ride without HR zones` : ''}): ${daysSinceHard ?? 'no such effort in stored history'}
 - Consecutive training days: ${streak}${lastRide ? ` (most recent ride ${lastRide})` : ''}
 - Most recent day without a ride: ${lastRestDay ?? 'none in the last 28 days'}
-- Zone data present for ${withZones} of ${acts.length} stored rides${withZones < acts.length ? ' — the Z3+ and Z4/Z5 figures above count only those' : ''}
+- Zone data present for ${withZones} of ${acts.length} stored rides${withZones < acts.length ? ' — the Z3+ and Z4/Z5 figures above count only those' : ''}${powerOnly.length > 0 ? `
+- ${powerOnly.length} stored ride(s) have power but no heart rate zones (most recent ${dateOf(powerOnly[0])}): judge their intensity from their power figures in RECENT ACTIVITIES, not from the zone totals above` : ''}
 
 `;
 };
@@ -580,6 +639,33 @@ const buildHrCalibrationLines = (profile: any, analysis: any): string => {
 };
 
 /**
+ * FTP and the best recent 20-minute power, as lines under HR PROFILE.
+ *
+ * Empty when there is no FTP and no recent ride with power: an athlete without a power meter
+ * gets exactly the prompt they had before. The "may be set too low" line is the power
+ * counterpart of buildHrCalibrationLines(): a 20-minute best whose 95% is clearly above the
+ * FTP means the FTP is out of date, and every IF on the ride lines is then overstated.
+ */
+const buildPowerProfileLines = (): string => {
+  const { ftp, source } = getFtp();
+  const best = getBest20MinPower();
+  if (ftp == null && !hasRecentPowerRides()) return '';
+
+  const bestText = best ? `best 20-minute power in the last 90 days: ${best.watts} W (${best.date})` : null;
+  const lines: string[] = [];
+  if (ftp != null) {
+    lines.push(`FTP: ${ftp} W (${source === 'manual' ? 'set by the athlete' : 'from Garmin'})${bestText ? `; ${bestText}` : ''}`);
+    if (best && best.watts * FTP_FROM_20MIN > ftp * 1.03) {
+      lines.push(`FTP CALIBRATION: ${Math.round(best.watts * FTP_FROM_20MIN)} W (95% of that 20-minute best) is above the FTP of ${ftp} W, so the FTP is most likely set too low and every if= figure overstates the intensity. Say in loadAssessment.insight that the FTP needs updating.`);
+    }
+  } else {
+    lines.push(`FTP: not set${bestText ? `; ${bestText}` : ''}. Without an FTP, compare power between this athlete's own rides only.`);
+  }
+  // Leading newline per line: the caller appends this straight after the HR calibration lines.
+  return lines.map(l => `\n- ${l}`).join('');
+};
+
+/**
  * How to weigh a daily check-in.
  *
  * Deliberately strong: a check-in is the athlete speaking directly, which is the whole
@@ -619,6 +705,7 @@ const SCORING_RUBRIC = loadPrompt('shared/scoring-rubric');
 
 /** Recent rides shaped for the prompt: zone minutes, rpe and feeling where available. */
 const buildRecentActivities = (activityDays: number): any[] => {
+  const { ftp } = getFtp();
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - activityDays);
   return getStoredActivities()
@@ -644,6 +731,10 @@ const buildRecentActivities = (activityDays: number): any[] => {
       // Include perceived exertion and post-ride feeling when available — these are
       // subjective athlete signals that are strong indicators of recovery state.
       // DB stores raw Garmin 0–100 values; toRpe/toFeeling convert to human-readable scale.
+      // Power only on rides from a bike with a power meter; every other ride says power=n/a.
+      // IF is computed here (NP / FTP) rather than asked of the model.
+      const power = ridePower(a, ftp);
+      if (power) base.power = power;
       if (a.perceivedExertion != null)    base.rpe     = toRpe(a.perceivedExertion);
       if (a.feelingAfterExercise != null) base.feeling = toFeeling(a.feelingAfterExercise);
       return base;
@@ -691,6 +782,7 @@ const buildAthleteDataVars = (profile: any, analysis: any, recentActivities: any
   LTHR:             profile?.lthr ?? 'unknown',
   ZONES:            buildZoneString(profile),
   HR_CALIBRATION:   buildHrCalibrationLines(profile, analysis),
+  POWER_PROFILE:    buildPowerProfileLines(),
   TOTAL_RIDES:      analysis?.totalCyclingRides ?? 0,
   PEAK_HR:          analysis?.maxRecordedHr ?? 0,
   AVG_RIDE_MINUTES: analysis?.averageRideDurationMinutes ?? 0,
@@ -782,11 +874,7 @@ const buildPrompt = (previousPlan?: PlanEntry[], pauseContext?: PauseContext, ac
         const act = actMap.get(e.date);
         let actDetail = '';
         if (act) {
-          actDetail = `${act.durationMinutes} min, avg ${act.averageHr} bpm`;
-          const zones = parseZones(act.timeInZones);
-          if (zones) actDetail += `, zones: ${fmtZones(zones)}`;
-          if (act.perceivedExertion != null)    actDetail += `, rpe=${toRpe(act.perceivedExertion)}`;
-          if (act.feelingAfterExercise != null) actDetail += `, feeling=${toFeeling(act.feelingAfterExercise)}`;
+          actDetail = describeRideForScoring(act);
         }
 
         if (e.executionScore != null) {
@@ -1204,12 +1292,7 @@ const buildFreeHistoryBlock = (
   const describeRide = (s: FreeSuggestion): string => {
     const act = s.completedActivityId ? activityById.get(String(s.completedActivityId)) : null;
     if (!act) return '';
-    let detail = `${act.durationMinutes} min, avg ${act.averageHr} bpm`;
-    const zones = parseZones(act.timeInZones);
-    if (zones) detail += `, zones: ${fmtZones(zones)}`;
-    if (act.perceivedExertion != null)    detail += `, rpe=${toRpe(act.perceivedExertion)}`;
-    if (act.feelingAfterExercise != null) detail += `, feeling=${toFeeling(act.feelingAfterExercise)}`;
-    return detail;
+    return describeRideForScoring(act);
   };
 
   const line = (s: FreeSuggestion): string => {

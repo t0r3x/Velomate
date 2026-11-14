@@ -6,6 +6,10 @@ export interface RideSpec {
   daysAgo: number;
   type: RideType;
   durationMin: number;
+  /** Ridden on the bike with the power meter (needs `ftp` on the athlete). */
+  power?: boolean;
+  /** No heart rate strap: HR 0 and an all-zero zone split, the way Garmin can send it. */
+  noHr?: boolean;
 }
 
 export interface AthleteDefinition {
@@ -16,6 +20,8 @@ export interface AthleteDefinition {
   trainingPhase: TrainingPhase;
   profile: { maxHr: number; lthr: number };
   preferences: { preferredLongRideDays: string[]; goals: string };
+  /** FTP in watts, for athletes who own a power meter. Stored as if it came from Garmin. */
+  ftp?: number;
   rides: RideSpec[];
 }
 
@@ -50,10 +56,20 @@ const FEEL_RAW: Record<RideType, number> = {
   easy: 75, moderate: 75, threshold: 50, sprint: 50, long: 75,
 };
 
+// Whole-ride intensity factor per ride type (warm-up and recoveries included), and the best
+// 20 minutes as a share of FTP. Plausible values, matching the bands ACTIVITY_DATA_NOTES gives.
+const RIDE_IF: Record<RideType, number> = {
+  easy: 0.62, moderate: 0.74, threshold: 0.88, sprint: 0.78, long: 0.68,
+};
+const BEST20_OF_FTP: Record<RideType, number> = {
+  easy: 0.68, moderate: 0.82, threshold: 0.98, sprint: 0.85, long: 0.75,
+};
+
 export function buildActivity(
   athleteId: string,
   ride: RideSpec,
-  profile: { maxHr: number; lthr: number }
+  profile: { maxHr: number; lthr: number },
+  ftp?: number
 ): any {
   const date = new Date();
   date.setDate(date.getDate() - ride.daysAgo);
@@ -79,11 +95,22 @@ export function buildActivity(
     durationMinutes: ride.durationMin,
     averageHr: Math.round(profile.lthr * AVG_HR_RATIO[ride.type]),
     maxHr: Math.round(profile.maxHr * MAX_HR_RATIO[ride.type]),
-    averagePower: 0,
-    maxPower: 0,
-    timeInZones: zones,
+    ...powerFields(ride, ftp),
+    ...(ride.noHr ? { averageHr: 0, maxHr: 0 } : {}),
+    timeInZones: ride.noHr ? [0, 0, 0, 0, 0] : zones,
     perceivedExertion: RPE_RAW[ride.type],
     feelingAfterExercise: FEEL_RAW[ride.type],
+  };
+}
+
+function powerFields(ride: RideSpec, ftp?: number) {
+  if (!ride.power || !ftp) return { averagePower: 0, maxPower: 0 };
+  const np = Math.round(ftp * RIDE_IF[ride.type]);
+  return {
+    averagePower:  Math.round(np * 0.92),
+    normPower:     np,
+    max20MinPower: ride.durationMin >= 20 ? Math.round(ftp * BEST20_OF_FTP[ride.type]) : null,
+    maxPower:      Math.round(ftp * (ride.type === 'sprint' ? 3.2 : 1.9)),
   };
 }
 
@@ -217,6 +244,34 @@ export const ATHLETES: AthleteDefinition[] = [
       { daysAgo: 18, type: 'threshold', durationMin: 90 },
       { daysAgo: 19, type: 'easy',      durationMin: 90 },
       { daysAgo: 21, type: 'long',      durationMin: 150 },
+    ],
+  },
+  {
+    // Two bikes, a power meter on one of them, and a hard session yesterday with the heart
+    // rate strap forgotten. Checks that power-only rides count (yesterday is a hard effort,
+    // so today must not be another quality day) and that power=n/a rides are not penalised.
+    id: 'joris',
+    name: 'Joris Peeters',
+    age: 38,
+    fitnessLevel: 'intermediate',
+    trainingPhase: 'build',
+    profile: { maxHr: 184, lthr: 165 },
+    ftp: 235,
+    preferences: {
+      preferredLongRideDays: ['Sunday'],
+      goals: 'Gravel events in spring. Rides a road bike and a gravel bike; only the gravel bike has a power meter.',
+    },
+    rides: [
+      { daysAgo: 1,  type: 'threshold', durationMin: 75,  power: true, noHr: true },
+      { daysAgo: 3,  type: 'easy',      durationMin: 60 },
+      { daysAgo: 5,  type: 'long',      durationMin: 120, power: true },
+      { daysAgo: 7,  type: 'moderate',  durationMin: 70 },
+      { daysAgo: 9,  type: 'threshold', durationMin: 70,  power: true },
+      { daysAgo: 12, type: 'long',      durationMin: 110, power: true },
+      { daysAgo: 14, type: 'easy',      durationMin: 60 },
+      { daysAgo: 16, type: 'threshold', durationMin: 70 },
+      { daysAgo: 19, type: 'long',      durationMin: 115, power: true },
+      { daysAgo: 21, type: 'easy',      durationMin: 55 },
     ],
   },
 ];

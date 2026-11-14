@@ -43,10 +43,15 @@ export interface WeekPoint {
 /** The ride's minutes per zone: Garmin's split when present, else all of it in one estimated zone. */
 export function zoneMinutes(a: Activity, maxHr: number): number[] {
   const z = a.timeInZones
-  if (Array.isArray(z) && z.length >= 5) return z.slice(0, 5).map(s => (s ?? 0) / 60)
+  // An all-zero split (a ride without a heart rate strap) is no data, not a ride with no load.
+  if (Array.isArray(z) && z.length >= 5 && z.slice(0, 5).some(s => (s ?? 0) > 0)) {
+    return z.slice(0, 5).map(s => (s ?? 0) / 60)
+  }
 
   // No zone data: Garmin's default zones are 50/60/70/80/90 % of max HR, so place the whole
   // ride in the zone its average HR falls in. Rough, but better than dropping the ride.
+  // Without any heart rate it lands in Z2. Power is deliberately not used here (gotcha 28,
+  // and the "Power meter" section in CLAUDE.md): the chart stays one measure on every bike.
   const minutes = a.durationMinutes ?? 0
   const out = [0, 0, 0, 0, 0]
   if (!minutes) return out

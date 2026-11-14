@@ -5,7 +5,7 @@ ATHLETE PREFERENCES:
 
 {{PAUSE_BLOCK}}{{SUGGESTION_HISTORY}}HR PROFILE:
 - Max HR: {{MAX_HR}} bpm | LTHR: {{LTHR}} bpm
-- Zones: {{ZONES}}{{HR_CALIBRATION}}
+- Zones: {{ZONES}}{{HR_CALIBRATION}}{{POWER_PROFILE}}
 
 TRAINING ANALYSIS (last 90 days):
 - Total rides: {{TOTAL_RIDES}} | Peak HR recorded: {{PEAK_HR}} bpm

@@ -19,9 +19,10 @@ export const useProfileStore = defineStore('profile', () => {
 
   async function save(data: Partial<UserHRProfile>): Promise<boolean> {
     try {
-      await postProfile(data)
-      // Merge locally so the HR label updates immediately
-      profile.value = { ...(profile.value as UserHRProfile), ...data } as UserHRProfile
+      const res = await postProfile(data)
+      // The server's copy carries what only it can work out (FTP source, Garmin's FTP);
+      // the local merge is the fallback so the HR label updates immediately either way.
+      profile.value = res.profile ?? ({ ...(profile.value as UserHRProfile), ...data } as UserHRProfile)
       return true
     } catch {
       return false

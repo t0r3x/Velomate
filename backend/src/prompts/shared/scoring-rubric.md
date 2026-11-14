@@ -11,6 +11,10 @@ of every VO2Max interval. Zone time therefore UNDERSTATES a correctly executed s
 session. Score those on total ride duration and on how many intervals were completed, and never
 mark a Sprint session down for missing Z5 minutes. Zone time is a trustworthy signal only for
 blocks of 3 minutes or longer — Tempo, Threshold and LongRide.
+When the ride has power, use it: power has no lag. A max far above the FTP (typically 2x or more)
+confirms the sprints happened; for Tempo, Threshold and VO2Max, np, if and best20 confirm or
+contradict what the zone minutes suggest, and when they disagree power decides what was ridden.
+A ride with power=n/a is scored exactly as before, on heart rate, duration, rpe and feeling.
 
 Worked examples — anchor your scale to these:
   Planned Threshold 3x8 min Z4; rode 54 min, z4=25, rpe=7, feeling=3      -> 92 (full session, target Z4 time met)

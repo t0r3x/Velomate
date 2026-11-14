@@ -20,6 +20,7 @@ import {
 import { assessProgression } from '../services/activity.service';
 import { calculateDefaultZones } from '../services/profile.service';
 import { generateRecommendation } from '../services/gemini.service';
+import { applyGarminFtp } from '../services/power.service';
 
 const athleteId = process.argv[2];
 if (!athleteId) {
@@ -60,7 +61,8 @@ async function main(athlete: AthleteDefinition) {
   setSetting('gemini_last_generated', '0'); // force generation, never stale
 
   // ── Activities ──────────────────────────────────────────────────────────────
-  const activities = athlete.rides.map(r => buildActivity(athlete.id, r, athlete.profile));
+  const activities = athlete.rides.map(r => buildActivity(athlete.id, r, athlete.profile, athlete.ftp));
+  if (athlete.ftp) applyGarminFtp(athlete.ftp);
   upsertActivities(activities);
 
   // upsertActivities sets feedback columns to NULL; update them separately

@@ -144,8 +144,19 @@
             <strong>{{ activity.averagePower }} W</strong>
             <span>average{{ activity.maxPower > 0 ? ` · max ${activity.maxPower}` : '' }}</span>
           </div>
+          <div v-if="activity.averagePower > 0 && activity.normPower" class="tt-row">
+            <i class="fa-solid fa-wave-square tt-icon tt-icon--muted"></i>
+            <strong>{{ activity.normPower }} W</strong>
+            <span>normalized{{ intensity ? ` · IF ${intensity}` : '' }}</span>
+          </div>
+          <div v-if="best20" class="tt-row">
+            <i class="fa-solid fa-stopwatch tt-icon tt-icon--muted"></i>
+            <strong>{{ best20 }} W</strong>
+            <span>best 20 min</span>
+          </div>
 
-          <template v-if="zoneMins.some(m => m > 0)">
+          <!-- Without any heart rate the load fallback parks the ride in Z2; that is an assumption, not a split to show. -->
+          <template v-if="zoneMins.some(m => m > 0) && (activity.averageHr > 0 || activity.timeInZones?.some(s => s > 0))">
             <div class="tt-date tt-section">Time in zone</div>
             <div class="tt-zones">
               <template v-for="(m, z) in zoneMins" :key="'z' + z">
@@ -363,6 +374,15 @@ const duration = computed(() => {
   const m = props.activity.durationMinutes ?? 0
   return m >= 60 ? `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}` : `${m} min`
 })
+/** NP as a share of FTP, two decimals; only with both (power.service.ts on the backend does the same). */
+const intensity = computed(() => {
+  const ftp = profileStore.profile?.ftp
+  const np  = props.activity.normPower
+  return ftp && np ? (np / ftp).toFixed(2) : null
+})
+/** Best 20 minutes, left out of rides too short to contain one (as in the prompt). */
+const best20 = computed(() =>
+  props.activity.averagePower > 0 && (props.activity.durationMinutes ?? 0) >= 20 ? props.activity.max20MinPower ?? null : null)
 /** The zone the average HR falls in, by the athlete's own profile (not Garmin's split). */
 const avgZone = computed(() => {
   const z = profileStore.profile?.zones

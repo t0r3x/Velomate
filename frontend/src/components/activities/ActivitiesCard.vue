@@ -22,6 +22,15 @@
             How you felt afterwards, from exhausted to strong. The same five faces as the daily check-in.
           </dd>
 
+          <dt><i class="fa-solid fa-bolt"></i>Power</dt>
+          <dd>
+            Only on rides with a power meter; hover a ride's numbers to see it. <em>NP</em> (normalized power) is
+            what the ride cost, counting the surges. <em>IF</em> is NP as a share of your FTP: about 0.65 for an easy
+            ride, near 1.0 for an all-out hour. The coach uses power to check what you actually rode, alongside
+            heart rate, and rides without it are judged as before. Workouts on Garmin keep heart rate targets,
+            so they work on every bike. Set your FTP in Training Profile.
+          </dd>
+
           <dt><i class="fa-solid fa-pen"></i>Rating a ride</dt>
           <dd>
             Fill these in on your watch, or click a ride to set them here. They are saved to Garmin first, then

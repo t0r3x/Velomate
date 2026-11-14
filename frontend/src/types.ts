@@ -19,6 +19,19 @@ export interface UserHRProfile {
   zones: HrZones
   hasCustomOverrides: boolean
   lastUpdated: string
+  // Power. Stored apart from the HR profile (backend power.service.ts), attached to every
+  // profile response. All optional: an athlete without a power meter has none of them.
+  /** FTP in use, or null when not set. */
+  ftp?: number | null
+  /** 'garmin' follows Garmin's FTP on every sync; 'manual' was typed by the athlete. */
+  ftpSource?: 'garmin' | 'manual' | null
+  /** What Garmin last reported, even when overridden. */
+  garminFtp?: number | null
+  /** Best 20-minute power in the last 90 days, and the date of that ride. */
+  best20Power?: number | null
+  best20Date?: string | null
+  /** 95% of best20Power. A suggestion only. */
+  estimatedFtp?: number | null
 }
 
 // ── Plan types ────────────────────────────────────────────────────────────────
@@ -123,6 +136,9 @@ export interface Activity {
   maxHr: number
   averagePower: number
   maxPower: number
+  /** Power-meter rides only; null when the bike had none. */
+  normPower?: number | null
+  max20MinPower?: number | null
   timeInZones?: number[]
   perceivedExertion?: number | null
   feelingAfterExercise?: number | null

@@ -49,6 +49,7 @@ velomate/
 │   │       ├── garmin.service.ts      ← OAuth2/session management
 │   │       ├── sso.service.ts         ← Garmin SSO login flow + MFA
 │   │       ├── profile.service.ts     ← HR profile calc + config.json fallback
+│   │       ├── power.service.ts       ← FTP (settings-backed), best 20-min power, IF, Garmin FTP lookup
 │   │       └── workout.service.ts     ← Garmin workout upload + schedule
 │   ├── scripts/copy-prompts.js        ← build step: src/prompts/**/*.md → dist/prompts (tsc copies no .md)
 │   └── config.json                    ← HR profile fallback (legacy, still read/written for backward compat)
@@ -81,6 +82,7 @@ Zone data is stored as **flat min/max or seconds columns**, not JSON blobs (a pr
 activities    -- Garmin cycling activities (upsert by activityId)
   activityId TEXT PK, name, type, startTime, distanceKm REAL, durationMinutes INTEGER,
   averageHr, maxHr, averagePower, maxPower INTEGER,
+  normPower, max20MinPower INTEGER,                    -- power-meter rides only, NULL otherwise (see "Power meter")
   z1Sec, z2Sec, z3Sec, z4Sec, z5Sec INTEGER,          -- seconds per zone, nullable
   perceivedExertion INTEGER, feelingAfterExercise INTEGER,  -- 0-100 Garmin scale, filled in separately
   fetchedAt TEXT
@@ -300,6 +302,8 @@ mirrors the same two functions purely to give an actionable message before the r
 | `gemini_last_model` | The model that actually answered the last generation, written by `callGeminiWithFallback()`. Differs from `gemini_model` after a fallback; the header shows it |
 | `trend_hidden` | JSON `{ lines, zones, rows }`: what is switched off on the Trend chart. Re-validated on read and write (`sanitizeTrendHidden()` in `server.ts`), so an unknown series can never reach the UI |
 | `trend_collapsed` | `'1'` folds the dashboard's Trend card to its header row (see "Trend card") |
+| `ftp_watts` / `ftp_source` | FTP in use and where it came from: `'garmin'` (follows Garmin on every sync) or `'manual'`. Absent = not set. See "Power meter" |
+| `garmin_ftp` | The FTP Garmin last reported, kept even when the athlete overrode it, so the form can offer it |
 
 ---
 
@@ -313,7 +317,10 @@ POST   /api/mfa                             ← { code } → { success }
 
 GET    /api/dashboard                       ← { activities, analysis, profile } from DB (no Garmin call)
 GET    /api/profile                         ← { maxHr, lthr, zones, ... } (opportunistically enriches maxHr from Garmin if not customized)
-POST   /api/profile                         ← { maxHr, lthr, zones } → saves to DB and config.json (backward compat)
+POST   /api/profile                         ← { maxHr, lthr, zones, ftp? } → saves to DB and config.json (backward compat).
+                                               ftp: number (50-600) sets it, null clears it, absent leaves it alone.
+                                               Every profile response carries the power fields (ftp, ftpSource,
+                                               garminFtp, best20Power, best20Date, estimatedFtp)
 
 GET    /api/activities                      ← same as dashboard
 POST   /api/activities/refresh              ← fetch from Garmin, upsert DB, re-run analysis → { …, newCount }
@@ -370,6 +377,8 @@ POST   /api/free-training/dismiss           ← mark current 'dismissed' → gen
 POST   /api/free-training/sync              ← upload + schedule the suggestion on today's date
 
 GET    /api/debug/raw-activity              ← debug-only: dumps raw Garmin activity/detail fields (RPE/feeling field discovery)
+GET    /api/debug/garmin-power-data         ← debug-only: power/FTP keys from the newest power ride (summary + detail),
+                                               user settings and the biometric FTP endpoint, next to what Velomate parsed
 GET    /api/debug/garmin-hr-data            ← debug-only: dumps userData + an activity detail, scanned for zone/threshold/LTHR-related keys
                                                (discovering whether Garmin exposes a real LTHR/zone boundaries instead of Velomate's ×0.88 guess)
 
@@ -743,6 +752,48 @@ z5min = lthr + 1
 ```
 
 ---
+
+## Power meter
+
+Added when the athlete got a 4iii power meter on **one** of their bikes. Power is **supplementary to heart
+rate**, never a replacement, and that decision shapes everything below: the athlete rides bikes without a
+power meter too, and Velomate cannot know which bike gets ridden on a given day.
+
+- **Data**: `normPower` and `max20MinPower` per ride, from Garmin's activity list summary (`normPower`,
+  `max20MinPower`, fallback `normalizedPower` / `maxAvgPower_1200`). **Not yet confirmed against a real ride
+  on this account** when written: `fetchCyclingActivities()` logs the power keys of the newest power ride, and
+  `GET /api/debug/garmin-power-data` dumps everything. Check one of the two after the first power ride.
+  NULL (not 0) means no power meter on that bike.
+- **FTP lives in `settings`, not the `profile` row.** That row is written with INSERT OR REPLACE by callers
+  that know nothing about power, and any of them would wipe it. `getActiveProfile()` attaches the power
+  fields to every profile response. FTP follows Garmin's (read on every sync by `fetchGarminThresholds()`,
+  from user settings or `/biometric-service/biometric/latestFunctionalThresholdPower/CYCLING`, matched by
+  field name, also unconfirmed) until the athlete types a different value; entering Garmin's own value or
+  clearing the field goes back to following Garmin. The 95%-of-best-20-minutes estimate is only ever a
+  suggestion in the form, because it is only right after an all-out 20-minute effort.
+- **Prompt**: a `power` column on every ride line (`avg= np= if= best20= max=`, or `power=n/a`); IF is
+  computed in code (rule 20). `{{POWER_PROFILE}}` under HR PROFILE gives the FTP and best 20 minutes, plus
+  an **FTP CALIBRATION** line when 95% of the 20-minute best is more than 3% above the FTP (the power
+  counterpart of gotcha 25). It is **empty for an athlete with no FTP and no recent power ride**, so their
+  prompt is unchanged. `ACTIVITY_DATA_NOTES` says `power=n/a` carries no information, power decides what was
+  ridden and HR/rpe/feeling what it cost, ride-wide IF understates interval sessions, and no watts in labels.
+  The rubric adds that power removes the HR-lag blind spot for sprints.
+- **The reverse case, power without heart rate** (strap forgotten), is handled explicitly, because every
+  HR-derived figure silently reads such a ride as easy. An all-zero zone split is stored and parsed as **no
+  data** (`parseZones()`, the activity mapping and `zoneMinutes()` in the frontend), never as a zero-load
+  ride. The ride line says `hr=n/a` instead of `0bpm`, and `describeRideForScoring()` (shared by the plan's
+  compliance block and free mode's suggestion history, now with power) says "no heart rate data".
+  `buildTrainingLoadBlock()` counts a ride without HR zones as a hard effort when its IF ≥ `HARD_RIDE_IF`
+  (0.85, 20+ min) and adds a line naming the rides the zone totals cannot see; both appear only when such
+  rides exist. The Trend card still puts a ride without any HR in Z2 (no power there, see below), and the
+  ride tooltip hides its "Time in zone", which would be that assumption shown as data.
+- **Deliberately not done**: power targets on Garmin workouts (a watt-only workout is useless on a bike
+  without a meter; HR targets work on all of them) and power-based load in the Trend card (counting
+  power rides as TSS and the others as TRIMP would make the fitness line jump with the choice of bike, and
+  gotcha 28 keeps the chart on Garmin's HR zone split). Revisit both only with a reason that survives
+  "the athlete rides more than one bike".
+- **UI**: a Power section in Training Profile (FTP field, Garmin / estimate suggestions), NP + IF and best
+  20 min in the ride stats tooltip, a Power entry in the Recent Rides help panel.
 
 ## Workout sync to Garmin
 

@@ -72,6 +72,35 @@
               <HrZonesBar :zones="zones" :maxHr="maxHr" @update:zones="zones = $event" />
             </div>
 
+            <!-- ── Power ── -->
+            <div class="tp-section-label tp-section-divider">
+              <i class="fa-solid fa-bolt"></i>
+              Power
+            </div>
+
+            <div v-for="sug in ftpSuggestions" :key="sug.key" class="ps-suggestion-row">
+              <div class="ps-suggestion-label">
+                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                <span v-html="sug.html"></span>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" @click="ftp = sug.value">
+                <span>{{ sug.button }}</span>
+              </button>
+            </div>
+
+            <div class="hr-stats-row">
+              <div class="hr-stat-box">
+                <span class="stat-label">FTP (W)</span>
+                <input type="number" class="stat-value-input" :min="FTP_MIN" :max="FTP_MAX" placeholder="Not set" v-model.number="ftp" @input="ftpTouched = true">
+              </div>
+            </div>
+            <p class="helper-text tp-hint">
+              Optional. FTP is roughly the power you can hold for an hour. Only rides with a power meter use it: the
+              coach reads power next to heart rate to check what you actually rode.
+              {{ ftpFollowsGarmin ? 'Taken from Garmin, and kept up to date from it until you change it.' : '' }}
+              Workouts on Garmin keep heart rate targets, so they work on every bike.
+            </p>
+
             <!-- ── Training Mode ── -->
             <div class="tp-section-label tp-section-divider">
               <i class="fa-solid fa-shuffle"></i>
@@ -152,7 +181,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter }  from 'vue-router'
 import { useProfileStore }  from '@/stores/profile.store'
 import { useSettingsStore } from '@/stores/settings.store'
@@ -193,6 +222,39 @@ const selectedDays        = ref<string[]>([...settingsStore.preferredLongRideDay
 const goals               = ref('')
 const inactivityPauseDays = ref(settingsStore.inactivityPauseDays)
 const freeTrainingMode    = ref(settingsStore.freeTrainingMode)
+// '' when the field is emptied (v-model.number leaves a blank input as a string)
+const ftp                 = ref<number | '' | null>(profileStore.profile?.ftp ?? null)
+const ftpTouched          = ref(false)
+
+const FTP_MIN = 50
+const FTP_MAX = 600
+
+const ftpValue = computed<number | null>(() =>
+  typeof ftp.value === 'number' && Number.isFinite(ftp.value) && ftp.value > 0 ? Math.round(ftp.value) : null)
+
+const ftpFollowsGarmin = computed(() => {
+  const p = profileStore.profile
+  return p?.ftpSource === 'garmin' && p.garminFtp != null && ftpValue.value === p.garminFtp
+})
+
+/**
+ * Where an FTP could come from, offered only when it differs from what is in the field.
+ * Garmin's comes first: the Edge works it out from real efforts. The 20-minute estimate is
+ * only as good as the effort behind it, and the text says so.
+ */
+const ftpSuggestions = computed(() => {
+  const p = profileStore.profile
+  const out: { key: string; html: string; value: number; button: string }[] = []
+  if (p?.garminFtp && p.garminFtp !== ftpValue.value) {
+    out.push({ key: 'garmin', value: p.garminFtp, button: "Use Garmin's",
+      html: `Garmin reports an FTP of <strong>${p.garminFtp}</strong> W` })
+  }
+  if (p?.estimatedFtp && p.best20Power && p.estimatedFtp !== ftpValue.value && p.estimatedFtp !== p.garminFtp) {
+    out.push({ key: 'estimate', value: p.estimatedFtp, button: 'Use estimate',
+      html: `Your best 20 minutes in the last 90 days was <strong>${p.best20Power}</strong> W, which puts FTP around <strong>${p.estimatedFtp}</strong> W. Only accurate after an all-out 20-minute effort.` })
+  }
+  return out
+})
 
 // Suggestion state
 type LoadState = 'loading' | 'form'
@@ -231,6 +293,8 @@ onMounted(async () => {
 
   try {
     await activitiesStore.syncFromGarmin()
+    // The sync can bring Garmin's FTP in for the first time.
+    if (!ftpTouched.value) ftp.value = profileStore.profile?.ftp ?? null
     const analysis = activitiesStore.analysis
 
     if (analysis?.estimatedMaxHr) {
@@ -272,9 +336,13 @@ function useSuggestion() {
 }
 
 async function handleConfirm() {
+  if (ftpValue.value != null && (ftpValue.value < FTP_MIN || ftpValue.value > FTP_MAX)) {
+    show('error', 'Check your FTP', `FTP must be between ${FTP_MIN} and ${FTP_MAX} W, or left empty.`)
+    return
+  }
   saving.value = true
   try {
-    const profile = { maxHr: maxHr.value, lthr: lthr.value, zones: zones.value, hasCustomOverrides: true }
+    const profile = { maxHr: maxHr.value, lthr: lthr.value, zones: zones.value, hasCustomOverrides: true, ftp: ftpValue.value }
     // Captured before saving — switching mode swaps out the whole training card, so it is
     // worth calling out in the toast rather than letting the dashboard silently change shape.
     const modeChanged = freeTrainingMode.value !== settingsStore.freeTrainingMode
@@ -296,7 +364,7 @@ async function handleConfirm() {
             ? 'Your weekly plan is kept safe. Ask for your next workout whenever you like.'
             : 'Back to the two-week AI plan. Refresh it to bring it up to date.')
       } else {
-        show('success', 'Training Profile Updated', 'Zones, preferences and goals saved.')
+        show('success', 'Training Profile Updated', 'Zones, power, preferences and goals saved.')
       }
       emit('confirmed')
     } else {
