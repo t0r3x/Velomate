@@ -78,13 +78,18 @@
               Power
             </div>
 
-            <div v-for="sug in ftpSuggestions" :key="sug.key" class="ps-suggestion-row">
+            <!-- Same row as the heart rate suggestion above: one value, one button. It disappears once
+                 the field holds the suggested value, just as the HR one does after use. -->
+            <div v-if="ftpSuggestion" class="ps-suggestion-row">
               <div class="ps-suggestion-label">
                 <i class="fa-solid fa-wand-magic-sparkles"></i>
-                <span v-html="sug.html"></span>
+                <span>
+                  Derived from your data:
+                  FTP <strong>{{ ftpSuggestion.value }}</strong> W ({{ ftpSuggestion.source }})
+                </span>
               </div>
-              <button type="button" class="btn btn-secondary btn-sm" @click="ftp = sug.value; ftpTouched = true">
-                <span>{{ sug.button }}</span>
+              <button type="button" class="btn btn-secondary btn-sm" @click="ftp = ftpSuggestion.value; ftpTouched = true">
+                <span>Use suggestion</span>
               </button>
             </div>
 
@@ -98,6 +103,7 @@
               FTP is roughly the power you can hold for an hour. Only rides with a power meter use it: the
               coach reads power next to heart rate to check what you actually rode.
               {{ ftpFollowsGarmin ? 'Taken from Garmin, and kept up to date from it until you change it.' : '' }}
+              {{ ftpSuggestion?.source.startsWith('95%') ? 'A suggestion from your best 20 minutes is only right if that was an all-out effort.' : '' }}
               Workouts on Garmin keep heart rate targets, so they work on every bike.
             </p>
 
@@ -241,27 +247,27 @@ const ftpFollowsGarmin = computed(() => {
 })
 
 /**
- * Where an FTP could come from, offered only when it differs from what is in the field.
- * Garmin's comes first: the Edge works it out from real efforts. The 20-minute estimate is
- * only as good as the effort behind it, and the text says so.
+ * One suggested FTP, shown like the heart rate suggestion, and only when it differs from the
+ * field. Garmin's comes first: the Edge works it out from real efforts. The 20-minute estimate
+ * (95% of the best 20 minutes) is a lower bound, since easy rides say nothing about what the
+ * athlete can hold, so it is only offered when there is no FTP or it shows the FTP is too LOW
+ * (the same 3% margin as the coach's FTP CALIBRATION line), never to lower one. When it beats
+ * Garmin's figure by that margin, Garmin's is out of date too and the estimate wins.
  */
-const ftpSuggestions = computed(() => {
+const ftpSuggestion = computed<{ value: number; source: string } | null>(() => {
   const p = profileStore.profile
-  const out: { key: string; html: string; value: number; button: string }[] = []
-  if (p?.garminFtp && p.garminFtp !== ftpValue.value) {
-    out.push({ key: 'garmin', value: p.garminFtp, button: "Use Garmin's",
-      html: `Garmin reports an FTP of <strong>${p.garminFtp}</strong> W` })
-  }
-  // A 20-minute best is a lower bound: easy rides say nothing about what the athlete can hold.
-  // So it is only offered when there is no FTP, or when it shows the FTP is too LOW (same 3%
-  // margin as the coach's FTP CALIBRATION line), never to lower one.
   const current = ftpValue.value
-  if (p?.estimatedFtp && p.best20Power && p.estimatedFtp !== p.garminFtp &&
-      (current == null || p.estimatedFtp > current * 1.03)) {
-    out.push({ key: 'estimate', value: p.estimatedFtp, button: 'Use estimate',
-      html: `Your best 20 minutes in the last 90 days was <strong>${p.best20Power}</strong> W, which puts FTP around <strong>${p.estimatedFtp}</strong> W. Only accurate after an all-out 20-minute effort.` })
-  }
-  return out
+  const garmin = p?.garminFtp && p.garminFtp !== current ? p.garminFtp : null
+  const estimate = p?.estimatedFtp && p.best20Power && (current == null || p.estimatedFtp > current * 1.03)
+    ? p.estimatedFtp : null
+  const bestDay = p?.best20Date
+    ? `, ${new Date(p.best20Date + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+    : ''
+  const fromEstimate = { value: estimate!, source: `95% of your best 20 minutes, ${p?.best20Power} W${bestDay}` }
+  if (garmin && estimate && estimate > garmin * 1.03) return fromEstimate
+  if (garmin) return { value: garmin, source: 'from Garmin' }
+  if (estimate) return fromEstimate
+  return null
 })
 
 // Suggestion state

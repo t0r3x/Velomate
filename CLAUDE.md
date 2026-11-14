@@ -805,7 +805,9 @@ power meter too, and Velomate cannot know which bike gets ridden on a given day.
   the choice of bike, and gotcha 28 keeps the chart on Garmin's HR zone split; the no-HR fallback above is
   the only place power reaches the chart). Revisit both only with a reason that survives
   "the athlete rides more than one bike".
-- **UI**: a Power section in Training Profile (FTP field, Garmin / estimate suggestions), NP + IF and best
+- **UI**: a Power section in Training Profile (FTP field plus **one** "Derived from your data" suggestion row,
+  built like the heart rate one above it: Garmin's FTP, or the 20-minute estimate when Garmin has none or it
+  beats Garmin's by > 3%; it disappears once the field holds that value), NP + IF and best
   20 min in the ride stats tooltip, a Power entry in the Recent Rides help panel. Two form rules that fix
   real bugs: the form only sends `ftp` once the athlete typed or picked a suggestion (`ftpTouched`), or a
   save made after Garmin updated the FTP would pin the stale value as `'manual'` for good; and the
