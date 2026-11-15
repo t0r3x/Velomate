@@ -558,8 +558,12 @@ export const classifyCompletedEntries = (
   // marking it so hands the AI a Rest entry flagged NEEDS SCORING — a case the rubric has no
   // band for, producing a meaningless score that then feeds straight back into planning.
   // The ride itself is already visible to the model in RECENT ACTIVITIES.
+  // 'auto-skipped' is included: it was an inference from "no ride seen", and a ride that turns up
+  // later (a Garmin session that had expired, a sync that failed) is evidence that beats it.
+  // Without this, those days stayed "missed" forever and the coach planned around misses that
+  // never happened. An explicit 'skipped' is the athlete's own word and is left alone.
   return plan
-    .filter(e => e.status === 'planned' && e.type !== 'Rest' && e.date <= today && actMap.has(e.date))
+    .filter(e => (e.status === 'planned' || e.status === 'auto-skipped') && e.type !== 'Rest' && e.date <= today && actMap.has(e.date))
     .map(e => ({ date: e.date, status: 'completed' as const }));
 };
 

@@ -429,7 +429,8 @@ app.post('/api/activities/refresh', async (req: Request, res: Response) => {
     // so a second call after sync would always return empty (they're no longer 'planned').
     const preSyncPlan    = getStoredRecommendation()?.weeklyPlan || [];
     const prePlannedDates = new Set(
-      preSyncPlan.filter((e: any) => e.status === 'planned').map((e: any) => e.date)
+      // auto-skipped too: classifyCompletedEntries() can now complete those (a late-arriving ride).
+      preSyncPlan.filter((e: any) => e.status === 'planned' || e.status === 'auto-skipped').map((e: any) => e.date)
     );
     // Same trick for free mode: the sync calls settleFreeSuggestion() internally, which
     // flips a synced suggestion to 'completed' and thus out of getCurrentFreeSuggestion().
@@ -1602,7 +1603,7 @@ const runFreeAutoCheck = async () => {
   const preSyncId = getCurrentFreeSuggestion()?.id ?? null;
 
   logger.info('[Free] Auto-check: syncing activities from Garmin before evaluation…');
-  await syncActivitiesFromGarmin();   // settles a synced suggestion against new rides
+  const synced = await syncActivitiesFromGarmin();   // settles a synced suggestion against new rides
 
   const current = getCurrentFreeSuggestion();
   // Only a row that actually became 'completed' was ridden; a check-in regeneration that ran
@@ -1624,7 +1625,8 @@ const runFreeAutoCheck = async () => {
 
   // After the "nothing yet" check: pausing an athlete who has no suggestion pauses nothing,
   // and greeted a returning rider with "paused" before they had asked for anything.
-  if (maybeAutoPause()) return;
+  // Only on fresh ride data, for the same reason as the plan's auto-skips (see runGeminiAutoCheck).
+  if (synced && maybeAutoPause()) return;
 
   // A synced suggestion is already sitting on the athlete's watch, waiting to be ridden —
   // and in free mode "whenever suits you" may well be several days out. Replacing it on
@@ -1672,12 +1674,13 @@ const runGeminiAutoCheck = async () => {
     // so a newly-completed ride can be detected after the sync below.
     const preSyncPlan    = getStoredRecommendation()?.weeklyPlan || [];
     const prePlannedDates = new Set(
-      preSyncPlan.filter((e: any) => e.status === 'planned').map((e: any) => e.date)
+      // auto-skipped too: classifyCompletedEntries() can now complete those (a late-arriving ride).
+      preSyncPlan.filter((e: any) => e.status === 'planned' || e.status === 'auto-skipped').map((e: any) => e.date)
     );
 
     // Sync activities first — auto-skip detection depends on having current ride data
     logger.info('[Gemini] Auto-check: syncing activities from Garmin before evaluation…');
-    await syncActivitiesFromGarmin();
+    const synced = await syncActivitiesFromGarmin();
 
     // Detect auto-skips (planned days that passed with no activity) and newly-completed rides
     const stored = getStoredRecommendation();
@@ -1685,9 +1688,13 @@ const runGeminiAutoCheck = async () => {
       // Don't auto-skip dates that fall within a completed pause period
       // paused_since is cleared on resume, so finished pauses come from the remembered windows.
       const pausedSince = getSetting('paused_since') || '';
-      const autoSkips = detectAutoSkippedEntries(stored.weeklyPlan)
+      // Only after a sync that worked. "No ride on that day" means nothing when Garmin could not be
+      // reached (an expired session, no network): marking those days missed told the coach the
+      // athlete had stopped training, and it re-planned around a slump that may never have happened.
+      const autoSkips = !synced ? [] : detectAutoSkippedEntries(stored.weeklyPlan)
         .filter(date => !pausedSince || date < localDate(new Date(pausedSince)))
         .filter(date => !isInPastPause(date));
+      if (!synced) logger.info('[Gemini] Auto-check: Garmin sync did not succeed — not marking any day as auto-skipped this hour');
 
       const instantScoringEnabled = getSetting('instant_score_on_new_activity') !== '0';
       const newlyCompleted = prePlannedDates.size > 0
@@ -1718,8 +1725,10 @@ const runGeminiAutoCheck = async () => {
       return;
     }
 
-    // After the "no plan" check, for the same reason as in runFreeAutoCheck().
-    if (maybeAutoPause()) return;
+    // After the "no plan" check, for the same reason as in runFreeAutoCheck(). And only on fresh
+    // ride data: with Garmin unreachable, "N days without a ride" is "N days we could not look",
+    // and an expired session paused an athlete who may well have been riding.
+    if (synced && maybeAutoPause()) return;
 
     const lastGenStr = getSetting('gemini_last_generated');
     const ageMs      = Date.now() - (lastGenStr && lastGenStr !== '0' ? new Date(lastGenStr).getTime() : 0);

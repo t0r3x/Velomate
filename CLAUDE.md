@@ -177,6 +177,8 @@ Runs once at startup, then `setInterval(..., 60 * 60 * 1000)` (hourly):
 2. Sync activities, detect auto-skips (`detectAutoSkippedEntries()`, excludes dates inside a pause: the current one via `paused_since`, finished ones via `pause_windows`, which resume records because it clears `paused_since`) → regenerate if any found. Also detects newly-completed rides (a `planned` entry that flipped to `completed` during this sync, same logic as `/api/activities/refresh`) and regenerates for that too — but only when `instant_score_on_new_activity` is enabled (default on)
 3. No plan yet → stop (the first plan is the athlete's click)
 4. Auto-pause training after `inactivityPauseDays` (default 14, user-configurable) consecutive days with no completed workout. **After** step 3, in both modes: it used to run first and paused athletes who had nothing to pause
+
+**Steps 2 (auto-skips) and 4 (auto-pause) only run after a Garmin sync that succeeded** (`syncActivitiesFromGarmin()` returns `true`). Both conclude something from the *absence* of rides, and with Garmin unreachable (an expired session, no network) absence means "could not look". On a real install with a session that had expired weeks earlier, one launch marked seven October days auto-skipped, re-planned around "multiple auto-skips" and then paused training for 38 days of "inactivity" the app had simply not been able to see. For the same reason `classifyCompletedEntries()` completes an **`auto-skipped`** day too when a ride for it turns up later: the auto-skip was an inference, the ride is evidence. An explicit `skipped` is the athlete's own word and is left alone.
 5. Otherwise regenerate only if plan is >23h stale
 6. On Gemini 429 → stamp `gemini_last_generated` to back off for 23h
 
