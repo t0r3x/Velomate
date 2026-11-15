@@ -102,7 +102,7 @@
             <p class="helper-text tp-hint">
               FTP is roughly the power you can hold for an hour. Only rides with a power meter use it: the
               coach reads power next to heart rate to check what you actually rode.
-              {{ ftpFollowsGarmin ? 'Taken from Garmin, and kept up to date from it until you change it.' : '' }}
+              {{ ftpSourceText }}
               {{ ftpSuggestion?.source.startsWith('95%') ? 'A suggestion from your best 20 minutes is only right if that was an all-out effort.' : '' }}
               Workouts on Garmin keep heart rate targets, so they work on every bike.
             </p>
@@ -241,9 +241,22 @@ const FTP_MAX = 600
 const ftpValue = computed<number | null>(() =>
   typeof ftp.value === 'number' && Number.isFinite(ftp.value) && ftp.value > 0 ? Math.round(ftp.value) : null)
 
+/**
+ * What saving this field will mean, by the backend's rule (setFtpFromAthlete): Garmin's own value,
+ * or an empty field, follows Garmin from then on; any other value is the athlete's and is never
+ * overwritten. Read from the field, so it is right before saving too.
+ */
 const ftpFollowsGarmin = computed(() => {
-  const p = profileStore.profile
-  return p?.ftpSource === 'garmin' && p.garminFtp != null && ftpValue.value === p.garminFtp
+  const g = profileStore.profile?.garminFtp
+  return g != null && (ftpValue.value === g || ftpValue.value == null)
+})
+const ftpSourceText = computed(() => {
+  const g = profileStore.profile?.garminFtp
+  if (ftpFollowsGarmin.value) return 'Taken from Garmin, and kept up to date from it until you enter your own.'
+  if (ftpValue.value == null) return ''
+  return g != null
+    ? `Your own value: Garmin no longer changes it. Use Garmin's ${g} W or empty the field to follow Garmin again.`
+    : 'Your own value. If Garmin works out an FTP later, it will not replace this one.'
 })
 
 /**

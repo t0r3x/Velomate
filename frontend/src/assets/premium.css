@@ -195,7 +195,8 @@ body {
   order: 3;
   align-self: stretch; /* the item aligns children to the start; without this the row shrinks */
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* 3 columns, 4 on a ride with power (ActivityItem sets --stat-cols). */
+  grid-template-columns: repeat(var(--stat-cols, 3), 1fr);
   gap: 1rem;
   margin: 0.7rem 0 0;
 }
@@ -777,6 +778,78 @@ body {
 /* The rating row (RPE, feeling, coach score) one step up from 0.68rem: still under the ride
    stats (0.84) and the title (0.86), which must lead, but no longer the smallest text on the card. */
 .act-feedback { gap: 0.4rem 0.85rem; }
+
+/* ── Ride details (ActivityItem.vue) ────────────────────────────────────────
+   What used to be the two hover tooltips on a ride, as a block that folds open inside the card.
+   Part of the card, not a panel inside it: a hairline above it, no fill of its own. */
+.act-details-toggle {
+  order: 5;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  padding: 0.2rem 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.act-details-toggle:hover,
+.act-details-toggle:focus-visible { color: var(--text-primary); }
+.act-details-chevron { font-size: 0.62rem; transition: transform 0.15s ease; }
+.activity-item.is-expanded .act-details-chevron { transform: rotate(180deg); }
+
+.act-details {
+  order: 6;
+  align-self: stretch;
+  margin-top: 0.6rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--hairline);
+  font-size: 0.76rem;
+  cursor: default;
+}
+.act-details .ad-rows { display: flex; flex-direction: column; gap: 0.15rem; }
+.act-details .ad-row { display: flex; align-items: baseline; gap: 0.55rem; line-height: 1.6; }
+.act-details .ad-row strong {
+  flex: none;
+  min-width: 4.2rem;
+  font-family: var(--font-numeric);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.act-details .ad-row span { color: var(--text-secondary); }
+.act-details .ad-row--warn span { color: var(--text-secondary); line-height: 1.45; }
+.act-details .ad-icon { flex: none; width: 0.9rem; font-size: 0.72rem; text-align: center; color: var(--text-muted); }
+.act-details .ad-icon--hr { color: var(--z5-color); }
+.act-details .ad-icon--warn { color: #f59e0b; }
+.act-details i.ad-icon[class*='wt-'] { color: var(--wt); }
+.act-details .ad-icon.feeling-1 { color: #ef4444; }
+.act-details .ad-icon.feeling-2 { color: #f97316; }
+.act-details .ad-icon.feeling-3 { color: var(--text-secondary); }
+.act-details .ad-icon.feeling-4 { color: #10b981; }
+.act-details .ad-icon.feeling-5 { color: #818cf8; }
+.act-details .ad-label {
+  margin: 0.85rem 0 0.35rem;
+  font-family: var(--font-main);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+/* The same zone ramp and 2px gaps as the Trend chart's bars, laid flat. */
+.act-details .ad-zone-bar { display: flex; gap: 2px; height: 6px; border-radius: var(--radius-pill); overflow: hidden; }
+.act-details .ad-zone-seg { flex-basis: 0; min-width: 3px; }
+.act-details .ad-zones { display: flex; flex-wrap: wrap; gap: 0.3rem 0.85rem; margin-top: 0.45rem; color: var(--text-secondary); }
+.act-details .ad-zone { display: inline-flex; align-items: center; gap: 0.3rem; }
+.act-details .ad-zone strong { font-family: var(--font-numeric); font-weight: 600; color: var(--text-primary); }
+.act-details .ad-key { width: 8px; height: 8px; border-radius: 2px; }
+.act-details .ad-note { margin: 0.35rem 0 0; color: var(--text-secondary); line-height: 1.5; }
 .act-rpe-badge,
 .act-feeling-badge,
 .act-score-badge { font-size: 0.76rem; }

@@ -1,25 +1,18 @@
 <template>
-  <!-- The whole ride is the target for rating it, not just the pencil: the hover outline
-       already promised that clicking it does something. Inert while the editor is open. -->
+  <!-- The whole ride opens and closes its details: the hover outline promises that clicking it
+       does something. The pencil (or "Rate this ride") opens the rating editor. -->
   <li
     class="activity-item"
-    :class="{ 'is-clickable': !editing }"
+    :class="{ 'is-clickable': !editing, 'is-expanded': expanded }"
     :tabindex="editing ? undefined : 0"
     @click="onItemClick"
-    @keydown.enter.self="onItemClick"
+    @keydown.enter.self="toggleDetails"
   >
     <div class="activity-details-main">
       <span class="activity-title">{{ activity.name || 'Cycling Activity' }}</span>
       <span class="activity-meta">{{ meta }}</span>
 
-      <!-- Hovering the rating row shows the same tooltip as the Trend chart for that day. -->
-      <div
-        v-if="hasFeedback || editing"
-        class="act-feedback"
-        @pointerenter="onTipEnter($event, 'rating')"
-        @pointerleave="onTipLeave"
-        @click="onTipTap($event, 'rating')"
-      >
+      <div v-if="hasFeedback || editing" class="act-feedback">
         <span v-if="rpe !== null" class="act-rpe-badge" :class="rpeClass">RPE {{ rpe }}</span>
         <span v-if="feeling !== null" class="act-feeling-badge" :class="feelingEntry.cls" v-html="feelingHtml"></span>
         <!-- Score and pencil wrap as one unit, so the pencil never ends up alone on a line. -->
@@ -43,14 +36,7 @@
 
     </div>
 
-    <!-- Hovering the numbers shows the ride's details: speed, max HR, time per zone, and whether
-         it is one of the rides the header's heart rate warning is about. -->
-    <div
-      class="activity-stats-summary"
-      @pointerenter="onTipEnter($event, 'stats')"
-      @pointerleave="onTipLeave"
-      @click="onTipTap($event, 'stats')"
-    >
+    <div class="activity-stats-summary" :style="{ '--stat-cols': statCols }">
       <div class="act-stat act-stat--dist">
         <span class="act-stat-val">{{ activity.distanceKm }} km</span>
         <span class="act-stat-label">Dist</span>
@@ -66,6 +52,121 @@
         </span>
         <span class="act-stat-label">Avg HR</span>
       </div>
+      <!-- Only on rides from the bike with a power meter; NP, IF and the 20-minute best are in the details. -->
+      <div v-if="activity.averagePower > 0" class="act-stat act-stat--power">
+        <span class="act-stat-val">{{ activity.averagePower }} W</span>
+        <span class="act-stat-label">Avg power</span>
+      </div>
+    </div>
+
+    <!-- The details used to be two hover tooltips (numbers, rating row). With power, zones, warnings
+         and the coach's note they had become a page of text that vanished when the mouse moved,
+         and nothing on the card said they existed. Now a visible toggle, read at leisure, and
+         several rides can be open side by side to compare. -->
+    <button
+      v-if="!editing"
+      type="button"
+      class="act-details-toggle"
+      :aria-expanded="expanded"
+      :aria-controls="detailsId"
+      @click="toggleDetails"
+    >
+      <i class="fa-solid fa-chevron-down act-details-chevron" aria-hidden="true"></i>
+      <span>{{ expanded ? 'Hide details' : 'Details' }}</span>
+    </button>
+
+    <div v-if="expanded && !editing" :id="detailsId" class="act-details">
+      <div class="ad-rows">
+        <div class="ad-row">
+          <i class="fa-solid fa-route ad-icon"></i>
+          <strong>{{ activity.distanceKm }} km</strong>
+          <span>{{ speed ? `${speed} km/h average` : 'Distance' }}</span>
+        </div>
+        <div class="ad-row">
+          <i class="fa-regular fa-clock ad-icon"></i>
+          <strong>{{ duration }}</strong>
+          <span>Load {{ load }}</span>
+        </div>
+        <div v-if="activity.averageHr > 0" class="ad-row">
+          <i class="fa-solid fa-heart-pulse ad-icon ad-icon--hr"></i>
+          <strong>{{ activity.averageHr }} bpm</strong>
+          <span>average{{ activity.maxHr > 0 ? ` · max ${activity.maxHr}` : '' }}{{ avgZone ? ` · Z${avgZone}` : '' }}</span>
+        </div>
+        <div v-else class="ad-row">
+          <i class="fa-solid fa-heart-pulse ad-icon"></i>
+          <strong>–</strong>
+          <span>No heart rate recorded</span>
+        </div>
+        <div v-if="activity.averagePower > 0" class="ad-row">
+          <i class="fa-solid fa-bolt ad-icon"></i>
+          <strong>{{ activity.averagePower }} W</strong>
+          <span>average{{ activity.maxPower > 0 ? ` · max ${activity.maxPower}` : '' }}</span>
+        </div>
+        <div v-if="activity.averagePower > 0 && activity.normPower" class="ad-row">
+          <i class="fa-solid fa-wave-square ad-icon"></i>
+          <strong>{{ activity.normPower }} W</strong>
+          <span>normalized{{ intensity ? ` · IF ${intensity}` : '' }}</span>
+        </div>
+        <div v-if="best20" class="ad-row">
+          <i class="fa-solid fa-stopwatch ad-icon"></i>
+          <strong>{{ best20 }} W</strong>
+          <span>best 20 min</span>
+        </div>
+      </div>
+
+      <!-- Only a measured split. Without any heart rate the load is an estimate, not a split to show. -->
+      <template v-if="hasMeasuredZones">
+        <div class="ad-label">Time in zone</div>
+        <div class="ad-zone-bar" role="img" :aria-label="zoneAria">
+          <span
+            v-for="(m, z) in zoneMins"
+            v-show="m > 0"
+            :key="'bar' + z"
+            class="ad-zone-seg"
+            :style="{ flexGrow: m, background: `var(--z${z + 1}-color)` }"
+          ></span>
+        </div>
+        <div class="ad-zones">
+          <template v-for="(m, z) in zoneMins" :key="'z' + z">
+            <span v-if="m > 0" class="ad-zone">
+              <span class="ad-key" :style="{ background: `var(--z${z + 1}-color)` }"></span>Z{{ z + 1 }}
+              <strong>{{ m }}m</strong>
+            </span>
+          </template>
+        </div>
+      </template>
+
+      <template v-if="hrFlags.length">
+        <div class="ad-label">Heart rate profile</div>
+        <div v-for="f in hrFlags" :key="f" class="ad-row ad-row--warn">
+          <i class="fa-solid fa-triangle-exclamation ad-icon ad-icon--warn"></i>
+          <span>{{ f }}</span>
+        </div>
+      </template>
+
+      <template v-if="rpe !== null || feeling !== null">
+        <div class="ad-label">How it felt</div>
+        <div v-if="feeling !== null" class="ad-row">
+          <i class="fa-regular ad-icon" :class="[feelingEntry.icon, feelingEntry.cls]"></i>
+          <strong>{{ feeling }}/5</strong>
+          <span>After the ride · {{ feelingEntry.label }}</span>
+        </div>
+        <div v-if="rpe !== null" class="ad-row">
+          <i class="fa-solid fa-gauge-high ad-icon"></i>
+          <strong>RPE {{ rpe }}</strong>
+          <span>{{ RPE_HINTS[rpe] }}</span>
+        </div>
+      </template>
+
+      <template v-if="planEntry?.executionScore != null">
+        <div class="ad-label">Coach</div>
+        <div class="ad-row">
+          <i class="fa-solid ad-icon" :class="[workoutTypeIcon[planEntry.type] ?? 'fa-circle', `wt-${planEntry.type.toLowerCase()}`]"></i>
+          <strong>{{ planEntry.executionScore }}</strong>
+          <span>{{ scoreTypeLabel }} · ridden</span>
+        </div>
+        <p v-if="planEntry.executionNote" class="ad-note">{{ planEntry.executionNote }}</p>
+      </template>
     </div>
 
     <!-- A direct child of the item, not of the left column, so it wraps onto its own line
@@ -120,103 +221,15 @@
         </button>
       </div>
     </div>
-    <Teleport to="body">
-      <div v-if="tip && !editing" ref="tipEl" class="trend-tooltip ride-tooltip" :style="{ left: `${tip.left}px`, top: `${tip.top}px` }">
-        <div class="tt-date">{{ tipDate }}</div>
-        <template v-if="tip.kind === 'stats'">
-          <div class="tt-row">
-            <i class="fa-solid fa-route tt-icon tt-icon--muted"></i>
-            <strong>{{ activity.distanceKm }} km</strong>
-            <span>{{ speed ? `${speed} km/h average` : 'Distance' }}</span>
-          </div>
-          <div class="tt-row">
-            <i class="fa-regular fa-clock tt-icon tt-icon--muted"></i>
-            <strong>{{ duration }}</strong>
-            <span>Load {{ load }}</span>
-          </div>
-          <div v-if="activity.averageHr > 0" class="tt-row">
-            <i class="fa-solid fa-heart-pulse tt-icon tt-icon--hr"></i>
-            <strong>{{ activity.averageHr }} bpm</strong>
-            <span>average{{ activity.maxHr > 0 ? ` · max ${activity.maxHr}` : '' }}{{ avgZone ? ` · Z${avgZone}` : '' }}</span>
-          </div>
-          <div v-if="activity.averagePower > 0" class="tt-row">
-            <i class="fa-solid fa-bolt tt-icon tt-icon--muted"></i>
-            <strong>{{ activity.averagePower }} W</strong>
-            <span>average{{ activity.maxPower > 0 ? ` · max ${activity.maxPower}` : '' }}</span>
-          </div>
-          <div v-if="activity.averagePower > 0 && activity.normPower" class="tt-row">
-            <i class="fa-solid fa-wave-square tt-icon tt-icon--muted"></i>
-            <strong>{{ activity.normPower }} W</strong>
-            <span>normalized{{ intensity ? ` · IF ${intensity}` : '' }}</span>
-          </div>
-          <div v-if="best20" class="tt-row">
-            <i class="fa-solid fa-stopwatch tt-icon tt-icon--muted"></i>
-            <strong>{{ best20 }} W</strong>
-            <span>best 20 min</span>
-          </div>
-
-          <!-- Without any heart rate the load fallback parks the ride in Z2; that is an assumption, not a split to show. -->
-          <template v-if="zoneMins.some(m => m > 0) && (activity.averageHr > 0 || activity.timeInZones?.some(s => s > 0))">
-            <div class="tt-date tt-section">Time in zone</div>
-            <div class="tt-zones">
-              <template v-for="(m, z) in zoneMins" :key="'z' + z">
-                <span v-if="m > 0" class="tt-zone">
-                  <span class="tt-key" :style="{ background: `var(--z${z + 1}-color)` }"></span>Z{{ z + 1 }}
-                  <strong>{{ m }}m</strong>
-                </span>
-              </template>
-            </div>
-          </template>
-
-          <template v-if="hrFlags.length">
-            <div class="tt-date tt-section">Heart rate profile</div>
-            <div v-for="f in hrFlags" :key="f" class="tt-row tt-row--warn">
-              <i class="fa-solid fa-triangle-exclamation tt-icon tt-icon--warn"></i>
-              <span>{{ f }}</span>
-            </div>
-          </template>
-        </template>
-
-        <template v-else>
-        <div class="tt-foot tt-foot--lead">Load {{ load }} · {{ activity.durationMinutes }} min</div>
-
-        <template v-if="rpe !== null || feeling !== null">
-          <div class="tt-date tt-section">How it felt</div>
-          <div class="tt-row">
-            <i v-if="feeling !== null" class="fa-regular tt-icon" :class="[feelingEntry.icon, `feel-${feeling}`]"></i>
-            <span v-else class="tt-key tt-key--none"></span>
-            <strong>{{ feeling !== null ? `${feeling}/5` : '–' }}</strong>
-            <span>After the ride{{ feeling !== null ? ` · ${feelingEntry.label}` : '' }}</span>
-          </div>
-          <div v-if="rpe !== null" class="tt-row">
-            <span class="tt-key tt-key--none"></span>
-            <strong>RPE {{ rpe }}</strong>
-            <span>{{ RPE_HINTS[rpe] }}</span>
-          </div>
-        </template>
-
-        <template v-if="planEntry?.executionScore != null">
-          <div class="tt-date tt-section">Coach</div>
-          <div class="tt-row">
-            <i class="fa-solid tt-icon" :class="[workoutTypeIcon[planEntry.type] ?? 'fa-circle', `wt-${planEntry.type.toLowerCase()}`]"></i>
-            <strong>{{ planEntry.executionScore }}</strong>
-            <span>{{ scoreTypeLabel }} · ridden</span>
-          </div>
-          <div v-if="planEntry.executionNote" class="tt-note">{{ planEntry.executionNote }}</div>
-        </template>
-        </template>
-      </div>
-    </Teleport>
   </li>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { Activity, PlanEntry } from '@/types'
 import { toRpe, toFeeling, ACTIVITY_TYPE_LABELS, workoutTypeLabel, workoutTypeIcon } from '@/utils'
 import { rideLoad, zoneMinutes } from '@/utils/trainingLoad'
 import { averagedAboveLthr, peakAboveMax } from '@/utils/hrCalibration'
-import { lastPointerType } from '@/utils/pointer'
 import { useActivitiesStore } from '@/stores/activities.store'
 import { useProfileStore }    from '@/stores/profile.store'
 import { useToast } from '@/composables/useToast'
@@ -296,75 +309,43 @@ const hasFeedback = computed(() =>
   rpe.value !== null || feeling.value !== null || (props.planEntry?.executionScore != null)
 )
 
-// ── Tooltip ──────────────────────────────────────────────────────────────────
-// The Trend chart's tooltip, for this ride: how it felt and what the coach scored, with the
-// coach's note in full (the old native title was hard to read and cut off). Fixed position
-// and teleported, because the rides list scrolls and would clip anything absolute.
+/** Columns in the stats row: never fewer than 3, so rides without HR or power keep the usual grid. */
+const statCols = computed(() =>
+  Math.max(3, 2 + (props.activity.averageHr > 0 ? 1 : 0) + (props.activity.averagePower > 0 ? 1 : 0)))
 
-type TipKind = 'rating' | 'stats'
-const tip   = ref<{ left: number; top: number; kind: TipKind } | null>(null)
-const tipEl = ref<HTMLElement | null>(null)
+// ── Details ──────────────────────────────────────────────────────────────────
 
-function showTip(e: Event, kind: TipKind) {
-  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  tip.value = { left: r.left, top: r.bottom + 8, kind }
-  document.addEventListener('scroll', hideTip, true)
-  // Measure once rendered: flip above the row when there is no room below, keep it on screen.
-  nextTick(() => {
-    const el = tipEl.value
-    if (!el || !tip.value) return
-    const h = el.offsetHeight, w = el.offsetWidth
-    const top  = r.bottom + 8 + h > window.innerHeight - 8 ? Math.max(8, r.top - 8 - h) : r.bottom + 8
-    const left = Math.min(r.left, window.innerWidth - 8 - w)
-    tip.value = { left, top, kind }
-  })
-}
-function hideTip() {
-  tip.value = null
-  document.removeEventListener('scroll', hideTip, true)
-  document.removeEventListener('pointerdown', onOutsidePointer, true)
+const expanded  = ref(false)
+const detailsId = `ride-details-${props.activity.activityId}`
+
+function toggleDetails() {
+  if (editing.value) return
+  expanded.value = !expanded.value
 }
 
-// A mouse hovers; a finger taps. Hover runs on pointer events filtered to the mouse, because a tap
-// also fires compatibility mouseenter/click: the tooltip opened, the click bubbled to the ride,
-// the rating editor opened over it and the tooltip was gone. On touch, a tap on the rating row or
-// the numbers toggles the tooltip instead of opening the editor (the pencil and the ride title
-// still open it), and a tap anywhere else closes it.
-function onTipEnter(e: PointerEvent, kind: TipKind) {
-  if (e.pointerType === 'mouse') showTip(e, kind)
+/**
+ * A click anywhere on the ride toggles its details. Controls handle their own clicks: without
+ * the button/input guard, the pencil would open the editor and the same click would bubble up
+ * here and toggle the details as well.
+ */
+function onItemClick(e: Event) {
+  if (editing.value) return
+  // Inside the open details too: selecting or reading text there must not fold the ride shut.
+  if ((e.target as HTMLElement).closest('button, input, a, .act-details')) return
+  toggleDetails()
 }
-function onTipLeave(e: PointerEvent) {
-  if (e.pointerType === 'mouse') hideTip()
-}
-let tipTrigger: HTMLElement | null = null
 
-function onTipTap(e: MouseEvent, kind: TipKind) {
-  if (lastPointerType() === 'mouse' || editing.value) return
-  if ((e.target as HTMLElement).closest('button')) return
-  e.stopPropagation()
-  if (tip.value?.kind === kind) return hideTip()
-  tipTrigger = e.currentTarget as HTMLElement
-  showTip(e, kind)
-  document.addEventListener('pointerdown', onOutsidePointer, true)
-}
-function onOutsidePointer(e: PointerEvent) {
-  const t = e.target as Node
-  if (tipEl.value?.contains(t)) return
-  // A tap on the trigger that opened it handles itself: it toggles the tooltip closed.
-  if (tipTrigger?.contains(t)) return
-  hideTip()
-}
-onBeforeUnmount(hideTip)
-
-const tipDate = computed(() =>
-  new Date(props.activity.startTime).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
-)
 const loadMaxHr = computed(() =>
   Math.max(profileStore.profile?.maxHr ?? 0, activitiesStore.analysis?.maxRecordedHr ?? 0) || 190)
 /** Same load as the Trend chart (zone TRIMP), so the two never disagree. */
 const load = computed(() => Math.round(rideLoad(props.activity, loadMaxHr.value, profileStore.profile?.ftp)))
 /** Minutes per zone: Garmin's own split, as in the Trend chart. */
 const zoneMins = computed(() => zoneMinutes(props.activity, loadMaxHr.value, profileStore.profile?.ftp).map(m => Math.round(m)))
+/** A split worth drawing: Garmin's own, or one placed by a real average heart rate. */
+const hasMeasuredZones = computed(() =>
+  zoneMins.value.some(m => m > 0) && (props.activity.averageHr > 0 || !!props.activity.timeInZones?.some(s => s > 0)))
+const zoneAria = computed(() =>
+  zoneMins.value.map((m, z) => (m > 0 ? `Z${z + 1} ${m} minutes` : null)).filter(Boolean).join(', '))
 
 const speed = computed(() => {
   const { distanceKm, durationMinutes } = props.activity
@@ -431,17 +412,6 @@ function openEditor() {
   draftRpe.value     = rpe.value
   draftFeeling.value = feeling.value
   editing.value      = true
-}
-
-/**
- * A click anywhere on the ride opens the rating editor. Controls handle their own clicks:
- * without the button/input guard, Cancel would close the editor and the same click would
- * bubble up here and reopen it.
- */
-function onItemClick(e: Event) {
-  if (editing.value) return
-  if ((e.target as HTMLElement).closest('button, input, a')) return
-  openEditor()
 }
 
 async function save() {

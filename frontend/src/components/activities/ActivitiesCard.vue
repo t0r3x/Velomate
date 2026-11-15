@@ -8,7 +8,8 @@
           <dt><i class="fa-solid fa-person-biking"></i>Rides</dt>
           <dd>
             Your cycling activities from Garmin. <i class="fa-solid fa-rotate"></i> fetches new ones; the app also
-            syncs when it opens and every hour.
+            syncs when it opens and every hour. Click a ride, or its <em>Details</em>, for speed, load, heart rate,
+            power, time per zone and the coach's notes.
           </dd>
 
           <dt><i class="fa-solid fa-gauge-high"></i>RPE</dt>
@@ -24,7 +25,7 @@
 
           <dt><i class="fa-solid fa-bolt"></i>Power</dt>
           <dd>
-            Only on rides with a power meter; hover a ride's numbers to see it. <em>NP</em> (normalized power) is
+            Only on rides with a power meter: average power on the ride, the rest in its details. <em>NP</em> (normalized power) is
             what the ride cost, counting the surges. <em>IF</em> is NP as a share of your FTP: about 0.65 for an easy
             ride, near 1.0 for an all-out hour. The coach uses power to check what you actually rode, alongside
             heart rate, and rides without it are judged as before. Workouts on Garmin keep heart rate targets,
@@ -33,14 +34,14 @@
 
           <dt><i class="fa-solid fa-pen"></i>Rating a ride</dt>
           <dd>
-            Fill these in on your watch, or click a ride to set them here. They are saved to Garmin first, then
+            Fill these in on your watch, or use <i class="fa-solid fa-pen"></i> on a ride to set them here. They are saved to Garmin first, then
             here, so both always agree. A new rating makes the coach look at your plan again straight away.
           </dd>
 
           <dt><i class="fa-solid fa-brain"></i>Coach score</dt>
           <dd>
-            How well the ride matched the planned workout, 0 to 100, with the workout type next to it. Hover the
-            rating row for the coach's full explanation and the ride's load.
+            How well the ride matched the planned workout, 0 to 100, with the workout type next to it. The ride's
+            details have the coach's full explanation.
           </dd>
         </dl>
       </HelpPopover>

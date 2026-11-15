@@ -314,7 +314,11 @@ const tip = computed(() => {
         title: 'Power',
         lines: [
           { text: p?.ftp
-              ? `FTP ${p.ftp} W, ${p.ftpSource === 'manual' ? 'set by you' : 'from Garmin and kept up to date from it'}. Rides with power show how hard they were against it.`
+              // Both halves of the rule, as in the training profile: Garmin's FTP is followed until
+              // the athlete types their own, and their own is never overwritten.
+              ? (p.ftpSource === 'manual'
+                  ? `FTP ${p.ftp} W, set by you, so Garmin no longer changes it${p.garminFtp && p.garminFtp !== p.ftp ? ` (Garmin reports ${p.garminFtp} W)` : ''}.`
+                  : `FTP ${p.ftp} W, taken from Garmin and kept up to date from it, until you enter your own in your training profile.`)
               : 'No FTP yet. Rides with power still show their watts; with an FTP they also show how hard each ride was.', warn: false },
           ...(best ? [{ text: best, warn: false }] : []),
           ...(ftpTooLow.value ? [{ text: `95% of that is ${p!.estimatedFtp} W, above your FTP, so your FTP is probably set too low.`, warn: true }] : []),

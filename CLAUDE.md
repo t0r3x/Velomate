@@ -657,19 +657,19 @@ depend on what a model decided to say.
   come from `GET /api/checkins?from=` (the strip's `/api/checkin` returns only 10 rows), refetched when
   today's answer changes. Hover works over the rows too (the listener is on the wrapper, not the svg).
 - **One data tooltip for the whole app** (`.trend-tooltip` + `.tt-*`, in `premium.css` under "Data
-  tooltip", not in a component). The ride rows reuse it: hovering a ride's rating row (RPE, feeling, coach
-  score) in `ActivityItem.vue` shows the chart's "How it felt" and "Coach" sections for that ride, with the
-  coach's note **in full** (the old native `title` on the score cut it off and was hard to read). That
-  variant (`.ride-tooltip`) is teleported to `body`, `position: fixed` and flipped above the row when there
-  is no room below, because the rides list scrolls and clips anything absolute; it is opaque with the
-  overlay shadow, since ride text read through even at 94%.
-  Hovering a ride's **numbers** (distance, time, avg HR) shows a second variant: speed, duration and load, avg/max HR
-  and the profile zone it averaged in, power when the ride has it, Garmin's minutes per zone, and the ride's own share
-  of the heart rate warning.
-  **On touch there is no hover**, so a tap on the rating row or the numbers toggles the tooltip instead of opening
-  the rating editor (the pencil and the title still open it), and a tap elsewhere closes it. Hover runs on
-  `pointerenter` filtered to the mouse, and taps are told apart by `lastPointerType()` (`utils/pointer.ts`):
-  a tap also fires compatibility mouse and click events, which used to open the tooltip and the editor over it.
+  tooltip", not in a component), used by the Trend chart and the header (`.ride-tooltip` variant).
+- **Rides have a details block, not hover tooltips** (`ActivityItem.vue`, styles under "Ride details" in
+  `premium.css`). The ride rows used to carry two hover tooltips (the numbers, the rating row). With power,
+  zones, the heart rate warning and the coach's full note they had become a page of text that vanished when
+  the mouse moved, and nothing on the card said they existed: the athlete missed the power figures entirely.
+  Now a click on the ride (or its **Details** toggle, `aria-expanded`) folds open an inline block: distance
+  and speed, duration and load, heart rate with the profile zone it averaged in, power (average, NP + IF,
+  best 20 min), Garmin's time in zone as a flat bar in the zone ramp with minutes per zone, the ride's share
+  of the heart rate warning, how it felt and the coach's score with its note in full. Several rides can be
+  open at once to compare. Clicks inside the open block do not fold it (text can be selected); the pencil or
+  "Rate this ride" opens the rating editor, which hides the block while it is open. A ride with power gets a
+  fourth stat, **Avg power**, on the card itself (`--stat-cols` keeps the grid at 3 columns otherwise). The
+  hover/tap machinery that told a tap from a click (`utils/pointer.ts`) went with the tooltips.
 - **Preferences uses the big dialog** (`tp-*`, the same as Training Profile and Connections): it was a
   360px confirm-style box that looked like a different app next to Training Profile. Sections: Appearance,
   AI coach, Updates (packaged only), About; settings still save on change, the footer only has Done.
