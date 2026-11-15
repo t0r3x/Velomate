@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { UiTheme, TrendHidden } from '@/types'
+import type { UiTheme, TrendHidden, TrendView } from '@/types'
 import {
   getGeminiKeyStatus,
   postGeminiKey,
@@ -9,6 +9,7 @@ import {
   postGeminiModelFallback,
   postTrendCollapsed,
   postTrendHidden,
+  postTrendView,
   postPreferredDays,
   postInactivityPauseDays,
   postInstantScoreOnNewActivity,
@@ -55,6 +56,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const geminiLastModel     = ref<string | null>(null)
   const trendCollapsed      = ref(false)
   const trendHidden         = ref<TrendHidden>({ lines: [], zones: [], rows: [] })
+  const trendView           = ref<TrendView>({ range: '6m', from: null, to: null, table: false })
   const inactivityPauseDays = ref(14)
   const instantScoreOnNewActivity = ref(true)
   const freeTrainingMode          = ref(false)
@@ -74,6 +76,7 @@ export const useSettingsStore = defineStore('settings', () => {
       geminiLastModel.value       = data.geminiLastModel ?? null
       trendCollapsed.value        = data.trendCollapsed ?? false
       trendHidden.value           = data.trendHidden ?? { lines: [], zones: [], rows: [] }
+      trendView.value             = data.trendView ?? { range: '6m', from: null, to: null, table: false }
       inactivityPauseDays.value   = data.inactivityPauseDays ?? 14
       instantScoreOnNewActivity.value = data.instantScoreOnNewActivity ?? true
       freeTrainingMode.value      = data.freeTrainingMode ?? false
@@ -100,6 +103,7 @@ export const useSettingsStore = defineStore('settings', () => {
       geminiLastModel.value       = data.geminiLastModel ?? null
       trendCollapsed.value        = data.trendCollapsed ?? false
       trendHidden.value           = data.trendHidden ?? { lines: [], zones: [], rows: [] }
+      trendView.value             = data.trendView ?? { range: '6m', from: null, to: null, table: false }
       inactivityPauseDays.value   = data.inactivityPauseDays ?? 14
       instantScoreOnNewActivity.value = data.instantScoreOnNewActivity ?? true
       freeTrainingMode.value      = data.freeTrainingMode ?? false
@@ -150,6 +154,20 @@ export const useSettingsStore = defineStore('settings', () => {
     } catch (err) {
       console.error('[Settings] saveTrendHidden failed:', err)
       trendHidden.value = previous
+      return false
+    }
+  }
+
+  /** Applied immediately (the chart reacts at once); reverted if the write fails. */
+  async function saveTrendView(next: TrendView): Promise<boolean> {
+    const previous = trendView.value
+    trendView.value = next
+    try {
+      await postTrendView(next)
+      return true
+    } catch (err) {
+      console.error('[Settings] saveTrendView failed:', err)
+      trendView.value = previous
       return false
     }
   }
@@ -251,6 +269,8 @@ export const useSettingsStore = defineStore('settings', () => {
     geminiLastModel,
     trendCollapsed,
     trendHidden,
+    trendView,
+    saveTrendView,
     inactivityPauseDays,
     instantScoreOnNewActivity,
     freeTrainingMode,

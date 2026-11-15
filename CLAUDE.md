@@ -304,6 +304,7 @@ mirrors the same two functions purely to give an actionable message before the r
 | `gemini_last_model` | The model that actually answered the last generation, written by `callGeminiWithFallback()`. Differs from `gemini_model` after a fallback; the header shows it |
 | `trend_hidden` | JSON `{ lines, zones, rows }`: what is switched off on the Trend chart. Re-validated on read and write (`sanitizeTrendHidden()` in `server.ts`), so an unknown series can never reach the UI |
 | `trend_collapsed` | `'1'` folds the dashboard's Trend card to its header row (see "Trend card") |
+| `trend_view` | JSON `{ range: '3m'\|'6m'\|'1y'\|'custom', from, to, table }`: how the Trend card was last viewed. `from`/`to` (YYYY-MM-DD) only matter for `custom`. Re-validated on write (`sanitizeTrendView()`: unknown range → 6m, bad dates dropped, reversed dates swapped) |
 | `pause_windows` | JSON `[{ from, to }]`, the last 5 finished pauses as local dates (`to` = resume day, exclusive). Written by resume; read by the auto-skip check |
 | `ftp_watts` / `ftp_source` | FTP in use and where it came from: `'garmin'` (follows Garmin on every sync) or `'manual'`. Absent = not set. See "Power meter" |
 | `garmin_ftp` | The FTP Garmin last reported, kept even when the athlete overrode it, so the form can offer it |
@@ -353,6 +354,7 @@ DELETE /api/settings/gemini-key             ← removes the API key
 POST   /api/settings/gemini-model           ← { model } → normalized + format-validated, 400 on a bad ID
 POST   /api/settings/gemini-model-fallback  ← { enabled: boolean } → automatic model fallback (opt-out)
 POST   /api/settings/trend-collapsed        ← { collapsed: boolean } → Trend card folded or open
+POST   /api/settings/trend-view             ← { range, from, to, table } → Trend range and chart/table (sanitized)
 POST   /api/settings/trend-hidden           ← { lines[], zones[], rows[] } → what the Trend chart hides (sanitized)
 POST   /api/settings/preferred-long-ride-days  ← { days: string[] }
 POST   /api/settings/inactivity-pause-days  ← { days: number } (1-365)
@@ -622,7 +624,11 @@ depend on what a model decided to say.
   how fresh you start today. Its word (Transition / Fresh / Neutral / Building / Overreaching) uses
   intervals.icu's bands on form **as a % of fitness**, so it reads the same at any fitness level.
 - Layout: header row with the three numbers (they stay when the card is folded), range presets 3M / 6M /
-  1Y, a table toggle and a fold button (`trend_collapsed`, in the DB, not localStorage). Below: **one**
+  1Y / **Custom**, a table toggle and a fold button (`trend_collapsed`, in the DB, not localStorage). The range
+  and the table toggle are persisted too (`trend_view`), so the card opens the way it was left. Custom shows
+  two date fields above the chart, seeded from the range on screen, clamped to the stored history and kept
+  at least 14 days apart; the chart, the bars' days-elapsed divisor and the table all end at the range's last
+  day (`rangeEnd`), which for a custom range can be in the past. The three header numbers stay today's. Below: **one**
   chart (`TrendChart.vue`) with the fitness and fatigue lines over weekly stacked bars by zone. The bars are
   the week's **average daily load** (zone TRIMP / days elapsed in that week, so the current week is not read
   as nearly empty on a Monday), not hours: that is the lines' own unit — fitness is the 42-day average of

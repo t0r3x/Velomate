@@ -737,6 +737,7 @@ app.get('/api/settings/gemini-key', (_req: Request, res: Response) => {
     geminiLastModel:      getSetting('gemini_last_model') || null,
     trendCollapsed:       getSetting('trend_collapsed') === '1',
     trendHidden:          readTrendHidden(),
+    trendView:            readTrendView(),
     inactivityPauseDays,
     instantScoreOnNewActivity,
     uiTheme,
@@ -861,6 +862,35 @@ app.post('/api/settings/trend-hidden', (req: Request, res: Response) => {
   const clean = sanitizeTrendHidden(req.body);
   setSetting('trend_hidden', JSON.stringify(clean));
   res.json({ saved: true, trendHidden: clean });
+});
+
+// How the Trend card is looked at: the range (a preset or a custom from/to) and chart vs table.
+// Validated like trend_hidden: the dates land in date inputs and in the chart's date maths, so
+// anything that is not a real YYYY-MM-DD is dropped rather than stored.
+const TREND_RANGES = ['3m', '6m', '1y', 'custom'];
+type TrendView = { range: string; from: string | null; to: string | null; table: boolean };
+const isIsoDay = (v: unknown): v is string =>
+  typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(new Date(v + 'T12:00:00').getTime());
+const sanitizeTrendView = (raw: any): TrendView => {
+  let from = isIsoDay(raw?.from) ? raw.from : null;
+  let to   = isIsoDay(raw?.to)   ? raw.to   : null;
+  if (from && to && from > to) [from, to] = [to, from];
+  return {
+    range: TREND_RANGES.includes(raw?.range) ? raw.range : '6m',
+    from,
+    to,
+    table: raw?.table === true,
+  };
+};
+const readTrendView = (): TrendView => {
+  try { return sanitizeTrendView(JSON.parse(getSetting('trend_view') || '{}')); }
+  catch { return sanitizeTrendView({}); }
+};
+
+app.post('/api/settings/trend-view', (req: Request, res: Response) => {
+  const clean = sanitizeTrendView(req.body);
+  setSetting('trend_view', JSON.stringify(clean));
+  res.json({ saved: true, trendView: clean });
 });
 
 // The dashboard's Trend card, folded to its header row. UI state, but stored here rather

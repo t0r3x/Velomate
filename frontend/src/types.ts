@@ -198,6 +198,16 @@ export interface TrendHidden {
   rows: ('feel' | 'plan')[]
 }
 
+/** How the Trend card is viewed (persisted): a preset range or a custom from/to, chart or table. */
+export type TrendRange = '3m' | '6m' | '1y' | 'custom'
+export interface TrendView {
+  range: TrendRange
+  /** Custom range only; YYYY-MM-DD. */
+  from: string | null
+  to: string | null
+  table: boolean
+}
+
 export interface GeminiKeyStatus {
   hasKey: boolean
   maskedKey: string
@@ -210,6 +220,7 @@ export interface GeminiKeyStatus {
   trendCollapsed: boolean
   /** Series and rows switched off on the Trend chart (persisted). */
   trendHidden: TrendHidden
+  trendView?: TrendView
   inactivityPauseDays: number
   instantScoreOnNewActivity: boolean
   uiTheme: UiTheme

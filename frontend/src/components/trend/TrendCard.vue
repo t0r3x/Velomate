@@ -107,7 +107,7 @@
             class="trend-range-btn"
             :class="{ 'is-active': range === r.id }"
             :aria-pressed="range === r.id"
-            @click="range = r.id"
+            @click="setRange(r.id)"
           >{{ r.label }}</button>
         </div>
         <button
@@ -118,7 +118,7 @@
           :aria-pressed="tableView"
           :title="tableView ? 'Show charts' : 'Show as table'"
           :aria-label="tableView ? 'Show charts' : 'Show as table'"
-          @click="tableView = !tableView"
+          @click="setTable(!tableView)"
         >
           <i class="fa-solid" :class="tableView ? 'fa-chart-line' : 'fa-table'"></i>
         </button>
@@ -136,6 +136,18 @@
     </div>
 
     <div v-if="!collapsed" class="trend-body">
+      <!-- A custom range is two dates, chosen here; the chart and table follow them. -->
+      <div v-if="today && range === 'custom'" class="trend-custom" role="group" aria-label="Custom range">
+        <label class="trend-custom-field">
+          <span>From</span>
+          <input type="date" class="trend-date" :min="firstDay" :max="customTo" :value="customFrom" @change="setCustom('from', $event)">
+        </label>
+        <label class="trend-custom-field">
+          <span>To</span>
+          <input type="date" class="trend-date" :min="customFrom" :max="lastDay" :value="customTo" @change="setCustom('to', $event)">
+        </label>
+      </div>
+
       <p v-if="!today" class="helper-text trend-empty-state">
         Your trend appears here once rides have been synced from Garmin.
       </p>
@@ -248,7 +260,7 @@ import { getCheckinsSince } from '@/api/client'
 import { useCheckinStore }        from '@/stores/checkin.store'
 import { useRecommendationStore } from '@/stores/recommendation.store'
 import { useFreeTrainingStore }   from '@/stores/freeTraining.store'
-import type { DailyCheckin } from '@/types'
+import type { DailyCheckin, TrendRange } from '@/types'
 import TrendChart from './TrendChart.vue'
 import HelpPopover from '@/components/ui/HelpPopover.vue'
 
@@ -270,14 +282,51 @@ const ROW_ITEMS: { key: 'feel' | 'plan'; label: string; icon: string }[] = [
   { key: 'feel', label: 'Feel', icon: 'fa-regular fa-face-smile' },
   { key: 'plan', label: 'Plan', icon: 'fa-solid fa-calendar-week' },
 ]
-const RANGES = [
+const RANGES: { id: TrendRange; label: string; days: number }[] = [
   { id: '3m', label: '3M', days: 91 },
   { id: '6m', label: '6M', days: 182 },
   { id: '1y', label: '1Y', days: 365 },
-] as const
+  { id: 'custom', label: 'Custom', days: 0 },
+]
+/** Shortest custom range: anything less has no weeks to compare. */
+const MIN_CUSTOM_DAYS = 14
 
-const range     = ref<(typeof RANGES)[number]['id']>('6m')
-const tableView = ref(false)
+// The range and chart-or-table are persisted (settings key trend_view), so the card opens the
+// way it was left. Writes are optimistic: the chart reacts at once.
+const range     = computed(() => settingsStore.trendView.range)
+const tableView = computed(() => settingsStore.trendView.table)
+function setRange(id: TrendRange) {
+  const v = settingsStore.trendView
+  // Custom starts from the range on screen, so switching to it changes nothing until a date is moved.
+  const seed = id === 'custom' && (!v.from || !v.to)
+    ? { from: rangePoints.value[0]?.date ?? null, to: lastDay.value }
+    : {}
+  settingsStore.saveTrendView({ ...v, ...seed, range: id })
+}
+function setTable(on: boolean) { settingsStore.saveTrendView({ ...settingsStore.trendView, table: on }) }
+
+/** The custom dates, clamped to the history there is (a stored range may outlive old rides). */
+const firstDay   = computed(() => daily.value[0]?.date ?? isoDate())
+const lastDay    = computed(() => daily.value[daily.value.length - 1]?.date ?? isoDate())
+const clampDay   = (d: string) => (d < firstDay.value ? firstDay.value : d > lastDay.value ? lastDay.value : d)
+const customTo   = computed(() => clampDay(settingsStore.trendView.to ?? lastDay.value))
+const customFrom = computed(() => {
+  const from = clampDay(settingsStore.trendView.from ?? addDays(customTo.value, -182))
+  return from < customTo.value ? from : clampDay(addDays(customTo.value, -MIN_CUSTOM_DAYS))
+})
+function setCustom(which: 'from' | 'to', e: Event) {
+  const value = (e.target as HTMLInputElement).value
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return
+  let from = which === 'from' ? value : customFrom.value
+  let to   = which === 'to'   ? value : customTo.value
+  if (from > to) [from, to] = [to, from]
+  // Keep at least two weeks between them, moving whichever date was not just set.
+  if (addDays(from, MIN_CUSTOM_DAYS) > to) {
+    if (which === 'from') to = clampDay(addDays(from, MIN_CUSTOM_DAYS))
+    else from = clampDay(addDays(to, -MIN_CUSTOM_DAYS))
+  }
+  settingsStore.saveTrendView({ ...settingsStore.trendView, range: 'custom', from, to })
+}
 // What is switched off on the chart is persisted (settings key trend_hidden), so it survives a
 // reload or a restart. Writes are optimistic: the chart reacts at once.
 type RowKey = 'feel' | 'plan'
@@ -317,11 +366,18 @@ const formWord = computed(() =>
   today.value ? formLabel(today.value.form, today.value.fitness, today.value.ridesPerWeek, today.value.historyDays) : ''
 )
 
-const rangeDays = computed(() => RANGES.find(r => r.id === range.value)!.days)
-const rangePoints = computed(() => daily.value.slice(-rangeDays.value))
+const rangePoints = computed(() => {
+  if (range.value === 'custom') {
+    return daily.value.filter(p => p.date >= customFrom.value && p.date <= customTo.value)
+  }
+  const days = RANGES.find(r => r.id === range.value)?.days ?? 182
+  return daily.value.slice(-days)
+})
+/** The last day on screen: today, or the end of a custom range. */
+const rangeEnd = computed(() => rangePoints.value[rangePoints.value.length - 1]?.date ?? clockToday.value)
 const rangeWeeks = computed(() => {
   const from = rangePoints.value[0]?.date ?? isoDate()
-  return buildWeeklyZones(activitiesStore.activities, maxHr.value, from, ftp.value, clockToday.value)
+  return buildWeeklyZones(activitiesStore.activities, maxHr.value, from, ftp.value, rangeEnd.value)
 })
 
 // ── Feel row: check-ins plus the post-ride rating ────────────────────────────
@@ -381,13 +437,14 @@ const planByDate = computed(() => {
 /** Feel and Plan only get a legend entry once there is something in the range to show. */
 const rowItems = computed(() => {
   const from = rangePoints.value[0]?.date ?? isoDate()
-  const has = (byDate: Record<string, unknown>) => Object.keys(byDate).some(d => d >= from)
+  const has = (byDate: Record<string, unknown>) => Object.keys(byDate).some(d => d >= from && d <= rangeEnd.value)
   return ROW_ITEMS.filter(r => (r.key === 'feel' ? has(feelByDate.value) : has(planByDate.value)))
 })
 
 const tableRows = computed(() => {
   const byDate = new Map(daily.value.map(p => [p.date, p]))
-  const now = isoDate()
+  // The range's end, not today: a custom range can end in the past.
+  const now = rangeEnd.value
   return [...rangeWeeks.value].reverse().map(w => {
     const end = addDays(w.weekStart, 6)
     const p = byDate.get(end < now ? end : now)
@@ -470,6 +527,35 @@ const formatDay = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('e
 }
 .trend-range-btn:hover { color: var(--text-primary); background: var(--raise); }
 .trend-range-btn.is-active { color: var(--text-primary); border-color: var(--primary-color); }
+
+/* Custom range: two dates above the chart, set like the card's other quiet controls. */
+.trend-custom { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.25rem; margin-bottom: 1rem; }
+.trend-custom-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.trend-date {
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-family: var(--font-numeric);
+  font-size: 0.76rem;
+  letter-spacing: 0;
+  text-transform: none;
+  color-scheme: dark;   /* the native calendar icon and popup follow the theme */
+}
+:global(html[data-theme='light']) .trend-date { color-scheme: light; }
+.trend-date:hover { border-color: var(--hairline-strong); }
+.trend-date:focus-visible { outline: none; border-color: var(--primary-color); }
 .btn-icon-sm.is-active { color: var(--primary-color); }
 
 .trend-body { display: flex; flex-direction: column; gap: 0.35rem; }

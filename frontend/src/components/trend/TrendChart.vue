@@ -268,10 +268,12 @@ const x = (i: number) => PAD_L + (props.points.length <= 1 ? 0 : (i / (props.poi
  * Average daily load per zone for each week. The current week is divided by the days it
  * has had so far, not by 7, or every Monday would show an almost empty bar.
  */
-// Reactive, or a window left open from Monday keeps dividing the current week by one day.
+// The last day shown: today, or the end of a custom range in the past. Reactive, or a window
+// left open from Monday keeps dividing the current week by one day.
 const { today } = useClock()
+const endDate = computed(() => props.points[props.points.length - 1]?.date ?? today.value)
 const weekLoads = computed(() => props.weeks.map(week => {
-  const elapsed = Math.min(7, Math.max(1, dayIndexFrom(week.weekStart, today.value) + 1))
+  const elapsed = Math.min(7, Math.max(1, dayIndexFrom(week.weekStart, endDate.value) + 1))
   const perZone = week.zoneMinutes.map((m, z) => (m * (z + 1)) / elapsed)
   return { week, perZone, loadPerDay: perZone.reduce((a, b) => a + b, 0) }
 }))

@@ -12,6 +12,7 @@ import type {
   Recommendation,
   GeminiKeyStatus,
   TrendHidden,
+  TrendView,
   DashboardResponse,
   ActivitiesRefreshResponse,
   SyncResult,
@@ -158,6 +159,12 @@ export const postTrendHidden = (hidden: TrendHidden) =>
   request<void>('/api/settings/trend-hidden', {
     method: 'POST',
     body: JSON.stringify(hidden)
+  })
+
+export const postTrendView = (view: TrendView) =>
+  request<void>('/api/settings/trend-view', {
+    method: 'POST',
+    body: JSON.stringify(view)
   })
 
 export const postTrendCollapsed = (collapsed: boolean) =>
