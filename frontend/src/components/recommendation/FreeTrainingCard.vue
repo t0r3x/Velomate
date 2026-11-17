@@ -61,6 +61,16 @@
       <!-- Sits above the scroll area, not inside it: how the athlete feels today is the
            first input to everything below, and must not scroll out of view. -->
       <DailyCheckinStrip v-if="freeStore.state === 'loaded'" />
+      <!-- Right under the check-in, because that is what it answers: when to ride, given how
+           the athlete says they feel. At the bottom of the card the link was lost. -->
+      <p
+        v-if="freeStore.state === 'loaded' && suggestion?.coachNote"
+        class="ft-coach-note ft-coach-note-top"
+        :class="{ 'is-updating': isUpdating }"
+      >
+        <i class="fa-solid fa-clock"></i>
+        <span>{{ suggestion.coachNote }}</span>
+      </p>
 
       <div class="card-body-scroll scroll-panel">
 
@@ -135,11 +145,6 @@
               :priority="suggestion.priority"
               :dateless="true"
             />
-
-            <p v-if="suggestion.coachNote" class="ft-coach-note">
-              <i class="fa-solid fa-clock"></i>
-              <span>{{ suggestion.coachNote }}</span>
-            </p>
 
             <!-- Traceability: which day this was pushed to Garmin -->
             <p v-if="freeStore.isSynced && suggestion.syncedForDate" class="ft-synced-note">
@@ -392,6 +397,10 @@ async function handleSync() {
   border-left: 2px solid var(--primary-color);
 }
 .ft-coach-note i { display: none; }
+/* Under the check-in, outside the scroll area: same 1rem gap as the other blocks in the card,
+   and dimmed with the rest while a new suggestion is on its way. */
+.ft-coach-note-top { margin: 0.75rem 0 1rem; }
+.ft-coach-note-top.is-updating { opacity: 0.45; }
 .ft-coach-note::before {
   content: 'Coach note';
   display: block;

@@ -964,6 +964,8 @@ also completed N+1 when the athlete synced it at noon. Settling checks the row b
 that the current id changed (a check-in regeneration during the sync changes it too). Deliberately forward-looking, unlike the plan's
 strict same-date `classifyCompletedEntries()`: syncing Monday and riding Wednesday is still that session.
 
+**The coach note sits directly under the check-in**, above the card's scroll area, not under the workout: in free mode it is mostly *when* to ride given how the athlete feels, i.e. the answer to the check-in. At the bottom of the card that link was invisible.
+
 **Sync = the only date it ever gets.** `POST /api/free-training/sync` stamps `localDate()` (the day the
 button was pressed) into `syncedForDate`, the workout name (`Velomate - Wed 27 Aug: Tempo`) and the Garmin
 calendar slot — that press date is what makes a synced suggestion traceable afterwards, and the UI shows it
