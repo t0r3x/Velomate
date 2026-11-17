@@ -306,10 +306,11 @@ mirrors the same two functions purely to give an actionable message before the r
 | `gemini_last_model` | The model that actually answered the last generation, written by `callGeminiWithFallback()`. Differs from `gemini_model` after a fallback; the header shows it |
 | `trend_hidden` | JSON `{ lines, zones, rows }`: what is switched off on the Trend chart. Re-validated on read and write (`sanitizeTrendHidden()` in `server.ts`), so an unknown series can never reach the UI |
 | `trend_collapsed` | `'1'` folds the dashboard's Trend card to its header row (see "Trend card") |
-| `trend_view` | JSON `{ range: '3m'\|'6m'\|'1y'\|'custom', from, to, table }`: how the Trend card was last viewed. `from`/`to` (YYYY-MM-DD) only matter for `custom`. Re-validated on write (`sanitizeTrendView()`: unknown range → 6m, bad dates dropped, reversed dates swapped) |
+| `trend_view` | JSON `{ range: '3m'\|'6m'\|'1y'\|'custom', from, to, table }`: how the Trend card was last viewed. `from`/`to` (YYYY-MM-DD) only matter for `custom`; `to: null` means "up to today" and is what a range ending on the last day is stored as, or it froze on the day it was set and the chart stopped there from the next day on. Re-validated on write (`sanitizeTrendView()`: unknown range → 6m, bad dates dropped, reversed dates swapped) |
 | `pause_windows` | JSON `[{ from, to }]`, the last 5 finished pauses as local dates (`to` = resume day, exclusive). Written by resume; read by the auto-skip check |
 | `ftp_watts` / `ftp_source` | FTP in use and where it came from: `'garmin'` (follows Garmin on every sync) or `'manual'`. Absent = not set. See "Power meter" |
 | `garmin_ftp` | The FTP Garmin last reported, kept even when the athlete overrode it, so the form can offer it |
+| `birth_date` / `birth_date_source` / `garmin_birth_date` | The athlete's age, stored as a birth date (`age.service.ts`). Same pattern as FTP: follows Garmin's `userData.birthDate` (`'garmin'`) until the athlete types an age (`'manual'`, stored as 1 Jan of this year − age); an empty field or Garmin's own age follows Garmin again. Prompt: an `ATHLETE: N years old` line (empty when unknown) and the AGE bullet in `calibration.md`: from ~50 two days without Threshold/VO2Max/Sprint between such sessions, never fewer quality sessions, never zones or readiness |
 
 ---
 
@@ -325,6 +326,7 @@ GET    /api/dashboard                       ← { activities, analysis, profile 
 GET    /api/profile                         ← { maxHr, lthr, zones, ... } (opportunistically enriches maxHr from Garmin if not customized)
 POST   /api/profile                         ← { maxHr, lthr, zones, ftp? } → saves to DB and config.json (backward compat).
                                                ftp: number (50-600) sets it, null clears it, absent leaves it alone.
+                                               age: integer (10-100), same rule (see birth_date settings).
                                                Every profile response carries the power fields (ftp, ftpSource,
                                                garminFtp, best20Power, best20Date, estimatedFtp)
 

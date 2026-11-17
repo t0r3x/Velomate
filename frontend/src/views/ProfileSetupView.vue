@@ -26,8 +26,25 @@
 
           <template v-else>
 
-            <!-- ── Heart Rate Profile ── -->
+            <!-- ── About you ── -->
             <div class="tp-section-label">
+              <i class="fa-solid fa-user"></i>
+              About You
+            </div>
+            <div class="hr-stats-row">
+              <div class="hr-stat-box">
+                <span class="stat-label">Age</span>
+                <input type="number" class="stat-value-input" :min="AGE_MIN" :max="AGE_MAX" step="1" placeholder="Optional" v-model.number="age" @input="ageTouched = true">
+              </div>
+            </div>
+            <p class="helper-text tp-hint">
+              The coach uses your age for recovery: from about 50 it leaves more room between hard sessions,
+              without making them easier. It never sets your heart rate zones.
+              {{ ageSourceText }}
+            </p>
+
+            <!-- ── Heart Rate Profile ── -->
+            <div class="tp-section-label tp-section-divider">
               <i class="fa-solid fa-heart-pulse" style="color: var(--z5-color)"></i>
               Heart Rate Profile
             </div>
@@ -234,6 +251,23 @@ const ftp                 = ref<number | '' | null>(profileStore.profile?.ftp ??
 // saving leaves the FTP alone: sending the value back unchanged would turn an FTP that follows
 // Garmin into a manual one whenever Garmin updated it after this form was filled.
 const ftpTouched          = ref(false)
+// Same rule as the FTP: untouched, the stored age is left alone on save (it may follow Garmin).
+const age                 = ref<number | '' | null>(profileStore.profile?.age ?? null)
+const ageTouched          = ref(false)
+
+const AGE_MIN = 10
+const AGE_MAX = 100
+const ageValue = computed<number | null>(() =>
+  typeof age.value === 'number' && Number.isFinite(age.value) && age.value > 0 ? age.value : null)
+/** By the backend's rule (setAgeFromAthlete): Garmin's own age, or an empty field, follows Garmin. */
+const ageSourceText = computed(() => {
+  const g = profileStore.profile?.garminAge
+  if (g != null && (ageValue.value === g || ageValue.value == null)) return 'Taken from your birth date in Garmin.'
+  if (ageValue.value == null) return ''
+  return g != null
+    ? `Your own value. Empty the field to use Garmin's again (${g}).`
+    : ''
+})
 
 const FTP_MIN = 50
 const FTP_MAX = 600
@@ -322,6 +356,7 @@ onMounted(async () => {
     await activitiesStore.syncFromGarmin()
     // The sync can bring Garmin's FTP in for the first time.
     if (!ftpTouched.value) ftp.value = profileStore.profile?.ftp ?? null
+    if (!ageTouched.value) age.value = profileStore.profile?.age ?? null
     const analysis = activitiesStore.analysis
 
     if (analysis?.estimatedMaxHr) {
@@ -367,6 +402,10 @@ async function handleConfirm() {
     show('error', 'Check your FTP', `FTP must be between ${FTP_MIN} and ${FTP_MAX} W, or left empty.`)
     return
   }
+  if (ageValue.value != null && (!Number.isInteger(ageValue.value) || ageValue.value < AGE_MIN || ageValue.value > AGE_MAX)) {
+    show('error', 'Check your age', `Age must be a whole number between ${AGE_MIN} and ${AGE_MAX}, or left empty.`)
+    return
+  }
   // Checked here because the input is not inside a <form>, so its min/max are never enforced,
   // and the backend's 400 used to disappear behind a "Training Profile Updated" toast.
   const pauseDays = Number(inactivityPauseDays.value)
@@ -380,6 +419,7 @@ async function handleConfirm() {
       maxHr: maxHr.value, lthr: lthr.value, zones: zones.value, hasCustomOverrides: true,
       // Absent = leave the stored FTP alone (see ftpTouched); null clears it.
       ...(ftpTouched.value ? { ftp: ftpValue.value } : {}),
+      ...(ageTouched.value ? { age: ageValue.value } : {}),
     }
     // Captured before saving — switching mode swaps out the whole training card, so it is
     // worth calling out in the toast rather than letting the dashboard silently change shape.

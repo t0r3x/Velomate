@@ -32,6 +32,11 @@ export interface UserHRProfile {
   best20Date?: string | null
   /** 95% of best20Power. A suggestion only. */
   estimatedFtp?: number | null
+  // Age (backend age.service.ts): from Garmin's birth date unless the athlete typed one.
+  age?: number | null
+  ageSource?: 'garmin' | 'manual' | null
+  /** The age by Garmin's birth date, even when overridden. */
+  garminAge?: number | null
 }
 
 // ── Plan types ────────────────────────────────────────────────────────────────

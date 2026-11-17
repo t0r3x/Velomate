@@ -1,6 +1,6 @@
 TODAY: {{TODAY}} ({{DAY_OF_WEEK}}) — use this only to judge how recent their last rides are.
 
-ATHLETE PREFERENCES:
+{{ATHLETE_AGE}}ATHLETE PREFERENCES:
 - {{PREFERRED_DAYS}}{{GOALS_BLOCK}}
 
 {{PAUSE_BLOCK}}{{SUGGESTION_HISTORY}}HR PROFILE:

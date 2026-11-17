@@ -20,6 +20,7 @@ import {
 import { localDate, localDateTime, normalizeStartTime, toRpe, toFeeling, USER_TZ, APP_NAME } from '../utils';
 import { sanitizeStructure, normalizeWorkoutType } from './workout.service';
 import { getFtp, getBest20MinPower, hasRecentPowerRides, intensityFactor, FTP_FROM_20MIN } from './power.service';
+import { getAge } from './age.service';
 import logger from '../logger';
 import { loadPrompt, renderPrompt } from '../prompts/loader';
 
@@ -678,6 +679,16 @@ const buildPowerProfileLines = (): string => {
 };
 
 /**
+ * The athlete's age, as its own line above the preferences. Empty when unknown, so an athlete
+ * without one gets exactly the prompt they had before. How to use it is the AGE bullet in
+ * CALIBRATION_GUIDELINES (recovery spacing only, never zones or readiness).
+ */
+const buildAgeLine = (): string => {
+  const { age } = getAge();
+  return age == null ? '' : `ATHLETE: ${age} years old\n\n`;
+};
+
+/**
  * How to weigh a daily check-in.
  *
  * Deliberately strong: a check-in is the athlete speaking directly, which is the whole
@@ -795,6 +806,7 @@ const buildAthleteDataVars = (profile: any, analysis: any, recentActivities: any
   ZONES:            buildZoneString(profile),
   HR_CALIBRATION:   buildHrCalibrationLines(profile, analysis),
   POWER_PROFILE:    buildPowerProfileLines(),
+  ATHLETE_AGE:      buildAgeLine(),
   TOTAL_RIDES:      analysis?.totalCyclingRides ?? 0,
   PEAK_HR:          analysis?.maxRecordedHr ?? 0,
   AVG_RIDE_MINUTES: analysis?.averageRideDurationMinutes ?? 0,

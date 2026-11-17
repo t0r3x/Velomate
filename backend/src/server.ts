@@ -53,6 +53,7 @@ import {
   getPowerProfile, getFtp, setFtpFromAthlete, applyGarminFtp, findFtpInPayload,
   isSaneFtp, FTP_MIN, FTP_MAX,
 } from './services/power.service';
+import { getAgeProfile, getAge, setAgeFromAthlete, applyGarminBirthDate, isSaneAge, AGE_MIN, AGE_MAX } from './services/age.service';
 import { UserHRProfile } from './types';
 import { localDate, localDateTime, normalizeStartTime, APP_NAME, fromRpe, fromFeeling } from './utils';
 import logger from './logger';
@@ -102,35 +103,38 @@ const garminApi = async (apiPath: string) => {
 // Also returns Garmin's FTP, read from the same payload when it is there. Accounts that keep it
 // elsewhere get it from the biometric service. Neither location is confirmed against a real
 // power-meter account yet, so both are searched by field name (findFtpInPayload).
-const fetchGarminThresholds = async (): Promise<{ lthr: number | null; ftp: number | null }> => {
-  if (!getBearerToken()) return { lthr: null, ftp: null };
+// The same payload carries the athlete's birth date (userData.birthDate), for their age.
+const fetchGarminThresholds = async (): Promise<{ lthr: number | null; ftp: number | null; birthDate: unknown }> => {
+  if (!getBearerToken()) return { lthr: null, ftp: null, birthDate: null };
   let lthr: number | null = null;
   let ftp: number | null = null;
+  let birthDate: unknown = null;
   try {
     const settings = await garminApi('/userprofile-service/userprofile/user-settings/');
     const raw = settings?.userData?.lactateThresholdHeartRate;
     lthr = typeof raw === 'number' && raw > 100 && raw < 250 ? raw : null;
     ftp  = findFtpInPayload(settings?.userData);
+    birthDate = settings?.userData?.birthDate ?? null;
   } catch { /* non-fatal — caller falls back to the estimate */ }
   if (ftp == null) {
     try {
       ftp = findFtpInPayload(await garminApi('/biometric-service/biometric/latestFunctionalThresholdPower/CYCLING'));
     } catch { /* no FTP on this account — power keeps working without it */ }
   }
-  return { lthr, ftp };
+  return { lthr, ftp, birthDate };
 };
 
 // Returns the active HR profile: DB → config.json fallback → defaults, with the power
 // fields (FTP etc., see power.service.ts) attached. Those are stored separately and are
 // ignored by upsertProfileDB(), so passing the result back into it is safe.
-const getActiveProfile = async (): Promise<UserHRProfile & ReturnType<typeof getPowerProfile>> => {
+const getActiveProfile = async (): Promise<UserHRProfile & ReturnType<typeof getPowerProfile> & ReturnType<typeof getAgeProfile>> => {
   const dbProfile = getStoredProfile();
-  if (dbProfile) return { ...dbProfile, ...getPowerProfile() };
+  if (dbProfile) return { ...dbProfile, ...getPowerProfile(), ...getAgeProfile() };
 
   // Fallback: load from config.json and migrate to DB
   const fileProfile = loadProfile();
   upsertProfileDB(fileProfile);
-  return { ...fileProfile, ...getPowerProfile() };
+  return { ...fileProfile, ...getPowerProfile(), ...getAgeProfile() };
 };
 
 // ── On-startup migration: move config.json profile to DB if DB is empty ───────
@@ -277,7 +281,7 @@ app.get('/api/profile', async (req: Request, res: Response) => {
 });
 
 app.post('/api/profile', async (req: Request, res: Response) => {
-  const { maxHr, lthr, zones, ftp } = req.body;
+  const { maxHr, lthr, zones, ftp, age } = req.body;
   if (!maxHr || !lthr || !zones) {
     return res.status(400).json({ error: 'maxHr, lthr, and zones are required.' });
   }
@@ -285,7 +289,12 @@ app.post('/api/profile', async (req: Request, res: Response) => {
   if (ftp !== undefined && ftp !== null && !isSaneFtp(ftp)) {
     return res.status(400).json({ error: `FTP must be between ${FTP_MIN} and ${FTP_MAX} W.` });
   }
+  // Age follows the same rule: absent leaves it alone, null clears it.
+  if (age !== undefined && age !== null && !isSaneAge(age)) {
+    return res.status(400).json({ error: `Age must be a whole number between ${AGE_MIN} and ${AGE_MAX}.` });
+  }
   if (ftp !== undefined) setFtpFromAthlete(ftp);
+  if (age !== undefined) setAgeFromAthlete(age);
 
   const profile: UserHRProfile = {
     maxHr, lthr, zones,
@@ -295,8 +304,8 @@ app.post('/api/profile', async (req: Request, res: Response) => {
 
   upsertProfileDB(profile);
   saveProfile(profile); // keep config.json in sync for backward compat
-  logger.info(`[Profile] Saved — maxHR: ${maxHr} bpm, LTHR: ${lthr} bpm, zones: Z1≤${zones.z1?.max} Z2≤${zones.z2?.max} Z3≤${zones.z3?.max} Z4≤${zones.z4?.max} Z5≤${maxHr}${ftp !== undefined ? `, FTP: ${getFtp().ftp ?? 'not set'} (${getFtp().source ?? '-'})` : ''}`);
-  res.json({ success: true, profile: { ...profile, ...getPowerProfile() } });
+  logger.info(`[Profile] Saved — maxHR: ${maxHr} bpm, LTHR: ${lthr} bpm, zones: Z1≤${zones.z1?.max} Z2≤${zones.z2?.max} Z3≤${zones.z3?.max} Z4≤${zones.z4?.max} Z5≤${maxHr}${ftp !== undefined ? `, FTP: ${getFtp().ftp ?? 'not set'} (${getFtp().source ?? '-'})` : ''}${age !== undefined ? `, age: ${getAge().age ?? 'not set'} (${getAge().source ?? '-'})` : ''}`);
+  res.json({ success: true, profile: { ...profile, ...getPowerProfile(), ...getAgeProfile() } });
 });
 
 // ── Activities ────────────────────────────────────────────────────────────────
@@ -380,8 +389,9 @@ const syncActivitiesFromGarmin = async (): Promise<boolean> => {
     const recentForAnalysis = allStored.filter(a =>
       a.startTime ? new Date(a.startTime) >= cutoff : true
     );
-    const { lthr: realLthr, ftp: garminFtp } = await fetchGarminThresholds();
+    const { lthr: realLthr, ftp: garminFtp, birthDate } = await fetchGarminThresholds();
     applyGarminFtp(garminFtp);
+    applyGarminBirthDate(birthDate);
     const analysis = assessProgression(recentForAnalysis, realLthr);
     upsertAnalysis(analysis);
     logger.info(`[Sync] Analysis: ${analysis.totalCyclingRides} rides (90d), peak HR ${analysis.maxRecordedHr} bpm, est. LTHR ${analysis.estimatedLthr} bpm${realLthr ? ' (from Garmin)' : ' (estimated)'}, avg ${analysis.averageRideDurationMinutes} min, FTP ${getFtp().ftp ?? 'not set'}${garminFtp ? ` (Garmin: ${garminFtp} W)` : ''}`);
