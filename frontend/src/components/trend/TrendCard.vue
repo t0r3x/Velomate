@@ -298,8 +298,9 @@ const tableView = computed(() => settingsStore.trendView.table)
 function setRange(id: TrendRange) {
   const v = settingsStore.trendView
   // Custom starts from the range on screen, so switching to it changes nothing until a date is moved.
-  const seed = id === 'custom' && (!v.from || !v.to)
-    ? { from: rangePoints.value[0]?.date ?? null, to: lastDay.value }
+  // Its end is left open (null = today), so the range keeps moving with the days.
+  const seed = id === 'custom' && !v.from
+    ? { from: rangePoints.value[0]?.date ?? null, to: null }
     : {}
   settingsStore.saveTrendView({ ...v, ...seed, range: id })
 }
@@ -325,7 +326,9 @@ function setCustom(which: 'from' | 'to', e: Event) {
     if (which === 'from') to = clampDay(addDays(from, MIN_CUSTOM_DAYS))
     else from = clampDay(addDays(to, -MIN_CUSTOM_DAYS))
   }
-  settingsStore.saveTrendView({ ...settingsStore.trendView, range: 'custom', from, to })
+  // An end on the last day means "up to today", stored open (null) so it follows the calendar
+  // instead of freezing on the day it was set and ending the chart there from tomorrow on.
+  settingsStore.saveTrendView({ ...settingsStore.trendView, range: 'custom', from, to: to >= lastDay.value ? null : to })
 }
 // What is switched off on the chart is persisted (settings key trend_hidden), so it survives a
 // reload or a restart. Writes are optimistic: the chart reacts at once.
