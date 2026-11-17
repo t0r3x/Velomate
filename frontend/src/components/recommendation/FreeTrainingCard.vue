@@ -399,7 +399,7 @@ async function handleSync() {
 .ft-coach-note i { display: none; }
 /* Under the check-in, outside the scroll area: same 1rem gap as the other blocks in the card,
    and dimmed with the rest while a new suggestion is on its way. */
-.ft-coach-note-top { margin: 0.75rem 0 1rem; }
+.ft-coach-note-top { margin: 0 0 1rem; }   /* the check-in above already leaves 1rem */
 .ft-coach-note-top.is-updating { opacity: 0.45; }
 .ft-coach-note::before {
   content: 'Coach note';
