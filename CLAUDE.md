@@ -623,6 +623,13 @@ depend on what a model decided to say.
   (gotcha 25). A ride without zone data is placed whole in the zone its average HR falls in (50/60/70/80/90 %
   of the higher of profile max HR and peak recorded HR); a ride with no heart rate at all, by its power IF
   when it has power and there is an FTP, else Z2 (see "Power meter").
+  **A strap that dropped out mid-ride** (split covers < 90% of the ride and ≥ 10 min are missing,
+  `hrGapMinutes()`; complete splits cover 92-100%) keeps its measured minutes and gets the missing ones in
+  one zone: by IF when it has power, else by average HR, else Z2. A real 178-min ride came back with 23
+  min of split and counted as load 90 instead of ~550. The ride details draw only the measured split and
+  say how much was missing. The backend has the same helper: `hr-dropout=N` on the ride line (explained in
+  `activity-data-notes.md`), a note in `describeRideForScoring()`, a TRAINING LOAD line, and such a ride
+  counts as a hard effort by IF too.
 - **Fitness / Fatigue** are exponentially weighted daily load over 42 / 7 days, from the first stored ride,
   rest days included (the decay is half the picture). **Form = yesterday's fitness − yesterday's fatigue**:
   how fresh you start today. Its word (Transition / Fresh / Neutral / Building / Overreaching) uses

@@ -244,6 +244,21 @@ const callGeminiWithFallback = async (
 const parseZones = (raw: any): number[] | null =>
   Array.isArray(raw) && raw.length >= 5 && raw.slice(0, 5).some((s: any) => Number(s) > 0) ? raw : null;
 
+/**
+ * Minutes of a ride its heart rate split does not cover: the strap dropped out. A complete split
+ * covers 92-100% of the ride (a few minutes below Z1 at stops); a real 178-minute ride came back
+ * with 23 minutes, and every zone figure then read it as a short ride. 0 when complete or absent.
+ * The frontend's hrGapMinutes() (utils/trainingLoad.ts) uses the same thresholds.
+ */
+const hrGapMinutes = (act: any): number => {
+  const zones = parseZones(act.timeInZones);
+  const duration = act.durationMinutes ?? 0;
+  if (!zones || !duration) return 0;
+  const covered = zones.slice(0, 5).reduce((s: number, z: any) => s + (Number(z) || 0), 0) / 60;
+  const gap = Math.round(duration - covered);
+  return covered < duration * 0.9 && gap >= 10 ? gap : 0;
+};
+
 /** Format zone seconds array as a readable string for the prompt, e.g. "z1=8m z2=32m z3=6m z4=14m z5=3m" */
 const fmtZones = (zones: number[]): string =>
   zones.map((s, i) => `z${i + 1}=${Math.round(s / 60)}m`).join(' ');
@@ -278,6 +293,8 @@ const describeRideForScoring = (act: any): string => {
   parts.push((act.averageHr ?? 0) > 0 ? `avg ${act.averageHr} bpm` : 'no heart rate data');
   const zones = parseZones(act.timeInZones);
   if (zones) parts.push(`zones: ${fmtZones(zones)}`);
+  const gap = hrGapMinutes(act);
+  if (gap > 0) parts.push(`heart rate dropped out for ${gap} of ${act.durationMinutes} min (zones cover only the rest)`);
   const power = ridePower(act, getFtp().ftp);
   if (power) parts.push(`power: ${formatPower(power)}`);
   if (act.perceivedExertion != null)    parts.push(`rpe=${toRpe(act.perceivedExertion)}`);
@@ -300,7 +317,7 @@ const formatActivityLines = (acts: any[]): string => {
   if (acts.length === 0) return '(no rides recorded in this window)';
   return acts.map(a => {
     const zones = a.zonesMin
-      ? `z1=${a.zonesMin.z1} z2=${a.zonesMin.z2} z3=${a.zonesMin.z3} z4=${a.zonesMin.z4} z5=${a.zonesMin.z5}`
+      ? `z1=${a.zonesMin.z1} z2=${a.zonesMin.z2} z3=${a.zonesMin.z3} z4=${a.zonesMin.z4} z5=${a.zonesMin.z5}${a.hrGapMin ? ` hr-dropout=${a.hrGapMin}` : ''}`
       : 'zones=n/a';
     const feedback = [
       a.rpe     != null ? `rpe=${a.rpe}`         : null,
@@ -372,10 +389,13 @@ const buildTrainingLoadBlock = (): string => {
     const iF = intensityFactor(a.normPower, ftp);
     return iF != null && iF >= HARD_RIDE_IF && (a.durationMinutes ?? 0) >= 20;
   };
+  // A ride whose strap dropped out is judged by both: its zones only cover part of it.
   const lastHard = acts.find(a => {
     const z = parseZones(a.timeInZones);
-    return z ? (z[3] + z[4]) / 60 >= 10 : hardByPower(a);
+    if (!z) return hardByPower(a);
+    return (z[3] + z[4]) / 60 >= 10 || (hrGapMinutes(a) > 0 && hardByPower(a));
   });
+  const dropouts = acts.filter(a => hrGapMinutes(a) > 0);
   // Rides the zone figures cannot see, but power can.
   const powerOnly = acts.filter(a => !parseZones(a.timeInZones) && (a.averagePower ?? 0) > 0);
   const daysSinceHard = lastHard
@@ -416,7 +436,8 @@ const buildTrainingLoadBlock = (): string => {
 - Consecutive training days: ${streak}${lastRide ? ` (most recent ride ${lastRide})` : ''}
 - Most recent day without a ride: ${lastRestDay ?? 'none in the last 28 days'}
 - Zone data present for ${withZones} of ${acts.length} stored rides${withZones < acts.length ? ' — the Z3+ and Z4/Z5 figures above count only those' : ''}${powerOnly.length > 0 ? `
-- ${powerOnly.length} stored ride(s) have power but no heart rate zones (most recent ${dateOf(powerOnly[0])}): judge their intensity from their power figures in RECENT ACTIVITIES, not from the zone totals above` : ''}
+- ${powerOnly.length} stored ride(s) have power but no heart rate zones (most recent ${dateOf(powerOnly[0])}): judge their intensity from their power figures in RECENT ACTIVITIES, not from the zone totals above` : ''}${dropouts.length > 0 ? `
+- ${dropouts.length} stored ride(s) lost heart rate for part of the ride (most recent ${dateOf(dropouts[0])}, ${hrGapMinutes(dropouts[0])} of ${dropouts[0].durationMinutes} min missing): the zone totals above undercount them; judge them by duration, power where present, and rpe/feeling` : ''}
 
 `;
 };
@@ -756,6 +777,8 @@ const buildRecentActivities = (activityDays: number): any[] => {
       // DB stores raw Garmin 0–100 values; toRpe/toFeeling convert to human-readable scale.
       // Power only on rides from a bike with a power meter; every other ride says power=n/a.
       // IF is computed here (NP / FTP) rather than asked of the model.
+      const gap = hrGapMinutes(a);
+      if (gap > 0) base.hrGapMin = gap;
       const power = ridePower(a, ftp);
       if (power) base.power = power;
       if (a.perceivedExertion != null)    base.rpe     = toRpe(a.perceivedExertion);

@@ -134,6 +134,10 @@
             </span>
           </template>
         </div>
+        <p v-if="hrGap > 0" class="ad-note">
+          Heart rate covered {{ (activity.durationMinutes ?? 0) - hrGap }} of {{ activity.durationMinutes }} min.
+          The load counts the other {{ hrGap }} min {{ activity.averagePower > 0 && profileStore.profile?.ftp && activity.normPower ? 'by power' : 'by average heart rate' }}.
+        </p>
       </template>
 
       <template v-if="hrFlags.length">
@@ -228,7 +232,7 @@
 import { computed, ref } from 'vue'
 import type { Activity, PlanEntry } from '@/types'
 import { toRpe, toFeeling, ACTIVITY_TYPE_LABELS, workoutTypeLabel, workoutTypeIcon } from '@/utils'
-import { rideLoad, zoneMinutes } from '@/utils/trainingLoad'
+import { rideLoad, zoneMinutes, measuredZoneMinutes, hrGapMinutes } from '@/utils/trainingLoad'
 import { averagedAboveLthr, peakAboveMax } from '@/utils/hrCalibration'
 import { useActivitiesStore } from '@/stores/activities.store'
 import { useProfileStore }    from '@/stores/profile.store'
@@ -339,8 +343,11 @@ const loadMaxHr = computed(() =>
   Math.max(profileStore.profile?.maxHr ?? 0, activitiesStore.analysis?.maxRecordedHr ?? 0) || 190)
 /** Same load as the Trend chart (zone TRIMP), so the two never disagree. */
 const load = computed(() => Math.round(rideLoad(props.activity, loadMaxHr.value, profileStore.profile?.ftp)))
-/** Minutes per zone: Garmin's own split, as in the Trend chart. */
-const zoneMins = computed(() => zoneMinutes(props.activity, loadMaxHr.value, profileStore.profile?.ftp).map(m => Math.round(m)))
+/** Minutes per zone: Garmin's own split as measured (a strap dropout's gap is in the load, not
+ *  drawn as if it were measured), else the one zone the average heart rate places the ride in. */
+const zoneMins = computed(() =>
+  (measuredZoneMinutes(props.activity) ?? zoneMinutes(props.activity, loadMaxHr.value, profileStore.profile?.ftp)).map(m => Math.round(m)))
+const hrGap = computed(() => Math.round(hrGapMinutes(props.activity)))
 /** A split worth drawing: Garmin's own, or one placed by a real average heart rate. */
 const hasMeasuredZones = computed(() =>
   zoneMins.value.some(m => m > 0) && (props.activity.averageHr > 0 || !!props.activity.timeInZones?.some(s => s > 0)))

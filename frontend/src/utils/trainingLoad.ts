@@ -52,14 +52,51 @@ export function zoneFromIntensity(normPower: number | null | undefined, ftp: num
 }
 
 /**
- * The ride's minutes per zone: Garmin's split when present, else all of it in one estimated zone.
- * `ftp` is only used for a ride with no heart rate at all (strap forgotten) but with power.
+ * A complete split covers 92-100% of the ride (a few minutes below Z1 at stops). Less than
+ * this, with at least HR_GAP_MIN_MINUTES missing, means the strap dropped out: on a real
+ * 178-minute ride Garmin recorded 23 minutes, and the ride counted as a 23-minute one.
  */
-export function zoneMinutes(a: Activity, maxHr: number, ftp?: number | null): number[] {
+const HR_COVERAGE_MIN = 0.9
+const HR_GAP_MIN_MINUTES = 10
+
+/** Garmin's own split in minutes, or null when the ride has none (an all-zero split is none). */
+export function measuredZoneMinutes(a: Activity): number[] | null {
   const z = a.timeInZones
-  // An all-zero split (a ride without a heart rate strap) is no data, not a ride with no load.
   if (Array.isArray(z) && z.length >= 5 && z.slice(0, 5).some(s => (s ?? 0) > 0)) {
     return z.slice(0, 5).map(s => (s ?? 0) / 60)
+  }
+  return null
+}
+
+/** Minutes of the ride the heart rate split does not cover: 0 when it is complete or absent. */
+export function hrGapMinutes(a: Activity): number {
+  const measured = measuredZoneMinutes(a)
+  const duration = a.durationMinutes ?? 0
+  if (!measured || !duration) return 0
+  const covered = measured.reduce((s, m) => s + m, 0)
+  const gap = duration - covered
+  return covered < duration * HR_COVERAGE_MIN && gap >= HR_GAP_MIN_MINUTES ? gap : 0
+}
+
+/**
+ * The ride's minutes per zone: Garmin's split when present, else all of it in one estimated zone.
+ * `ftp` is only used for minutes without heart rate (strap forgotten or dropped out) on a ride
+ * with power.
+ */
+export function zoneMinutes(a: Activity, maxHr: number, ftp?: number | null): number[] {
+  // An all-zero split (a ride without a heart rate strap) is no data, not a ride with no load.
+  const measured = measuredZoneMinutes(a)
+  if (measured) {
+    // A strap that dropped out: the measured minutes stay as they are, and the missing ones
+    // go into one zone, by power when the ride has it (it covers the gap, the heart rate
+    // average does not), else by average heart rate, else Z2. This is no re-scoring by power:
+    // nothing measured is replaced, only minutes that would otherwise count as zero load.
+    const gap = hrGapMinutes(a)
+    if (gap > 0) {
+      const byPower = a.averagePower > 0 ? zoneFromIntensity(a.normPower, ftp) : null
+      measured[byPower ?? zoneFromHr(a.averageHr, maxHr) ?? 1] += gap
+    }
+    return measured
   }
 
   // No zone data: Garmin's default zones are 50/60/70/80/90 % of max HR, so place the whole
@@ -71,15 +108,15 @@ export function zoneMinutes(a: Activity, maxHr: number, ftp?: number | null): nu
   const minutes = a.durationMinutes ?? 0
   const out = [0, 0, 0, 0, 0]
   if (!minutes) return out
-  let zone: number
-  if (maxHr > 0 && a.averageHr) {
-    const ratio = a.averageHr / maxHr
-    zone = ratio < 0.6 ? 0 : ratio < 0.7 ? 1 : ratio < 0.8 ? 2 : ratio < 0.9 ? 3 : 4
-  } else {
-    zone = (a.averagePower > 0 ? zoneFromIntensity(a.normPower, ftp) : null) ?? 1
-  }
-  out[zone] = minutes
+  out[zoneFromHr(a.averageHr, maxHr) ?? (a.averagePower > 0 ? zoneFromIntensity(a.normPower, ftp) : null) ?? 1] = minutes
   return out
+}
+
+/** Zone of an average heart rate in Garmin's default zones (50/60/70/80/90 % of max HR). */
+function zoneFromHr(averageHr: number | null | undefined, maxHr: number): number | null {
+  if (!(maxHr > 0) || !averageHr) return null
+  const ratio = averageHr / maxHr
+  return ratio < 0.6 ? 0 : ratio < 0.7 ? 1 : ratio < 0.8 ? 2 : ratio < 0.9 ? 3 : 4
 }
 
 export function rideLoad(a: Activity, maxHr: number, ftp?: number | null): number {
